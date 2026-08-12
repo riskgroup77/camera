@@ -2,12 +2,30 @@
 
 ## DNS (A records → server IP `87.192.230.208`)
 
-| Domain | Purpose |
-|--------|---------|
-| `cam.fermi.uz` | React frontend |
-| `camapi.fermi.uz` | FastAPI backend + WebSocket |
-| `storage.camapi.fermi.uz` | MinIO (presigned upload URLs) |
-| `stream.cam.fermi.uz` | MediaMTX HLS video streams |
+| Name (in fermi.uz zone) | Full domain | Purpose |
+|-------------------------|-------------|---------|
+| `cam` | `cam.fermi.uz` | React frontend |
+| `camapi` | `camapi.fermi.uz` | FastAPI backend + WebSocket |
+| `storage.camapi` | `storage.camapi.fermi.uz` | MinIO (presigned upload URLs) |
+| `stream.cam` | `stream.cam.fermi.uz` | MediaMTX HLS video streams |
+
+Add records in **ahost.uz → Mening domenlar → fermi.uz → DNS hosting → Zone Editor**:
+
+1. **Type:** A, **Name:** `storage.camapi`, **Value:** `87.192.230.208`
+2. **Type:** A, **Name:** `stream.cam`, **Value:** `87.192.230.208`
+
+After DNS propagates (5–30 min), the server auto-installs SSL:
+
+```bash
+# Timer checks every 5 minutes — or run manually:
+sudo bash /opt/camera/deploy/wait-dns-storage-stream.sh
+```
+
+Remove duplicate nginx configs (if `cam-fermi-*` warnings appear):
+
+```bash
+sudo bash /opt/camera/deploy/nginx-cleanup-fermi.sh
+```
 
 ## One-command deploy (on the server)
 
