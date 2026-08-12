@@ -24,9 +24,13 @@ for f in cam-fermi-frontend cam-fermi-api cam-fermi-storage cam-fermi-stream; do
 done
 nginx -t && systemctl reload nginx
 
+echo "=== Docker compose overrides ==="
+cp deploy/docker-compose.override.yml camera-api/docker-compose.override.yml
+cp deploy/docker-compose.mediamtx.yml camera-api/docker-compose.mediamtx.yml
+
 echo "=== Docker API (reload env if .env changed) ==="
 cd camera-api
-docker compose up -d --force-recreate api
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml up -d --force-recreate api
 
 echo "=== Health check ==="
 sleep 5
