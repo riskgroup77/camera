@@ -1,0 +1,10 @@
+[Unit]
+Description=Wait for cam.devflix.uz DNS and install SSL
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

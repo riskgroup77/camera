@@ -1,0 +1,4 @@
+services:
+  mediamtx:
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro

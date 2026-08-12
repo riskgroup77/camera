@@ -16,6 +16,12 @@ dist-ssr
 .claude
 .pytest_cache
 deploy/.secrets.env
+deploy/test-camadmin.sh
+deploy/remote_deploy.py
+deploy/finish_deploy.py
+deploy/finish_frontend.py
+deploy/run_slim.py
+deploy/run_migrate_fermi.py
 
 # Editor directories and files
 .vscode/*

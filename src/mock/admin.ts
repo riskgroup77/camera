@@ -131,12 +131,12 @@ export const studentGroups: StudentGroup[] = [
 ];
 
 export const cameraConfigs: CameraConfig[] = [
-  { id: 'c1', name: 'Kirish eshigi kamerasi', ip: '192.168.1.101', port: 554, building: '1-Bino', zone: 'A-Zona (Kirish)', resolution: '1080p', fps: 25, status: 'faol' },
-  { id: 'c2', name: 'Auditoriya 301 kamerasi', ip: '192.168.1.102', port: 554, building: '1-Bino', zone: "B-Zona (O'quv)", resolution: '720p', fps: 15, status: 'faol' },
-  { id: 'c3', name: 'Klinika koridori', ip: '192.168.1.201', port: 554, building: '2-Bino', zone: 'C-Zona (Klinika)', resolution: '1080p', fps: null, status: 'tamirda' },
-  { id: 'c4', name: 'Laboratoriya kirish', ip: '192.168.1.202', port: 554, building: '2-Bino', zone: 'C-Zona (Klinika)', resolution: '4K', fps: 25, status: 'faol' },
-  { id: 'c5', name: 'Parking kamerasi', ip: '192.168.1.301', port: 554, building: '3-Bino', zone: 'D-Zona (Tashqi)', resolution: '1080p', fps: null, status: 'nofaol' },
-  { id: 'c6', name: "Ma'muriyat zali", ip: '192.168.1.302', port: 554, building: '3-Bino', zone: 'E-Zona (Ma\'muriy)', resolution: '1080p', fps: 20, status: 'faol' },
+  { id: 'c1', name: 'Kirish eshigi kamerasi', ip: '192.168.1.101', port: 554, building: '1-Bino', zone: 'A-Zona (Kirish)', resolution: '1080p', fps: 25, status: 'faol', isReachable: true },
+  { id: 'c2', name: 'Auditoriya 301 kamerasi', ip: '192.168.1.102', port: 554, building: '1-Bino', zone: "B-Zona (O'quv)", resolution: '720p', fps: 15, status: 'faol', isReachable: true },
+  { id: 'c3', name: 'Klinika koridori', ip: '192.168.1.201', port: 554, building: '2-Bino', zone: 'C-Zona (Klinika)', resolution: '1080p', fps: null, status: 'tamirda', isReachable: false },
+  { id: 'c4', name: 'Laboratoriya kirish', ip: '192.168.1.202', port: 554, building: '2-Bino', zone: 'C-Zona (Klinika)', resolution: '4K', fps: 25, status: 'faol', isReachable: true },
+  { id: 'c5', name: 'Parking kamerasi', ip: '192.168.1.301', port: 554, building: '3-Bino', zone: 'D-Zona (Tashqi)', resolution: '1080p', fps: null, status: 'nofaol', isReachable: false },
+  { id: 'c6', name: "Ma'muriyat zali", ip: '192.168.1.302', port: 554, building: '3-Bino', zone: 'E-Zona (Ma\'muriy)', resolution: '1080p', fps: 20, status: 'faol', isReachable: true },
 ];
 
 export const adminUsers: AdminUser[] = [

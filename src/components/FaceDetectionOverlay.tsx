@@ -60,7 +60,7 @@ export default function FaceDetectionOverlay({ videoRef, detection }: FaceDetect
     }
 
     function recompute() {
-      if (video) setBoxes(computeBoxes(video, detection));
+      if (video && detection) setBoxes(computeBoxes(video, detection));
     }
 
     recompute();

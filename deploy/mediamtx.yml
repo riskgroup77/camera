@@ -1,0 +1,20 @@
+# MediaMTX config — API enabled for camera-api video gateway (internal Docker network)
+api: yes
+apiAddress: :9997
+
+hlsAddress: :8888
+rtspAddress: :8554
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: api
+      - action: read
+      - action: publish
+      - action: playback
+
+paths:
+  all_others:

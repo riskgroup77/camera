@@ -58,7 +58,7 @@ interface LoginResponse {
 async function authenticate(role: Role, login: string, password: string): Promise<AuthResult> {
   if (isBackendConfigured) {
     try {
-      const res = await api.post<LoginResponse>('/api/auth/login', { login: login.trim(), password });
+      const res = await api.post<LoginResponse>('/api/auth/login', { login: login.trim(), password: password.trim() });
       return { ok: true, userName: res.userName, role: res.role, token: res.token };
     } catch (err) {
       if (err instanceof ApiError) return { ok: false, error: err.message };
@@ -70,7 +70,7 @@ async function authenticate(role: Role, login: string, password: string): Promis
   await new Promise((resolve) => setTimeout(resolve, 400));
 
   const creds = DEMO_CREDENTIALS[role];
-  if (login.trim() === creds.login && password === creds.password) {
+  if (login.trim() === creds.login && password.trim() === creds.password) {
     return { ok: true, userName: login.trim(), role, token: null };
   }
   return { ok: false, error: "Login yoki parol noto'g'ri" };
