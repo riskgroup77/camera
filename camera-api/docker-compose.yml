@@ -1,0 +1,112 @@
+# NOTE: not compose-tested locally (Docker isn't installed on the machine
+# this was written on — see uvicorn.log-style caveat repeated across this
+# repo). Config follows standard patterns: healthcheck gating, named
+# volumes for data, secrets from a local .env (never committed).
+#
+# Usage: cp .env.example .env, fill in DB_PASSWORD/JWT_SECRET/ENCRYPTION_KEY/
+# S3_ACCESS_KEY/S3_SECRET_KEY, then `docker compose up --build`.
+#
+# Networking note: S3_ENDPOINT_URL below is the api container's internal
+# route to minio ("http://minio:9000") — that's what boto3 actually
+# connects to for uploads. S3_PUBLIC_ENDPOINT_URL is what the *browser*
+# needs ("http://localhost:9000", since minio's port is published to the
+# host below) — presigned URLs are signed against this instead, or the
+# browser gets a URL it can't resolve. Same split exists for MediaMTX:
+# MEDIAMTX_API_URL is container-to-container (path registration),
+# MEDIAMTX_HLS_BASE_URL is what LiveVideoPlayer.tsx in the browser fetches.
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: camera_api
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: camera_api
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camera_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY} &&
+      mc mb -p local/${S3_BUCKET:-camera-uploads} &&
+      exit 0
+      "
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    ports:
+      - "8554:8554" # RTSP
+      - "8888:8888" # HLS
+      - "9997:9997" # control API
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+      mediamtx:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+asyncpg://camera_api:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/camera_api
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      PORT: 8080
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+      S3_BUCKET: ${S3_BUCKET:-camera-uploads}
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_HLS_BASE_URL: ${MEDIAMTX_HLS_BASE_URL:-http://localhost:8888}
+      # Number of uvicorn worker processes (see Dockerfile). Leave at 1 for
+      # a single low-traffic instance; scale up (e.g. 4) for production —
+      # each core can roughly handle one worker for this kind of I/O-bound
+      # API.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+    volumes:
+      # Persists InsightFace's downloaded ONNX models (~350MB, pulled from
+      # the internet on first face-recognition request) across container
+      # restarts/rebuilds — without this every `docker compose up --build`
+      # re-downloads them on the first enrollment/compare call.
+      - insightface_models:/home/appuser/.insightface
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
+  minio_data:
+  insightface_models:

@@ -1,0 +1,197 @@
+"""Public (no-auth) endpoints backing the Monitoring page — camera/src/pages/public/MonitoringPage.tsx.
+
+Honest scope note: cameras here have no real link to a faculty/course/group
+in the schema (a Camera is just a physical device in a Building/zone), so
+unlike the admin-only endpoints this never exposes ip/port/rtsp_path/
+credentials, and the frontend can't filter by faculty/course/group the way
+an earlier mock-data version pretended to.
+"""
+
+import json
+from typing import Annotated
+
+import cv2
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import case, extract, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.database import get_db
+from app.jobs.attendance_ai import find_best_match
+from app.jobs.camera_health import is_reachable
+from app.models import AttendanceRecord, Camera, Event, LessonSession, StudentStaff
+from app.rate_limit import limiter
+from app.schemas.public import DetectedFaceOut, LiveDetectionOut, PublicCameraOut, PublicStatsOut, PublicTopStudentOut
+from app.services.face_recognition import detect_faces
+from app.services.frame_grabber import grab_frame
+from app.services.sleep_detection import is_asleep
+from app.timezone import local_now
+
+router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+def _to_public_camera(camera: Camera) -> PublicCameraOut:
+    # "live" requires BOTH the admin's intent (status='faol') AND a recent
+    # successful reachability check (app/jobs/camera_health.py) — status
+    # alone used to be enough, which meant a camera whose cable was
+    # unplugged kept showing JONLI here indefinitely.
+    live = camera.status == "faol" and is_reachable(camera.last_seen_at)
+    return PublicCameraOut(
+        id=str(camera.id),
+        name=camera.name,
+        building=camera.building.name if camera.building else "",
+        zone=camera.zone,
+        status="live" if live else "offline",
+        stream_url=camera.stream_url,
+    )
+
+
+@router.get("/cameras", response_model=list[PublicCameraOut])
+async def list_public_cameras(db: Annotated[AsyncSession, Depends(get_db)]) -> list[PublicCameraOut]:
+    result = await db.execute(select(Camera).options(selectinload(Camera.building)).order_by(Camera.name))
+    return [_to_public_camera(c) for c in result.scalars().all()]
+
+
+@router.get("/stats", response_model=PublicStatsOut)
+async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> PublicStatsOut:
+    # Local calendar day, not UTC's — matches how attendance_ai.py files
+    # AttendanceRecord.date (see app/timezone.py's module docstring), and
+    # avoids "today's" stats reading as yesterday's during the institute's
+    # early-morning local hours.
+    today = local_now().date()
+    start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    total_students = (
+        await db.execute(select(func.count()).select_from(StudentStaff).where(StudentStaff.type == "talaba"))
+    ).scalar_one()
+
+    today_statuses = (
+        await db.execute(select(AttendanceRecord.status).where(AttendanceRecord.date == today))
+    ).scalars().all()
+    present = sum(1 for s in today_statuses if s in ("keldi", "kech_keldi"))
+    late = sum(1 for s in today_statuses if s == "kech_keldi")
+    absent = sum(1 for s in today_statuses if s == "kelmadi")
+
+    sleep_incidents = (
+        await db.execute(
+            select(func.coalesce(func.sum(LessonSession.sleep_incidents), 0)).where(LessonSession.date == today)
+        )
+    ).scalar_one()
+
+    violations = (
+        await db.execute(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.occurred_at >= start_of_today)
+            .where(Event.severity.in_(["o'rta", "yuqori"]))
+        )
+    ).scalar_one()
+
+    return PublicStatsOut(
+        total_students=total_students,
+        present=present,
+        absent=absent,
+        late=late,
+        sleep_incidents=sleep_incidents,
+        violations=violations,
+    )
+
+
+@router.get("/top-students", response_model=list[PublicTopStudentOut])
+async def list_top_students(db: Annotated[AsyncSession, Depends(get_db)]) -> list[PublicTopStudentOut]:
+    """Bu oyning davomat foizi bo'yicha eng yaxshi 10 ta talaba — kamida
+    bitta davomat yozuvi bo'lganlar orasidan (bo'sh tarixli talabalar
+    reytingga qo'shilmaydi, aks holda ular soxta 0% bilan pastda emas,
+    umuman ko'rinmaydi degan ma'noni anglatadi)."""
+    now = local_now()  # local month/year — AttendanceRecord.date is filed under the local calendar day
+    present_count = func.sum(
+        case((AttendanceRecord.status.in_(["keldi", "kech_keldi"]), 1), else_=0)
+    )
+    total_count = func.count(AttendanceRecord.id)
+    rate = (present_count * 100.0) / total_count
+
+    stmt = (
+        select(StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position, rate.label("rate"))
+        .join(AttendanceRecord, AttendanceRecord.student_staff_id == StudentStaff.id)
+        .where(StudentStaff.type == "talaba")
+        .where(extract("year", AttendanceRecord.date) == now.year)
+        .where(extract("month", AttendanceRecord.date) == now.month)
+        .group_by(StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position)
+        .order_by(rate.desc())
+        .limit(10)
+    )
+    result = await db.execute(stmt)
+    return [
+        PublicTopStudentOut(
+            id=str(student_id),
+            name=full_name,
+            group=group_or_position,
+            attendance_rate=round(rate_value),
+        )
+        for student_id, full_name, group_or_position, rate_value in result.all()
+    ]
+
+
+@router.get("/cameras/{camera_id}/live-detection", response_model=LiveDetectionOut)
+@limiter.limit("20/minute")
+async def get_live_detection(
+    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)]
+) -> LiveDetectionOut:
+    """A one-shot snapshot of what the AI currently sees on this camera —
+    grabs a fresh frame and runs the same detection/matching InsightFace
+    pipeline app/jobs/attendance_ai.py and vision_ai.py use, but
+    synchronously and without writing an AttendanceRecord/Event. Backs the
+    face-box overlay on the live video (both the public MonitoringPage and
+    the admin CameraConfigDetailModal poll this every few seconds while a
+    camera is actually being watched).
+
+    Deliberately NOT the same pipeline as the persistent one: this checks
+    is_asleep() on a single frame, with none of vision_ai.py's two-frame
+    confirmation (see that module's docstring for why that check exists) —
+    a stray "asleep" box here is a harmless visual flicker that clears on
+    the next poll, not a stored alert, so the extra frame grab isn't
+    worth doubling this endpoint's cost for. Rate-limited since, unlike
+    this router's other endpoints, each call spawns an ffmpeg process and
+    runs a real inference pass — cheap enough for a human watching one
+    camera, not something to leave wide open on a no-auth endpoint.
+    """
+    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    camera = result.scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    if not camera.stream_url:
+        return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
+
+    frame_bytes = await grab_frame(camera.stream_url)
+    if frame_bytes is None:
+        return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
+
+    arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    frame_height, frame_width = (img.shape[0], img.shape[1]) if img is not None else (0, 0)
+
+    faces = await detect_faces(frame_bytes)
+    candidates_result = await db.execute(
+        select(StudentStaff.id, StudentStaff.biometric_embedding).where(
+            StudentStaff.biometric_embedding.is_not(None)
+        )
+    )
+    candidates = [(str(row_id), json.loads(embedding_json)) for row_id, embedding_json in candidates_result.all()]
+
+    faces_out = []
+    for face in faces:
+        match = find_best_match(face.embedding.tolist(), candidates)
+        person_name = None
+        if match is not None:
+            person = await db.get(StudentStaff, match[0])
+            person_name = person.full_name if person else None
+        faces_out.append(
+            DetectedFaceOut(
+                bbox=[float(x) for x in face.bbox],
+                person_name=person_name,
+                asleep=is_asleep(face.landmarks_68),
+            )
+        )
+
+    return LiveDetectionOut(frame_width=frame_width, frame_height=frame_height, faces=faces_out)

@@ -1,0 +1,294 @@
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.models import Camera
+from tests.conftest import auth_headers
+
+
+@pytest.mark.usefixtures("seeded")
+class TestCameras:
+    async def test_create_and_list(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={
+                "name": "Kirish kamerasi",
+                "ip": "192.168.1.50",
+                "building": "1-Bino (Asosiy korpus)",
+                "zone": "A-Zona",
+                "resolution": "1080p",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["building"] == "1-Bino (Asosiy korpus)"
+
+        listed = await client.get("/api/cameras", headers=headers)
+        assert listed.json()["total"] == 1
+
+    async def test_unknown_building_is_404(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={"name": "Test kamera", "ip": "10.0.0.1", "building": "Yoq Bino", "zone": "Z", "resolution": "720p"},
+        )
+        assert resp.status_code == 404
+
+    async def test_rtsp_credentials_are_encrypted_at_rest(self, client: AsyncClient, db_session):
+        headers = await auth_headers(client, "admin", "admin123")
+        await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={
+                "name": "Login kamerasi",
+                "ip": "192.168.1.60",
+                "rtspUsername": "admin",
+                "rtspPassword": "TopSecret",
+                "building": "1-Bino (Asosiy korpus)",
+                "zone": "A-Zona",
+                "resolution": "1080p",
+            },
+        )
+        row = (await db_session.execute(select(Camera).where(Camera.name == "Login kamerasi"))).scalar_one()
+        assert row.rtsp_username != "admin"
+        assert row.rtsp_password != "TopSecret"
+        assert "TopSecret" not in (row.rtsp_password or "")
+
+    async def test_stored_credentials_can_be_decrypted_for_retest(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = (
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": "Retest kamerasi",
+                    "ip": "192.0.2.99",
+                    "rtspUsername": "admin",
+                    "rtspPassword": "TopSecret",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "A-Zona",
+                    "resolution": "1080p",
+                },
+            )
+        ).json()
+
+        resp = await client.post(f"/api/cameras/{created['id']}/test-connection", headers=headers)
+        assert resp.status_code == 200
+        # 192.0.2.0/24 is TEST-NET-1 (RFC 5737) — guaranteed unreachable,
+        # so this only proves decrypt() didn't blow up, not that it connects.
+        assert resp.json()["success"] is False
+
+    async def test_connection_test_rejects_unreachable_host(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.post(
+            "/api/cameras/test-connection", headers=headers, json={"ip": "192.0.2.123", "port": 554}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is False
+        assert body["method"] == "tcp-only"
+
+    async def test_update_camera_status(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = (
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": "Holat kamerasi",
+                    "ip": "192.168.1.70",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "A-Zona",
+                    "resolution": "1080p",
+                    "status": "faol",
+                },
+            )
+        ).json()
+
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}",
+            headers=headers,
+            json={
+                "name": "Holat kamerasi",
+                "ip": "192.168.1.70",
+                "building": "1-Bino (Asosiy korpus)",
+                "zone": "A-Zona",
+                "resolution": "1080p",
+                "status": "tamirda",
+            },
+        )
+        assert resp.json()["status"] == "tamirda"
+
+    async def test_port_and_rtsp_path_round_trip_through_edit(self, client: AsyncClient):
+        """Regression: CameraOut must echo back port/rtspPath so the edit
+        form can pre-fill them accurately. Before this, editing any field
+        (e.g. status) silently reset port to 554 and cleared rtspPath,
+        because the frontend had no way to know the real saved values and
+        CameraUpdateIn overwrites both unconditionally."""
+        headers = await auth_headers(client, "admin", "admin123")
+        created = (
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": "RTSP kamerasi",
+                    "ip": "127.0.0.1",
+                    "port": 8554,
+                    "rtspPath": "/source-cam",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "A-Zona",
+                    "resolution": "1080p",
+                },
+            )
+        ).json()
+        assert created["port"] == 8554
+        assert created["rtspPath"] == "/source-cam"
+
+        fetched = (await client.get("/api/cameras", headers=headers)).json()["items"][0]
+        assert fetched["port"] == 8554
+        assert fetched["rtspPath"] == "/source-cam"
+
+        # Simulate the edit form round-tripping the fetched values back, only
+        # changing an unrelated field (zone).
+        updated = (
+            await client.patch(
+                f"/api/cameras/{created['id']}",
+                headers=headers,
+                json={
+                    "name": fetched["name"],
+                    "ip": fetched["ip"],
+                    "port": fetched["port"],
+                    "rtspPath": fetched["rtspPath"],
+                    "building": fetched["building"],
+                    "zone": "B-Zona",
+                    "resolution": fetched["resolution"],
+                },
+            )
+        ).json()
+        assert updated["port"] == 8554
+        assert updated["rtspPath"] == "/source-cam"
+        assert updated["zone"] == "B-Zona"
+
+    async def test_filter_by_status(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        for name, status_ in [("Faol kamera", "faol"), ("Nofaol kamera", "nofaol")]:
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": name,
+                    "ip": "192.168.1.80",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "A-Zona",
+                    "resolution": "1080p",
+                    "status": status_,
+                },
+            )
+        resp = await client.get("/api/cameras", headers=headers, params={"status": "faol"})
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["items"][0]["name"] == "Faol kamera"
+
+    async def test_multiple_cameras_can_share_one_room(self, client: AsyncClient):
+        """A room routinely holds more than one camera (different angles) —
+        nothing in the schema (no unique constraint on zone) or the API
+        should prevent this."""
+        headers = await auth_headers(client, "admin", "admin123")
+        created_ids = []
+        for i in range(3):
+            resp = await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": f"101-xona kamera {i + 1}",
+                    "ip": f"10.0.2.{i + 1}",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "101-xona",
+                    "resolution": "1080p",
+                },
+            )
+            assert resp.status_code == 201
+            created_ids.append(resp.json()["id"])
+
+        assert len(set(created_ids)) == 3  # each got its own distinct id
+
+        resp = await client.get("/api/cameras", headers=headers, params={"zone": "101-xona"})
+        body = resp.json()
+        assert body["total"] == 3
+        assert {c["id"] for c in body["items"]} == set(created_ids)
+
+    async def test_zones_endpoint_reports_camera_count_per_room(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        for i in range(2):
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": f"A-Zona kamera {i + 1}",
+                    "ip": f"10.0.3.{i + 1}",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "A-Zona",
+                    "resolution": "1080p",
+                },
+            )
+        await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={
+                "name": "B-Zona kamera",
+                "ip": "10.0.3.9",
+                "building": "1-Bino (Asosiy korpus)",
+                "zone": "B-Zona",
+                "resolution": "1080p",
+            },
+        )
+
+        resp = await client.get("/api/cameras/zones", headers=headers)
+        assert resp.status_code == 200
+        by_zone = {z["zone"]: z["cameraCount"] for z in resp.json()}
+        assert by_zone["A-Zona"] == 2
+        assert by_zone["B-Zona"] == 1
+
+    async def test_zones_endpoint_filters_by_building(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={
+                "name": "Ikkinchi bino kamerasi",
+                "ip": "10.0.4.1",
+                "building": "2-Bino (Klinika va Laboratoriya)",
+                "zone": "Boshqa-Zona",
+                "resolution": "1080p",
+            },
+        )
+        resp = await client.get(
+            "/api/cameras/zones", headers=headers, params={"building": "1-Bino (Asosiy korpus)"}
+        )
+        zones = [z["zone"] for z in resp.json()]
+        assert "Boshqa-Zona" not in zones
+
+    async def test_newly_created_camera_is_not_reachable_until_health_swept(self, client: AsyncClient):
+        """A camera's status='faol' (admin intent) is set immediately on
+        create, but isReachable (observed) only becomes true once
+        app/jobs/camera_health.py's sweep has actually reached it — the two
+        are independent by design."""
+        headers = await auth_headers(client, "admin", "admin123")
+        created = (
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": "Yangi kamera",
+                    "ip": "192.0.2.77",
+                    "building": "1-Bino (Asosiy korpus)",
+                    "zone": "A-Zona",
+                    "resolution": "1080p",
+                    "status": "faol",
+                },
+            )
+        ).json()
+        assert created["status"] == "faol"
+        assert created["isReachable"] is False

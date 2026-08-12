@@ -1,0 +1,36 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database import Base
+
+
+class Event(Base):
+    """Matches src/types/index.ts `AIEvent`. camera_name/building are
+    denormalized snapshots taken at detection time — an event must stay
+    readable even if the camera it came from is later deleted."""
+
+    __tablename__ = "events"
+    __table_args__ = (
+        CheckConstraint("severity IN ('past', 'o''rta', 'yuqori')", name="ck_events_severity"),
+        CheckConstraint("status IN ('yangi', 'tasdiqlangan', 'rad_etilgan')", name="ck_events_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    camera_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cameras.id", ondelete="SET NULL"), nullable=True
+    )
+    camera_name: Mapped[str] = mapped_column(String, nullable=False)
+    building: Mapped[str] = mapped_column(String, nullable=False)
+    module_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    module_name: Mapped[str] = mapped_column(String, nullable=False)
+    group: Mapped[str] = mapped_column(String, nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="yangi")
+    person_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)

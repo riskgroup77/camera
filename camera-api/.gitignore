@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+
+# Backups (scripts/backup_postgres.sh, scripts/backup_minio.py) contain
+# real data — DB dumps, uploaded photos/passports — never commit them.
+backups/
