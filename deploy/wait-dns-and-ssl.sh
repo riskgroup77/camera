@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Polls DNS on ahost authoritative NS; runs certbot when all cam domains resolve.
+# Polls DNS on ahost authoritative NS; runs certbot when all cam fermi domains resolve.
 set -euo pipefail
 
-DOMAINS=(cam.devflix.uz camapi.devflix.uz storage.camapi.devflix.uz stream.cam.devflix.uz)
+DOMAINS=(cam.fermi.uz camapi.fermi.uz)
 NS=rdns1.ahost.uz
 TARGET=87.192.230.208
-EMAIL=admin@camapi.devflix.uz
+EMAIL=admin@fermi.uz
 LOG=/var/log/camera-ssl-wait.log
 
 log() { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
@@ -21,12 +21,10 @@ all_ready() {
 }
 
 if all_ready; then
-  log "DNS ready — requesting Let's Encrypt certificate"
+  log "DNS ready — requesting Let's Encrypt certificate for cam + camapi"
   certbot --nginx \
-    -d cam.devflix.uz \
-    -d camapi.devflix.uz \
-    -d storage.camapi.devflix.uz \
-    -d stream.cam.devflix.uz \
+    -d cam.fermi.uz \
+    -d camapi.fermi.uz \
     --non-interactive --agree-tos -m "$EMAIL" --redirect
   log "SSL installed successfully"
   systemctl disable camera-ssl-wait.timer 2>/dev/null || true

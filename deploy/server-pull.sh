@@ -15,14 +15,8 @@ echo "=== Frontend build ==="
 npm run build
 rsync -a --delete dist/ /var/www/cam.fermi.uz/
 
-echo "=== Nginx configs (fermi) ==="
-for f in cam-fermi-frontend cam-fermi-api cam-fermi-storage cam-fermi-stream; do
-  if [[ -f "deploy/nginx/${f}.conf" ]]; then
-    cp "deploy/nginx/${f}.conf" "/etc/nginx/sites-available/${f}.conf"
-    ln -sf "/etc/nginx/sites-available/${f}.conf" "/etc/nginx/sites-enabled/${f}.conf"
-  fi
-done
-nginx -t && systemctl reload nginx
+echo "=== Nginx configs (fermi, no duplicates) ==="
+bash deploy/nginx-cleanup-fermi.sh
 
 echo "=== Docker compose overrides ==="
 cp deploy/docker-compose.override.yml camera-api/docker-compose.override.yml

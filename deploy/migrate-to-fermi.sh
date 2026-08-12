@@ -53,24 +53,14 @@ openssl req -x509 -nodes -days 90 -newkey rsa:2048 \
   -subj "/CN=${FRONTEND}" \
   -addext "subjectAltName=DNS:${FRONTEND},DNS:${API},DNS:${STORAGE},DNS:${STREAM}"
 
-echo "[migrate] Configuring nginx..."
-cp "$APP_DIR/deploy/nginx/cam-fermi-frontend.conf" /etc/nginx/sites-available/cam.fermi.uz.conf
-cp "$APP_DIR/deploy/nginx/cam-fermi-api.conf" /etc/nginx/sites-available/camapi.fermi.uz.conf
-cp "$APP_DIR/deploy/nginx/cam-fermi-storage.conf" /etc/nginx/sites-available/storage.camapi.fermi.uz.conf
-cp "$APP_DIR/deploy/nginx/cam-fermi-stream.conf" /etc/nginx/sites-available/stream.cam.fermi.uz.conf
+echo "[migrate] Configuring nginx (canonical *.fermi.uz.conf, no duplicates)..."
+bash "$APP_DIR/deploy/nginx-cleanup-fermi.sh"
 
-ln -sf /etc/nginx/sites-available/cam.fermi.uz.conf /etc/nginx/sites-enabled/
-ln -sf /etc/nginx/sites-available/camapi.fermi.uz.conf /etc/nginx/sites-enabled/
-ln -sf /etc/nginx/sites-available/storage.camapi.fermi.uz.conf /etc/nginx/sites-enabled/
-ln -sf /etc/nginx/sites-available/stream.cam.fermi.uz.conf /etc/nginx/sites-enabled/
-
-rm -f /etc/nginx/sites-enabled/cam.devflix.uz.conf
-rm -f /etc/nginx/sites-enabled/camapi.devflix.uz.conf
-rm -f /etc/nginx/sites-enabled/storage.camapi.devflix.uz.conf
-rm -f /etc/nginx/sites-enabled/stream.cam.devflix.uz.conf
-
-nginx -t
-systemctl reload nginx
+echo "[migrate] Enabling SSL wait timers..."
+cp "$APP_DIR/deploy/camera-ssl-storage-stream.service" /etc/systemd/system/
+cp "$APP_DIR/deploy/camera-ssl-storage-stream.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now camera-ssl-storage-stream.timer
 
 echo "[migrate] Restarting API container..."
 cd "$APP_DIR/camera-api"

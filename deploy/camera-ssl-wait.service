@@ -1,5 +1,5 @@
 [Unit]
-Description=Wait for cam.devflix.uz DNS and install SSL
+Description=Wait for cam.fermi.uz DNS and install SSL
 
 [Service]
 Type=oneshot
