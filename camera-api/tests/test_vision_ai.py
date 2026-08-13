@@ -63,6 +63,11 @@ class TestRecentlyFlagged:
 
 @pytest.mark.usefixtures("seeded")
 class TestProcessCameraFrameForSleep:
+    async def test_fewer_than_two_frames_raises_no_event(self, db_session, a_camera):
+        frame = FACE_IMAGE_PATH.read_bytes()
+        assert await process_camera_frame_for_sleep([], db_session, a_camera) == 0
+        assert await process_camera_frame_for_sleep([frame], db_session, a_camera) == 0
+
     async def test_no_face_in_frame_raises_no_event(self, db_session, a_camera):
         import io
 
@@ -72,19 +77,19 @@ class TestProcessCameraFrameForSleep:
         buf = io.BytesIO()
         blank.save(buf, format="JPEG")
 
-        raised = await process_camera_frame_for_sleep(buf.getvalue(), buf.getvalue(), db_session, a_camera)
+        raised = await process_camera_frame_for_sleep([buf.getvalue(), buf.getvalue()], db_session, a_camera)
         assert raised == 0
 
     async def test_awake_face_raises_no_event(self, db_session, a_camera):
         # t1.jpg is a real open-eyed photo — exercises the real EAR pipeline
         # end to end (not just the dedup logic above), no patching needed.
         frame = FACE_IMAGE_PATH.read_bytes()
-        raised = await process_camera_frame_for_sleep(frame, frame, db_session, a_camera)
+        raised = await process_camera_frame_for_sleep([frame, frame, frame, frame], db_session, a_camera)
         assert raised == 0
         events = (await db_session.execute(select(Event))).scalars().all()
         assert len(events) == 0
 
-    async def test_asleep_in_both_frames_raises_an_event(self, db_session, a_camera, monkeypatch):
+    async def test_asleep_in_every_frame_raises_an_event_at_top_confidence(self, db_session, a_camera, monkeypatch):
         # No real closed-eye fixture photo is available, so this forces the
         # EAR check itself (already unit-tested in test_sleep_detection.py)
         # to report "asleep", to exercise everything downstream: matching,
@@ -92,7 +97,7 @@ class TestProcessCameraFrameForSleep:
         monkeypatch.setattr(vision_ai, "is_asleep", lambda landmarks: True)
 
         frame = FACE_IMAGE_PATH.read_bytes()
-        raised = await process_camera_frame_for_sleep(frame, frame, db_session, a_camera)
+        raised = await process_camera_frame_for_sleep([frame, frame, frame, frame], db_session, a_camera)
         assert raised == 1
 
         events = (await db_session.execute(select(Event))).scalars().all()
@@ -100,26 +105,29 @@ class TestProcessCameraFrameForSleep:
         assert events[0].module_code == SLEEP_MODULE_CODE
         assert events[0].camera_name == a_camera.name
         assert events[0].severity == "past"
-        assert events[0].confidence == 80
+        assert events[0].confidence == 95  # 100% of frames agreed — top of the confidence scale
 
-    async def test_asleep_only_in_second_frame_is_not_confirmed(self, db_session, a_camera, monkeypatch):
-        # The whole point of requiring two frames: a face that reads asleep
-        # in frame_b but was awake in frame_a (a blink, or a one-off
-        # bad-angle glitch — see the module docstring) must NOT raise.
-        # t1.jpg has 6 detectable faces, so is_asleep() is called 6 times
-        # while building frame_a's confirmed set, then again per-face while
-        # walking frame_b — flip the mock's answer after those first 6 to
-        # simulate "asleep now, wasn't a moment ago".
+    async def test_asleep_in_only_a_minority_of_frames_is_not_confirmed(self, db_session, a_camera, monkeypatch):
+        # The whole point of the majority vote: a face reading asleep in
+        # under settings.sleep_confirmation_majority_ratio of the burst
+        # (here: 1 of 4 = 25%, well under the 75% default) is a blink or a
+        # one-off bad-angle glitch, not sustained sleep — see the module
+        # docstring. t1.jpg has 6 detectable faces per frame, all
+        # unidentified here (no enrolled candidates), so is_asleep() is
+        # called once per frame for the whole "unidentified" bucket (OR
+        # logic — see _tally_votes) once the first face's answer is known;
+        # flip the mock to "asleep" for only the very first call (frame 1)
+        # and "awake" for the rest (frames 2-4).
         call_count = {"n": 0}
 
         def fake_is_asleep(landmarks):
             call_count["n"] += 1
-            return call_count["n"] > 6
+            return call_count["n"] == 1
 
         monkeypatch.setattr(vision_ai, "is_asleep", fake_is_asleep)
 
         frame = FACE_IMAGE_PATH.read_bytes()
-        raised = await process_camera_frame_for_sleep(frame, frame, db_session, a_camera)
+        raised = await process_camera_frame_for_sleep([frame, frame, frame, frame], db_session, a_camera)
         assert raised == 0
 
         events = (await db_session.execute(select(Event))).scalars().all()
@@ -130,9 +138,9 @@ class TestProcessCameraFrameForSleep:
         # only ever looks at the largest one). The enrolled embedding is
         # extracted the same way attendance enrollment does — from the
         # largest face — so exactly one of the 6 should match it; the rest
-        # are unmatched strangers, of which only the first raises an event
-        # (the other 4 get deduped against that first "unidentified sleeper
-        # at this camera" slot — see TestRecentlyFlagged above).
+        # are unmatched strangers, pooled into one "unidentified sleeper"
+        # bucket (see TestRecentlyFlagged above and _tally_votes's
+        # docstring).
         faculty = (await db_session.execute(select(Faculty))).scalars().first()
         embedding = await extract_embedding(FACE_IMAGE_PATH.read_bytes())
         student = StudentStaff(
@@ -144,7 +152,7 @@ class TestProcessCameraFrameForSleep:
 
         monkeypatch.setattr(vision_ai, "is_asleep", lambda landmarks: True)
         frame = FACE_IMAGE_PATH.read_bytes()
-        raised = await process_camera_frame_for_sleep(frame, frame, db_session, a_camera)
+        raised = await process_camera_frame_for_sleep([frame, frame, frame, frame], db_session, a_camera)
         assert raised == 2
 
         events = (await db_session.execute(select(Event))).scalars().all()
@@ -156,8 +164,8 @@ class TestProcessCameraFrameForSleep:
         monkeypatch.setattr(vision_ai, "is_asleep", lambda landmarks: True)
 
         frame = FACE_IMAGE_PATH.read_bytes()
-        first = await process_camera_frame_for_sleep(frame, frame, db_session, a_camera)
-        second = await process_camera_frame_for_sleep(frame, frame, db_session, a_camera)
+        first = await process_camera_frame_for_sleep([frame, frame, frame, frame], db_session, a_camera)
+        second = await process_camera_frame_for_sleep([frame, frame, frame, frame], db_session, a_camera)
         assert first == 1
         assert second == 0
 

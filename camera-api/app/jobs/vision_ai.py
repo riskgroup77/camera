@@ -1,29 +1,45 @@
 """TT kriteriya 20 ("Talabaning uxlab qolishi") — eye-closure (EAR) sweep
 across every reachable camera. See app/services/sleep_detection.py for the
-detection method and its honest accuracy caveats.
+per-frame detection method (EAR threshold + a head-pose plausibility gate)
+and its honest accuracy caveats.
 
 Runs its own camera sweep (separate from app/jobs/attendance_ai.py's)
 rather than sharing a single frame grab — checks EVERY face in the frame
 (a classroom camera routinely sees many people; attendance matching only
 cares about the largest/nearest face at a check-in point), a genuinely
-different requirement worth the modest extra ffmpeg overhead of a second
-per-camera frame grab every sweep tick.
+different requirement.
 
-Grabs a PAIR of frames per tick (app/services/frame_grabber.py's
-grab_frame_pair, ~1s apart — the same two-frame pattern app/jobs/fire_ai.py
-uses) and only raises an Event when the same identity reads as asleep in
-BOTH. Found necessary from real testing: a single frame can misread a
-normal blink, or an oblique head angle (someone looking down at a desk
-instead of the camera) as "asleep" — see sleep_detection.py's module
-docstring for the concrete EAR numbers that motivated this. Requiring two
-independent readings ~1s apart filters out both without needing head-pose
-detection: a blink doesn't last a full second, and while a bad-angle
-glitch CAN repeat across both frames (this isn't a fix for camera
-placement itself), a momentary one won't.
+Grabs a BURST of frames per tick (app/services/frame_grabber.py's
+grab_frame_burst — settings.sleep_confirmation_frame_count frames,
+settings.sleep_confirmation_gap_seconds apart, ~3s total by default) and
+raises an Event only for an identity that reads as asleep in at least
+settings.sleep_confirmation_majority_ratio of the frames they actually
+appear in. This replaced an earlier "asleep in exactly 2 frames, both
+required" design: requiring literal unanimity across only 2 samples meant
+one noisy frame (see sleep_detection.py's documented oblique-angle
+failure mode) could flip the result either way, in either direction. A
+majority vote across more samples is statistically sturdier — a real
+blink is well under a second and won't cost a person more than one frame
+out of four at these gaps, while someone genuinely asleep reads as closed
+consistently. Now cheap to do at all because app/services/stream_cache.py
+already keeps a persistent decoder per stream — grabbing 4 frames costs
+nothing beyond 2 did.
+
+Known limitation, unchanged from the earlier 2-frame version: there is no
+cross-frame face tracker (no DeepSORT/ByteTrack here), so an
+UNIDENTIFIED sleeping face's votes are pooled under a single "unknown"
+bucket per camera per tick rather than tracked per physical person. Two
+different unidentified people each closing their eyes in one frame out of
+four could theoretically combine into a false majority for that bucket.
+This is a real, accepted gap — solving it needs actual multi-object
+tracking, out of scope here — and is exactly why identified sleepers
+should be treated as the trustworthy signal from this module; an
+unidentified "asleep" Event is weaker evidence than an identified one.
 """
 
 import asyncio
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -37,7 +53,7 @@ from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_burst
 from app.services.sleep_detection import is_asleep
 from app.ws import manager
 
@@ -69,59 +85,105 @@ async def _recently_flagged(db: AsyncSession, camera_id, person_name: str | None
     return result.scalar_one_or_none() is not None
 
 
-def _asleep_identities(faces, candidates: CandidateMatrix) -> set[str | None]:
-    """Returns the set of identities (student_staff_id, or None for an
-    unidentified face) that read as asleep among the given faces —
-    used to check the SAME identity shows up asleep in both frames."""
-    asleep_faces = [face for face in faces if is_asleep(face.landmarks_68)]
-    if not asleep_faces:
-        return set()
-    embeddings = np.stack([face.embedding for face in asleep_faces])
-    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
-    return {match[0] if match is not None else None for match in matches}
+def _tally_votes(
+    frames_faces: list[list], candidates: CandidateMatrix
+) -> tuple[dict[str | None, int], dict[str | None, int]]:
+    """For each frame's detected faces, matches identities and tallies how
+    many frames each identity (or None, for unidentified) appeared in
+    (`appearances`) versus read as asleep in (`asleep_votes`).
+
+    A KNOWN identity matched by more than one face in the same frame (a
+    rare double-detection glitch) counts once, via AND-then-OR being
+    unnecessary there — but every unidentified face is checked
+    individually and pooled with OR logic (the frame counts as an
+    "unidentified sleeper" appearance if ANY unidentified face in it read
+    as asleep) — see the module docstring's "known limitation" note on
+    why unidentified faces are pooled into one None bucket at all rather
+    than tracked individually; collapsing to just the first one checked
+    would throw away real signal for no reason, since (unlike a real
+    duplicate identity match) there's no way to know two None faces are
+    "the same" vs genuinely different unidentified people either way."""
+    appearances: dict[str | None, int] = defaultdict(int)
+    asleep_votes: dict[str | None, int] = defaultdict(int)
+
+    for faces in frames_faces:
+        if not faces:
+            continue
+        embeddings = np.stack([face.embedding for face in faces])
+        matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+
+        known_seen_this_frame: set[str] = set()
+        unidentified_present = False
+        unidentified_asleep = False
+
+        for face, match in zip(faces, matches, strict=True):
+            if match is not None:
+                identity = match[0]
+                if identity in known_seen_this_frame:
+                    continue
+                known_seen_this_frame.add(identity)
+                appearances[identity] += 1
+                if is_asleep(face.landmarks_68):
+                    asleep_votes[identity] += 1
+            else:
+                unidentified_present = True
+                if is_asleep(face.landmarks_68):
+                    unidentified_asleep = True
+
+        if unidentified_present:
+            appearances[None] += 1
+            if unidentified_asleep:
+                asleep_votes[None] += 1
+
+    return appearances, asleep_votes
 
 
 async def process_camera_frame_for_sleep(
-    frame_a: bytes, frame_b: bytes, db: AsyncSession, camera: Camera, candidates: CandidateMatrix | None = None
+    frames: list[bytes], db: AsyncSession, camera: Camera, candidates: CandidateMatrix | None = None
 ) -> int:
-    """Checks every face in frame_b, raises a (deduped) Event for each one
-    whose eyes read as closed AND whose same identity also read as asleep
-    in frame_a — see the module docstring for why the second frame is
-    required. Returns how many Events were raised.
+    """Runs face detection on every frame in the burst, tallies per-identity
+    asleep-vote ratios (see _tally_votes), and raises a (deduped) Event for
+    each identity whose ratio meets settings.sleep_confirmation_
+    majority_ratio — see the module docstring for the full rationale.
+    Returns how many Events were raised.
 
-    `candidates` lets a sweep loop share one CandidateMatrix across every
-    camera this tick instead of each camera re-querying/re-parsing the
-    same embeddings — see app/services/face_matching.py. Defaults to a
-    self-load for simple/one-off callers (tests, mainly)."""
-    faces_b = await detect_faces(frame_b)
-    if not faces_b:
+    Requires at least 2 frames with any detected face to make a call at
+    all (a single frame can't distinguish a blink from real closure no
+    matter the vote ratio). `candidates` lets a sweep loop share one
+    CandidateMatrix across every camera this tick instead of each camera
+    re-querying/re-parsing the same embeddings — see
+    app/services/face_matching.py. Defaults to a self-load for simple/
+    one-off callers (tests, mainly)."""
+    if len(frames) < 2:
         return 0
 
     if candidates is None:
         candidates = await load_candidate_matrix(db)
-    faces_a = await detect_faces(frame_a)
-    confirmed_identities = _asleep_identities(faces_a, candidates)
 
-    asleep_faces_b = [face for face in faces_b if is_asleep(face.landmarks_68)]
-    matches_b: list[tuple[str, float] | None] = []
-    if asleep_faces_b:
-        embeddings_b = np.stack([face.embedding for face in asleep_faces_b])
-        matches_b = candidates.best_matches(embeddings_b, settings.attendance_ai_match_threshold)
+    frames_faces = [await detect_faces(frame) for frame in frames]
+    appearances, asleep_votes = _tally_votes(frames_faces, candidates)
 
     raised = 0
-    for match in matches_b:
-        student_staff_id = match[0] if match is not None else None
-
-        if student_staff_id not in confirmed_identities:
-            continue  # not asleep in the earlier frame too — likely a blink or a one-off glitch
+    for identity, total in appearances.items():
+        if total < 2:
+            continue  # appeared in only one frame — not enough evidence either way
+        votes = asleep_votes.get(identity, 0)
+        ratio = votes / total
+        if ratio < settings.sleep_confirmation_majority_ratio:
+            continue
 
         person_name = None
-        if student_staff_id is not None:
-            person = await db.get(StudentStaff, student_staff_id)
+        if identity is not None:
+            person = await db.get(StudentStaff, identity)
             person_name = person.full_name if person else None
 
         if await _recently_flagged(db, camera.id, person_name):
             continue
+
+        # Scales with how consistently the identity read as asleep across
+        # the burst — a bare-majority ratio (just above the threshold)
+        # reads as more tentative than every sampled frame agreeing.
+        confidence = min(95, round(60 + ratio * 35))
 
         event = Event(
             camera_id=camera.id,
@@ -130,8 +192,8 @@ async def process_camera_frame_for_sleep(
             module_code=SLEEP_MODULE_CODE,
             module_name=SLEEP_MODULE_NAME,
             group="E",
-            confidence=80,  # two independent frames agreed — more than a single-frame reading, still modest
-            severity="past",  # low: sleeping isn't dangerous, even when confirmed across two frames
+            confidence=confidence,
+            severity="past",  # low: sleeping isn't dangerous, even when confirmed across a multi-frame burst
             person_name=person_name,
             status="yangi",
         )
@@ -162,8 +224,8 @@ async def process_camera_frame_for_sleep(
 async def run_vision_ai_sweep_once(
     session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
 ) -> int:
-    """Grabs a frame pair from every reachable 'faol' camera and checks it
-    for sleeping faces — cameras run concurrently (bounded by
+    """Grabs a multi-frame burst from every reachable 'faol' camera and
+    checks it for sleeping faces — cameras run concurrently (bounded by
     _camera_semaphore), and the candidate matrix is loaded once for the
     whole sweep and shared across every camera task. See
     app/jobs/attendance_ai.py's run_attendance_ai_sweep_once, which this
@@ -178,12 +240,15 @@ async def run_vision_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> int:
         async with _camera_semaphore:
-            frames = await grab_frame_pair(camera.stream_url)
-            if frames is None:
+            frames = await grab_frame_burst(
+                camera.stream_url,
+                count=settings.sleep_confirmation_frame_count,
+                gap_seconds=settings.sleep_confirmation_gap_seconds,
+            )
+            if len(frames) < 2:
                 return 0
-            frame_a, frame_b = frames
             async with session_factory() as camera_db:
-                return await process_camera_frame_for_sleep(frame_a, frame_b, camera_db, camera, candidates)
+                return await process_camera_frame_for_sleep(frames, camera_db, camera, candidates)
 
     results = await asyncio.gather(*(_process_one(camera) for camera in cameras), return_exceptions=True)
 

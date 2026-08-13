@@ -95,6 +95,11 @@ export interface CameraConfig {
    * ("faol bo'lishi kerak"), bu esa app/jobs/camera_health.py'ning
    * so'nggi tekshiruvda kamerani haqiqatan topa olgan-olmaganligi. */
   isReachable: boolean;
+  /** [x, y] juftliklari ro'yxati, har biri kadr kengligi/balandligiga
+   * nisbatan 0-1 oralig'ida normallashtirilgan (TT kriteriya 2 — taqiqlangan
+   * zonaga kirish). null/aniqlanmagan bo'lsa app/jobs/zone_entry_ai.py bu
+   * kamerani butunlay o'tkazib yuboradi. */
+  restrictedZonePolygon?: [number, number][] | null;
 }
 
 export type AIModuleGroup = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
@@ -185,4 +190,10 @@ export interface LessonSession {
   sleepIncidents: number;
   teacherActivityScore: number;
   teacherOnTime: boolean;
+  /** Uchalasi birga o'rnatiladi (ScheduleLessonModal) — shundan so'ng
+   * app/jobs/teacher_punctuality_ai.py va app/jobs/lesson_quality_ai.py bu
+   * darsni avtomatik kuzata boshlaydi. */
+  teacherId?: string | null;
+  cameraId?: string | null;
+  scheduledStartTime?: string | null;
 }

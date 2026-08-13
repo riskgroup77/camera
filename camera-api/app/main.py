@@ -14,8 +14,19 @@ from app.jobs.attendance_ai import attendance_ai_loop
 from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.fire_ai import fire_ai_loop
+from app.jobs.abandoned_object_ai import abandoned_object_ai_loop
+from app.jobs.crowd_density_ai import crowd_density_ai_loop
+from app.jobs.disorder_ai import disorder_ai_loop
+from app.jobs.fall_ai import fall_ai_loop
+from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
+from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
+from app.jobs.phone_ai import phone_ai_loop
+from app.jobs.teacher_punctuality_ai import teacher_punctuality_ai_loop
+from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
+from app.jobs.vehicle_ai import vehicle_ai_loop
 from app.jobs.vision_ai import vision_ai_loop
+from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.logging_config import configure_logging
 from app.rate_limit import limiter
 from app.services import video_gateway
@@ -62,6 +73,17 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(attendance_ai_loop()),
             asyncio.create_task(vision_ai_loop()),
             asyncio.create_task(fire_ai_loop()),
+            asyncio.create_task(teacher_punctuality_ai_loop()),
+            asyncio.create_task(unauthorized_person_ai_loop()),
+            asyncio.create_task(crowd_density_ai_loop()),
+            asyncio.create_task(abandoned_object_ai_loop()),
+            asyncio.create_task(disorder_ai_loop()),
+            asyncio.create_task(phone_ai_loop()),
+            asyncio.create_task(vehicle_ai_loop()),
+            asyncio.create_task(fall_ai_loop()),
+            asyncio.create_task(zone_entry_ai_loop()),
+            asyncio.create_task(lesson_quality_ai_loop()),
+            asyncio.create_task(fight_ai_loop()),
             asyncio.create_task(stream_cache_reaper_loop()),
         ]
         logger.info("acquired AI sweep leader lock — sweep loops running in this worker", extra={"event": "leader_elected"})

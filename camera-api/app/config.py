@@ -78,6 +78,18 @@ class Settings(BaseSettings):
     # every tick for a person who stays asleep across many sweeps.
     vision_ai_interval_seconds: int = 30
     sleep_dedup_minutes: int = 15
+    # PERCLOS-style multi-frame confirmation (app/jobs/vision_ai.py) —
+    # replaces the earlier fixed 2-frame "asleep in both" check with a
+    # majority vote across a short burst, on the same premise (a blink
+    # doesn't last multiple seconds) but statistically sturdier: one noisy
+    # frame out of 4 no longer flips the result either way. Frame count is
+    # a real cost (each is an InsightFace inference call — see
+    # face_recognition_inference_concurrency), so raising it trades
+    # accuracy for load; 4 frames over ~3s was picked as a reasonable
+    # balance, not measured against labeled footage.
+    sleep_confirmation_frame_count: int = 4
+    sleep_confirmation_gap_seconds: float = 1.0
+    sleep_confirmation_majority_ratio: float = 0.75
 
     # TT kriteriya 23 ("Yong'in / tutun aniqlash") — app/jobs/fire_ai.py.
     # Its own interval (not shared with vision_ai_interval_seconds) since
@@ -88,6 +100,141 @@ class Settings(BaseSettings):
     # than a sustained nap.
     fire_ai_interval_seconds: int = 30
     fire_dedup_minutes: int = 5
+
+    # TT kriteriya 22 ("O'qituvchining darsga aniq kelishi") —
+    # app/jobs/teacher_punctuality_ai.py. Only affects LessonSession rows
+    # that have teacher_id/camera_id/scheduled_start_time set (no
+    # scheduling UI exists yet to populate these, so this is a no-op
+    # until a schedule is actually entered). grace_minutes is how long
+    # after scheduled_start_time a teacher has to be seen before the
+    # check runs and (if not seen) raises an Event.
+    teacher_punctuality_interval_seconds: int = 60
+    teacher_punctuality_grace_minutes: int = 10
+
+    # TT kriteriya 1 ("Notanish/begona shaxsni aniqlash") —
+    # app/jobs/unauthorized_person_ai.py.
+    unauthorized_person_ai_interval_seconds: int = 30
+    unauthorized_person_dedup_minutes: int = 5
+
+    # TT kriteriya 5 ("Olomon zichligi anomaliyasi") —
+    # app/jobs/crowd_density_ai.py. baseline_window/min_samples control the
+    # per-camera rolling face-count history; spike_multiplier/min_absolute
+    # control what counts as an anomaly relative to that baseline.
+    crowd_ai_interval_seconds: int = 30
+    crowd_dedup_minutes: int = 10
+    crowd_baseline_window: int = 20
+    crowd_baseline_min_samples: int = 5
+    crowd_spike_multiplier: float = 2.0
+    crowd_min_absolute: int = 4
+
+    # TT kriteriya 4 ("Egasiz qoldirilgan buyum") —
+    # app/jobs/abandoned_object_ai.py. min_area/max_area_fraction filter
+    # obviously-wrong blob sizes (noise vs. a lighting-change covering
+    # most of the frame); match_distance_px is how close two ticks'
+    # largest blob centroids must be to count as "the same" static
+    # region; min_consecutive_ticks approximates how long it must stay
+    # put (in sweep ticks, not exact wall-clock — see module docstring).
+    abandoned_object_ai_interval_seconds: int = 30
+    abandoned_object_dedup_minutes: int = 15
+    abandoned_object_min_area: int = 800
+    abandoned_object_max_area_fraction: float = 0.5
+    abandoned_object_match_distance_px: float = 40.0
+    abandoned_object_min_consecutive_ticks: int = 4
+    # MOG2's default AUTOMATIC learning rate adapts fast enough (tuned for
+    # real ~30fps video) that a genuinely static new object gets absorbed
+    # into the background model after just 1-2 sweep ticks when ticks are
+    # ~30s apart — found from real testing (see
+    # tests/test_abandoned_object_ai.py), not assumed. An explicit, much
+    # lower learning rate keeps a new static region classified as
+    # foreground for several ticks, which is what min_consecutive_ticks
+    # above actually needs to be able to observe.
+    abandoned_object_learning_rate: float = 0.02
+
+    # TT kriteriya 17 ("Tartib-intizom buzilishi") —
+    # app/jobs/disorder_ai.py. min_absolute_magnitude/spike_multiplier are
+    # calibrated against real Farneback optical-flow numbers (see the
+    # module docstring): identical frames read ~0.0003-0.0006, a 5-10px
+    # shift reads 5-10.
+    disorder_ai_interval_seconds: int = 30
+    disorder_dedup_minutes: int = 10
+    disorder_baseline_window: int = 20
+    disorder_baseline_min_samples: int = 5
+    disorder_spike_multiplier: float = 3.0
+    disorder_min_absolute_magnitude: float = 1.5
+
+    # YOLOv8 object detection (app/services/object_detection.py) — shared
+    # by TT kriteriya 16 (telefon) and 25 (transport). See
+    # face_recognition_gpu_enabled/inference_concurrency for the same
+    # pattern applied to InsightFace; this is the object-detection
+    # equivalent, a separate knob since the two models have independent
+    # resource costs.
+    object_detection_model_path: str = "yolov8n.pt"
+    object_detection_gpu_enabled: bool = False
+    object_detection_inference_concurrency: int = 2
+
+    # TT kriteriya 16 ("Imtihonda telefondan foydalanish") —
+    # app/jobs/phone_ai.py.
+    phone_ai_interval_seconds: int = 30
+    phone_dedup_minutes: int = 10
+    phone_detection_confidence: float = 0.5
+
+    # TT kriteriya 25 ("Hovlida transport harakati") —
+    # app/jobs/vehicle_ai.py.
+    vehicle_ai_interval_seconds: int = 30
+    vehicle_dedup_minutes: int = 10
+    vehicle_detection_confidence: float = 0.5
+
+    # mediapipe Pose Landmarker (app/services/pose_detection.py) — shared
+    # by TT kriteriya 24 (yiqilish), 2 (taqiqlangan zona), 21 (o'qituvchi
+    # faolligi). Same pattern as object_detection_*/face_recognition_*
+    # above, a separate knob since each model has independent resource
+    # costs.
+    pose_detection_model_path: str = "pose_landmarker_lite.task"
+    pose_detection_inference_concurrency: int = 2
+    pose_detection_max_poses: int = 5
+
+    # TT kriteriya 24 ("Yiqilib tushish") — app/jobs/fall_ai.py /
+    # app/services/fall_detection.py. dedup_minutes is deliberately
+    # shorter than other criteria's — a real fall is safety-critical and
+    # worth re-confirming sooner than, say, a sustained sleep Event.
+    fall_ai_interval_seconds: int = 30
+    fall_dedup_minutes: int = 5
+    fall_min_landmark_visibility: float = 0.5
+    fall_torso_angle_threshold: float = 60.0
+    fall_aspect_ratio_threshold: float = 1.4
+
+    # TT kriteriya 2 ("Taqiqlangan zonaga kirish") —
+    # app/jobs/zone_entry_ai.py / app/services/zone_detection.py.
+    zone_ai_interval_seconds: int = 30
+    zone_dedup_minutes: int = 5
+    zone_min_landmark_visibility: float = 0.5
+
+    # TT kriteriya 19 ("Talabaning darsga diqqati") va 21 ("O'qituvchi
+    # faolligi") — app/jobs/lesson_quality_ai.py. lesson_duration_minutes
+    # defines the "active window" after scheduled_start_time during which
+    # both scores are sampled — no LessonSession end-time field exists,
+    # so this is a configured assumption (typical class length), not
+    # read from real schedule data.
+    lesson_quality_ai_interval_seconds: int = 30
+    lesson_duration_minutes: int = 90
+    attention_score_frontal: float = 100.0
+    attention_score_not_frontal: float = 40.0
+    attention_score_phone_visible: float = 20.0
+    teacher_activity_min_visibility: float = 0.5
+    # Scales average per-landmark displacement (normalized 0-1 frame
+    # coordinates, ~1s apart) into a 0-100 score. Not calibrated against
+    # real classroom footage — chosen so a small (~0.1 average landmark
+    # movement) reads as a mid-range score, an untuned starting point.
+    teacher_activity_scale: float = 500.0
+
+    # TT kriteriya 14 ("Jang/nizolashish holati") — app/jobs/fight_ai.py.
+    # THE LEAST RELIABLE criterion in this system — see that module's
+    # docstring. Reuses app/jobs/disorder_ai.py's motion-spike baseline
+    # logic under a namespaced key, plus its own proximity check.
+    fight_ai_interval_seconds: int = 30
+    fight_dedup_minutes: int = 5
+    fight_min_landmark_visibility: float = 0.5
+    fight_proximity_threshold: float = 0.15
 
     # How many cameras each AI sweep loop (attendance_ai/vision_ai/fire_ai)
     # processes concurrently, instead of one at a time. A dev machine with

@@ -7,3 +7,15 @@ __pycache__/
 # Backups (scripts/backup_postgres.sh, scripts/backup_minio.py) contain
 # real data — DB dumps, uploaded photos/passports — never commit them.
 backups/
+
+# Pretrained model weights — downloaded on demand by ultralytics (see
+# app/services/object_detection.py) and mediapipe (see
+# app/services/pose_detection.py), not source; large binaries don't
+# belong in git.
+*.pt
+*.task
+
+# Self-signed TLS cert/key auto-generated locally by MediaMTX — regenerated
+# per-machine, and private keys don't belong in git even when self-signed.
+auto.crt
+auto.key

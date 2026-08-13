@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -42,5 +42,15 @@ class Camera(Base):
     # — the exact gap this column closes.
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # TT kriteriya 2 ("Taqiqlangan zonaga kirish") — app/jobs/zone_entry_ai.py.
+    # A list of [x, y] pairs, each normalized 0-1 of the frame's width/height
+    # (same convention as app/services/pose_detection.py's landmark
+    # coordinates, so no separate coordinate-system conversion is needed
+    # when checking a detected person's position against this polygon).
+    # Nullable/no admin UI to draw one yet — a camera without this set is
+    # simply invisible to zone_entry_ai.py, same "not configured yet"
+    # pattern as stream_url being unset for the other AI sweep loops.
+    restricted_zone_polygon: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")

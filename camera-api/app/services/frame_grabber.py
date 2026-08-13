@@ -44,3 +44,28 @@ async def grab_frame_pair(stream_url: str, gap_seconds: float = 1.0) -> tuple[by
     if second is None:
         return None
     return first, second
+
+
+async def grab_frame_burst(stream_url: str, count: int, gap_seconds: float) -> list[bytes]:
+    """`count` frames of the same stream, `gap_seconds` apart — used by
+    app/jobs/vision_ai.py for PERCLOS-style sleep confirmation (majority
+    of a several-second window reading as eyes-closed, not just two
+    points ~1s apart). Only cheap to do because app/services/
+    stream_cache.py already keeps a persistent decoder running per
+    stream: each grab here is just reading whatever frame is currently
+    cached, not spawning a new ffmpeg process — under the old
+    spawn-per-call frame_grabber, a 4-frame burst would have meant 4x the
+    process/reconnect overhead of a single grab.
+
+    Returns however many frames were actually available (may be fewer
+    than `count`, or empty) rather than failing the whole burst over one
+    missed sample — a momentary cache miss mid-burst shouldn't discard
+    the frames that DID come through."""
+    frames: list[bytes] = []
+    for i in range(count):
+        if i > 0:
+            await asyncio.sleep(gap_seconds)
+        frame = await grab_frame(stream_url)
+        if frame is not None:
+            frames.append(frame)
+    return frames

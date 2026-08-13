@@ -27,14 +27,18 @@ faces. That produced an EAR reading of 1.3 on a real (awake) frame from
 this project's own camera — a real open eye tops out around 0.4-0.45. That
 specific direction (implausibly HIGH) never risks a false "asleep" anyway,
 since it's already nowhere near EAR_CLOSED_THRESHOLD; it's the opposite
-direction that matters. A genuinely closed eye is also low, so there's no
-EAR-value-alone way to tell a real closure apart from the same bad-angle
-geometry collapsing low instead of high — that would need an actual
-head-pose check (e.g. from landmark symmetry or the detector's own pose
-estimate), which isn't implemented here. What app/jobs/vision_ai.py does
-instead is require the SAME identity to read as asleep across two frames
-~1s apart before raising anything — a blink doesn't last that long, and
-that's the real mitigation for what this module can't distinguish alone.
+direction that matters — the same bad-angle geometry could just as easily
+collapse a face's eye region low instead of high, reading as "asleep" when
+the person is just looking away.
+
+is_asleep() now gates on `is_plausible_frontal()` first — a cheap
+landmark-only proxy for head yaw (see its docstring), rejecting exactly
+that failure mode BEFORE the EAR check ever runs, instead of relying
+solely on app/jobs/vision_ai.py's multi-frame confirmation to average it
+away. This is a real accuracy improvement, not a cosmetic one: it removes
+a documented, reproduced source of false "asleep" readings at the
+single-frame level, on top of (not instead of) the multi-frame majority
+vote in vision_ai.py.
 """
 
 import numpy as np
@@ -43,6 +47,24 @@ EAR_CLOSED_THRESHOLD = 0.21
 
 RIGHT_EYE_INDICES = [36, 37, 38, 39, 40, 41]
 LEFT_EYE_INDICES = [42, 43, 44, 45, 46, 47]
+
+# iBUG-68 scheme: 33 is the nose tip, 36/45 the outer corners of the
+# right/left eyes (subject's right/left, not image-left/right).
+NOSE_TIP_INDEX = 33
+RIGHT_EYE_OUTER_INDEX = 36
+LEFT_EYE_OUTER_INDEX = 45
+
+# A frontal face's nose tip sits near the horizontal midpoint between the
+# two outer eye corners (ratio ~0.5); as the head turns, the nose position
+# skews toward whichever side is turned away. This band was picked to
+# comfortably admit normal head movement (nodding, slight turns toward a
+# neighbor) while rejecting the ~45 degrees+ turn that produced the
+# EAR=1.3 degenerate reading described above — not tuned against a
+# labeled dataset, since none exists for this project; a real deployment
+# tuning this further should log rejected-frame frontality ratios over
+# real classroom footage and adjust the band from that.
+_FRONTALITY_MIN = 0.25
+_FRONTALITY_MAX = 0.75
 
 
 def _eye_aspect_ratio(landmarks: np.ndarray, indices: list[int]) -> float:
@@ -61,5 +83,27 @@ def average_eye_aspect_ratio(landmarks_68: np.ndarray) -> float:
     return (right + left) / 2.0
 
 
+def frontality_ratio(landmarks_68: np.ndarray) -> float:
+    """~0.5 for a roughly frontal face, moving toward 0 or 1 (and beyond)
+    as the head turns away from the camera — see the module docstring.
+    Landmark-only, no separate pose model or extra inference cost."""
+    right_outer_x = landmarks_68[RIGHT_EYE_OUTER_INDEX][0]
+    left_outer_x = landmarks_68[LEFT_EYE_OUTER_INDEX][0]
+    nose_x = landmarks_68[NOSE_TIP_INDEX][0]
+    span = left_outer_x - right_outer_x
+    if span == 0:
+        return 0.5  # degenerate geometry — don't reject on this basis alone
+    return float((nose_x - right_outer_x) / span)
+
+
+def is_plausible_frontal(landmarks_68: np.ndarray) -> bool:
+    return _FRONTALITY_MIN <= frontality_ratio(landmarks_68) <= _FRONTALITY_MAX
+
+
 def is_asleep(landmarks_68: np.ndarray) -> bool:
+    """False for both "eyes plausibly open" AND "head turned too far to
+    trust the eye geometry at all" — see the module docstring for why the
+    latter matters as much as the EAR threshold itself."""
+    if not is_plausible_frontal(landmarks_68):
+        return False
     return average_eye_aspect_ratio(landmarks_68) < EAR_CLOSED_THRESHOLD

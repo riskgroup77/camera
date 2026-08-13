@@ -33,6 +33,10 @@ class CameraOut(CamelModel):
     # recently. The two can disagree (e.g. status='faol' but a cable is
     # unplugged), and that disagreement is the whole point of this field.
     is_reachable: bool = False
+    # List of [x, y] pairs, each normalized 0-1 against frame width/height —
+    # see app/models/camera.py's Camera.restricted_zone_polygon docstring.
+    # None/empty means app/jobs/zone_entry_ai.py skips this camera entirely.
+    restricted_zone_polygon: list[list[float]] | None = None
 
 
 class CameraCreateIn(CamelModel):
@@ -61,6 +65,14 @@ class CameraZoneOut(CamelModel):
 
     zone: str
     camera_count: int
+
+
+class CameraZonePolygonIn(CamelModel):
+    """PUT body for app/routers/cameras.py's zone-polygon endpoint.
+    An empty/None polygon clears the restriction (camera stops being
+    swept by app/jobs/zone_entry_ai.py)."""
+
+    polygon: list[list[float]] | None = None
 
 
 class ConnectionTestIn(CamelModel):

@@ -18,6 +18,7 @@ from app.schemas.camera import (
     CameraOut,
     CameraUpdateIn,
     CameraZoneOut,
+    CameraZonePolygonIn,
     ConnectionTestIn,
     ConnectionTestOut,
 )
@@ -74,6 +75,7 @@ def _to_out(camera: Camera) -> CameraOut:
         status=camera.status,
         stream_url=camera.stream_url,
         is_reachable=is_reachable(camera.last_seen_at),
+        restricted_zone_polygon=camera.restricted_zone_polygon,
     )
 
 
@@ -179,6 +181,35 @@ async def update_camera(
     await db.commit()
     await db.refresh(camera, attribute_names=["building"])
     await _sync_stream(db, camera)
+    return _to_out(camera)
+
+
+@router.patch("/{camera_id}/zone-polygon", response_model=CameraOut)
+async def set_camera_zone_polygon(
+    camera_id: str,
+    body: CameraZonePolygonIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: PermDep,
+) -> CameraOut:
+    """Separate from update_camera (PATCH /{camera_id}) since the polygon
+    is drawn interactively on the live video feed — a distinct workflow
+    (CameraZoneModal.tsx) from the edit form, and one that shouldn't force
+    re-sending every other camera field just to draw/clear a zone."""
+    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    camera = result.scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+
+    if body.polygon is not None and len(body.polygon) > 0 and len(body.polygon) < 3:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Zona kamida 3 ta nuqtadan iborat bo'lishi kerak")
+
+    camera.restricted_zone_polygon = body.polygon if body.polygon else None
+
+    action = "Taqiqlangan zonani o'rnatdi" if camera.restricted_zone_polygon else "Taqiqlangan zonani tozaladi"
+    await log_action(db, request, current_user.id, f"{action}: {camera.name}", "Kameralar")
+    await db.commit()
+    await db.refresh(camera, attribute_names=["building"])
     return _to_out(camera)
 
 

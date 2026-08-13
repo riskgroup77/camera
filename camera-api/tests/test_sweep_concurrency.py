@@ -113,11 +113,11 @@ class TestAttendanceSweepConcurrency:
 @pytest.mark.usefixtures("seeded")
 class TestVisionSweepConcurrency:
     async def test_sweep_processes_every_camera(self, db_session, two_cameras, monkeypatch):
-        async def fake_grab_frame_pair(stream_url, gap_seconds=1.0):
+        async def fake_grab_frame_burst(stream_url, count, gap_seconds):
             frame = FACE_IMAGE_PATH.read_bytes()
-            return frame, frame
+            return [frame] * count
 
-        monkeypatch.setattr(vision_ai, "grab_frame_pair", fake_grab_frame_pair)
+        monkeypatch.setattr(vision_ai, "grab_frame_burst", fake_grab_frame_burst)
         monkeypatch.setattr(vision_ai, "is_asleep", lambda landmarks: False)  # no one is asleep — just prove the sweep runs both cameras without raising
 
         count = await run_vision_ai_sweep_once(session_factory=TestSessionLocal)
@@ -126,14 +126,14 @@ class TestVisionSweepConcurrency:
     async def test_one_camera_failing_does_not_stop_the_others(self, db_session, two_cameras, monkeypatch):
         calls = {"n": 0}
 
-        async def flaky_grab_frame_pair(stream_url, gap_seconds=1.0):
+        async def flaky_grab_frame_burst(stream_url, count, gap_seconds):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("simulated grab failure")
             frame = FACE_IMAGE_PATH.read_bytes()
-            return frame, frame
+            return [frame] * count
 
-        monkeypatch.setattr(vision_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(vision_ai, "grab_frame_burst", flaky_grab_frame_burst)
 
         await run_vision_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing

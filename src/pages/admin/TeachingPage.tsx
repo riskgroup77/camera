@@ -10,11 +10,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Brain, Loader2, Moon, Presentation, Timer, Trash2 } from 'lucide-react';
+import { Brain, CalendarClock, Loader2, Moon, Plus, Presentation, Timer, Trash2 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import ScheduleLessonModal from '../../components/admin/ScheduleLessonModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { LessonSession } from '../../types';
@@ -29,6 +30,8 @@ export default function TeachingPage() {
   const [error, setError] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<LessonSession | null>(null);
+  const [scheduling, setScheduling] = useState<LessonSession | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -116,7 +119,15 @@ export default function TeachingPage() {
         title="Dars monitoring paneli"
         subtitle="Talaba diqqati va o'qituvchi faolligi bo'yicha tahlil (TT 3-E bo'limi)"
         action={
-          <div className="flex flex-wrap gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              onClick={() => setAddOpen(true)}
+              className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
+            >
+              <Plus size={14} />
+              Yangi dars rejalashtirish
+            </button>
+            <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
             <button
               onClick={() => setGroupFilter(null)}
               className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
@@ -256,13 +267,27 @@ export default function TeachingPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => setDeleting(s)}
-                          title="O'chirish"
-                          className="text-slate-400 transition-colors hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setScheduling(s)}
+                            title={s.scheduledStartTime ? 'Jadvalni tahrirlash' : 'Jadval belgilash'}
+                            className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                              s.scheduledStartTime
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-indigo-600 dark:text-indigo-400'
+                            }`}
+                          >
+                            <CalendarClock size={12} />
+                            {s.scheduledStartTime ? 'Rejalashtirilgan' : 'Jadval'}
+                          </button>
+                          <button
+                            onClick={() => setDeleting(s)}
+                            title="O'chirish"
+                            className="text-slate-400 transition-colors hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -279,6 +304,13 @@ export default function TeachingPage() {
         message={deleting ? `${deleting.group} / ${deleting.subject} (${deleting.date}) yozuvini o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.` : ''}
         onCancel={() => setDeleting(null)}
         onConfirm={handleDelete}
+      />
+      <ScheduleLessonModal open={addOpen} onClose={() => setAddOpen(false)} onSave={() => setReloadKey((k) => k + 1)} />
+      <ScheduleLessonModal
+        open={!!scheduling}
+        session={scheduling}
+        onClose={() => setScheduling(null)}
+        onSave={() => setReloadKey((k) => k + 1)}
       />
     </section>
   );

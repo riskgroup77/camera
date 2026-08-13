@@ -292,3 +292,73 @@ class TestCameras:
         ).json()
         assert created["status"] == "faol"
         assert created["isReachable"] is False
+
+
+@pytest.mark.usefixtures("seeded")
+class TestCameraZonePolygon:
+    async def _create_camera(self, client: AsyncClient, headers: dict[str, str]) -> dict:
+        resp = await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={
+                "name": "Zona kamerasi",
+                "ip": "192.168.9.10",
+                "building": "1-Bino (Asosiy korpus)",
+                "zone": "Hovli",
+                "resolution": "1080p",
+            },
+        )
+        return resp.json()
+
+    async def test_new_camera_has_no_zone_polygon(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        assert created["restrictedZonePolygon"] is None
+
+    async def test_setting_a_valid_polygon_round_trips(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        polygon = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]
+
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}/zone-polygon", headers=headers, json={"polygon": polygon}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["restrictedZonePolygon"] == polygon
+
+        fetched = (await client.get("/api/cameras", headers=headers)).json()["items"][0]
+        assert fetched["restrictedZonePolygon"] == polygon
+
+    async def test_clearing_a_polygon_sets_it_back_to_none(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        await client.patch(
+            f"/api/cameras/{created['id']}/zone-polygon",
+            headers=headers,
+            json={"polygon": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]},
+        )
+
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}/zone-polygon", headers=headers, json={"polygon": None}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["restrictedZonePolygon"] is None
+
+    async def test_fewer_than_three_points_is_rejected(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}/zone-polygon",
+            headers=headers,
+            json={"polygon": [[0.1, 0.1], [0.9, 0.9]]},
+        )
+        assert resp.status_code == 422
+
+    async def test_unknown_camera_is_404(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.patch(
+            "/api/cameras/00000000-0000-0000-0000-000000000000/zone-polygon",
+            headers=headers,
+            json={"polygon": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]},
+        )
+        assert resp.status_code == 404

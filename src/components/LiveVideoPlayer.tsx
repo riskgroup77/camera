@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import { VideoOff } from 'lucide-react';
 import FaceDetectionOverlay from './FaceDetectionOverlay';
+import ZoneOverlay from './ZoneOverlay';
 import { useLiveDetection } from '../lib/useLiveDetection';
 
 interface LiveVideoPlayerProps {
@@ -22,6 +23,13 @@ interface LiveVideoPlayerProps {
    * yoqiladi (showDetections), doim emas. */
   cameraId?: string;
   showDetections?: boolean;
+  /** Berilsa, video ustiga bosish orqali taqiqlangan zona ko'pburchagini
+   * chizish rejimi yoqiladi (CameraZoneModal.tsx) — koordinatalar
+   * app/models/camera.py's restricted_zone_polygon bilan bir xil formatda
+   * (0-1 normallashtirilgan) qaytariladi. */
+  zoneEditing?: boolean;
+  zonePoints?: [number, number][];
+  onZonePointAdd?: (point: [number, number]) => void;
 }
 
 export default function LiveVideoPlayer({
@@ -29,6 +37,9 @@ export default function LiveVideoPlayer({
   className = '',
   cameraId,
   showDetections = false,
+  zoneEditing = false,
+  zonePoints = [],
+  onZonePointAdd,
 }: LiveVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(false);
@@ -102,6 +113,9 @@ export default function LiveVideoPlayer({
         className={`absolute inset-0 h-full w-full object-cover ${className}`}
       />
       {showDetections && <FaceDetectionOverlay videoRef={videoRef} detection={detection} />}
+      {zoneEditing && (
+        <ZoneOverlay videoRef={videoRef} points={zonePoints} editable onAddPoint={onZonePointAdd} />
+      )}
     </>
   );
 }

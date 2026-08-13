@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Eye, Loader2, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
+import { Eye, Loader2, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
+import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useServerPage } from '../../lib/useServerPage';
@@ -42,6 +43,7 @@ export default function CamerasZonesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
+  const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
   const [counts, setCounts] = useState<{ faol: number; nofaol: number; tamirda: number } | null>(null);
   const { zones } = useCameraZones(buildingFilter ?? undefined);
 
@@ -232,6 +234,18 @@ export default function CamerasZonesPage() {
                         <Settings2 size={12} />
                         Sozlash
                       </button>
+                      <button
+                        onClick={() => setDrawingZone(c)}
+                        title="Taqiqlangan zonani belgilash"
+                        className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                          c.restrictedZonePolygon && c.restrictedZonePolygon.length > 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-indigo-600 dark:text-indigo-400'
+                        }`}
+                      >
+                        <MapPinned size={12} />
+                        Zona
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -247,6 +261,12 @@ export default function CamerasZonesPage() {
       <AddCameraModal open={addOpen} onClose={() => setAddOpen(false)} onSave={() => reload()} />
       <AddCameraModal open={!!editing} camera={editing} onClose={() => setEditing(null)} onSave={() => reload()} />
       <CameraConfigDetailModal camera={viewing} onClose={() => setViewing(null)} />
+      <CameraZoneModal
+        open={!!drawingZone}
+        camera={drawingZone}
+        onClose={() => setDrawingZone(null)}
+        onSave={() => reload()}
+      />
     </section>
   );
 }
