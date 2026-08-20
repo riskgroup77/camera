@@ -67,8 +67,11 @@ EOF
 
 log "Starting Docker Compose..."
 cd "${APP_DIR}/camera-api"
-docker compose down 2>/dev/null || true
-docker compose up -d --build
+cp "${APP_DIR}/deploy/docker-compose.override.yml" docker-compose.override.yml
+cp "${APP_DIR}/deploy/docker-compose.mediamtx.yml" docker-compose.mediamtx.yml
+cp "${APP_DIR}/deploy/mediamtx.yml" mediamtx.yml 2>/dev/null || true
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml down 2>/dev/null || true
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml up -d --build
 
 log "Waiting for API..."
 for i in $(seq 1 90); do
@@ -89,21 +92,7 @@ cp -r dist/* "/var/www/${FRONTEND_DOMAIN}/"
 chown -R www-data:www-data "/var/www/${FRONTEND_DOMAIN}"
 
 log "Configuring nginx..."
-cp "${APP_DIR}/deploy/nginx/cam-frontend.conf" "/etc/nginx/sites-available/${FRONTEND_DOMAIN}.conf"
-cp "${APP_DIR}/deploy/nginx/cam-api.conf" "/etc/nginx/sites-available/${API_DOMAIN}.conf"
-cp "${APP_DIR}/deploy/nginx/cam-storage.conf" "/etc/nginx/sites-available/${STORAGE_DOMAIN}.conf"
-cp "${APP_DIR}/deploy/nginx/cam-stream.conf" "/etc/nginx/sites-available/${STREAM_DOMAIN}.conf"
-sed -i "s/__FRONTEND_DOMAIN__/${FRONTEND_DOMAIN}/g" "/etc/nginx/sites-available/${FRONTEND_DOMAIN}.conf"
-sed -i "s/__API_DOMAIN__/${API_DOMAIN}/g" "/etc/nginx/sites-available/${API_DOMAIN}.conf"
-sed -i "s/__STORAGE_DOMAIN__/${STORAGE_DOMAIN}/g" "/etc/nginx/sites-available/${STORAGE_DOMAIN}.conf"
-sed -i "s/__STREAM_DOMAIN__/${STREAM_DOMAIN}/g" "/etc/nginx/sites-available/${STREAM_DOMAIN}.conf"
-ln -sf "/etc/nginx/sites-available/${FRONTEND_DOMAIN}.conf" /etc/nginx/sites-enabled/
-ln -sf "/etc/nginx/sites-available/${API_DOMAIN}.conf" /etc/nginx/sites-enabled/
-ln -sf "/etc/nginx/sites-available/${STORAGE_DOMAIN}.conf" /etc/nginx/sites-enabled/
-ln -sf "/etc/nginx/sites-available/${STREAM_DOMAIN}.conf" /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl reload nginx
+bash "${APP_DIR}/deploy/nginx-cleanup-fermi.sh"
 
 log "SSL certificates..."
 certbot --nginx -d "${FRONTEND_DOMAIN}" -d "${API_DOMAIN}" -d "${STORAGE_DOMAIN}" -d "${STREAM_DOMAIN}" \

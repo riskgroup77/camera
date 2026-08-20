@@ -22,9 +22,9 @@ echo "=== Docker compose overrides ==="
 cp deploy/docker-compose.override.yml camera-api/docker-compose.override.yml
 cp deploy/docker-compose.mediamtx.yml camera-api/docker-compose.mediamtx.yml
 
-echo "=== Docker API (reload env if .env changed) ==="
+echo "=== Docker stack (full recreate) ==="
 cd camera-api
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml up -d --force-recreate api
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml up -d --build
 
 echo "=== Health check ==="
 sleep 5
