@@ -41,8 +41,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9020:9000"
+      - "9021:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -63,11 +63,16 @@ services:
 
   mediamtx:
     image: bluenviron/mediamtx:latest
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
     restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
     ports:
       - "8554:8554" # RTSP
       - "8888:8888" # HLS
-      - "9997:9997" # control API
+      - "127.0.0.1:9997:9997" # control API (faqat serverning ozi uchun)
 
   api:
     build: .
