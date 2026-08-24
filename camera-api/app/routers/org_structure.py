@@ -1,14 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
-from app.models import Building, Faculty, StudentGroup
+from app.models import Building, Camera, Faculty, StudentGroup
 from app.schemas.org import (
     BuildingCreateIn,
     BuildingOut,
@@ -28,8 +28,19 @@ AuthDep = Annotated[CurrentUser, Depends(get_current_user)]
 
 @router.get("/buildings", response_model=list[BuildingOut])
 async def list_buildings(db: Annotated[AsyncSession, Depends(get_db)], _: AuthDep) -> list[BuildingOut]:
-    result = await db.execute(select(Building).order_by(Building.name))
-    return [BuildingOut(id=str(b.id), name=b.name, camera_count=b.camera_count) for b in result.scalars().all()]
+    """camera_count endi Building.camera_count'dan (hech qachon admin
+    tomonidan to'ldirilmaydigan, seed.py'dagi eski demo raqam qolган
+    o'lik maydon) emas, balki haqiqatan ro'yxatdan o'tgan Camera
+    qatorlaridan hisoblanadi — aks holda "N ta kamera biriktirilgan"
+    yozuvi hech qachon qo'shilmagan kameralarni ham hisoblab, admin
+    panelida chalkashtirib yuborardi."""
+    result = await db.execute(
+        select(Building, func.count(Camera.id))
+        .outerjoin(Camera, Camera.building_id == Building.id)
+        .group_by(Building.id)
+        .order_by(Building.name)
+    )
+    return [BuildingOut(id=str(b.id), name=b.name, camera_count=count) for b, count in result.all()]
 
 
 @router.post("/buildings", response_model=BuildingOut, status_code=status.HTTP_201_CREATED)

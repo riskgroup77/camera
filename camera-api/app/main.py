@@ -17,6 +17,7 @@ from app.jobs.fire_ai import fire_ai_loop
 from app.jobs.abandoned_object_ai import abandoned_object_ai_loop
 from app.jobs.crowd_density_ai import crowd_density_ai_loop
 from app.jobs.disorder_ai import disorder_ai_loop
+from app.jobs.dress_code_ai import dress_code_ai_loop
 from app.jobs.fall_ai import fall_ai_loop
 from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(crowd_density_ai_loop()),
             asyncio.create_task(abandoned_object_ai_loop()),
             asyncio.create_task(disorder_ai_loop()),
+            asyncio.create_task(dress_code_ai_loop()),
             asyncio.create_task(phone_ai_loop()),
             asyncio.create_task(vehicle_ai_loop()),
             asyncio.create_task(fall_ai_loop()),

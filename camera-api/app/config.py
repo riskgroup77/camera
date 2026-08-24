@@ -203,6 +203,27 @@ class Settings(BaseSettings):
     fall_torso_angle_threshold: float = 60.0
     fall_aspect_ratio_threshold: float = 1.4
 
+    # TT kriteriya 10 ("Oq xalat kiyilganligi") — app/jobs/dress_code_ai.py
+    # / app/services/coat_detection.py. Classical HSV heuristic, not a
+    # trained classifier — see that module's docstring for the honest
+    # scope limits. S/V thresholds are OpenCV's 0-255 HSV ranges.
+    coat_ai_interval_seconds: int = 45
+    coat_dedup_minutes: int = 30
+    coat_min_landmark_visibility: float = 0.5
+    coat_torso_extension_factor: float = 0.6
+    coat_white_saturation_max: int = 60
+    coat_white_value_min: int = 170
+    coat_white_fraction_threshold: float = 0.55
+
+    # TT kriteriya 11 ("Bosh kiyim (kalpakcha) borligi") —
+    # app/jobs/dress_code_ai.py / app/services/head_covering_detection.py.
+    # Classical color-uniformity heuristic — see that module's docstring.
+    head_covering_min_landmark_visibility: float = 0.5
+    head_covering_width_factor: float = 0.9
+    head_covering_height_factor: float = 1.1
+    head_covering_top_margin_factor: float = 0.25
+    head_covering_uniformity_threshold: float = 0.55
+
     # TT kriteriya 2 ("Taqiqlangan zonaga kirish") —
     # app/jobs/zone_entry_ai.py / app/services/zone_detection.py.
     zone_ai_interval_seconds: int = 30

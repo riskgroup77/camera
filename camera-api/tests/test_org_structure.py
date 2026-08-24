@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.models import Building, Camera
 from tests.conftest import auth_headers
 
 
@@ -11,6 +13,33 @@ class TestOrgStructure:
         resp = await client.get("/api/buildings", headers=headers)
         assert resp.status_code == 200
         assert len(resp.json()) == 3
+
+    async def test_camera_count_reflects_real_registered_cameras_not_the_stale_field(
+        self, client: AsyncClient, db_session
+    ):
+        """Regression: Building.camera_count is never set through any admin
+        UI (AddBuildingModal.tsx always sends 0/whatever it already was) —
+        GET /api/buildings must report the real, live count of registered
+        Camera rows, not that dead field, or the dashboard silently lies
+        about how many cameras are actually connected."""
+        headers = await auth_headers(client, "admin", "admin123")
+        building = (await db_session.execute(select(Building))).scalars().first()
+
+        before = await client.get("/api/buildings", headers=headers)
+        before_count = next(b["cameraCount"] for b in before.json() if b["id"] == str(building.id))
+        assert before_count == 0
+
+        db_session.add(
+            Camera(
+                name="Yangi kamera", ip="10.0.9.50", building_id=building.id,
+                zone="Test", resolution="1080p", status="faol",
+            )
+        )
+        await db_session.commit()
+
+        after = await client.get("/api/buildings", headers=headers)
+        after_count = next(b["cameraCount"] for b in after.json() if b["id"] == str(building.id))
+        assert after_count == 1
 
     async def test_create_update_delete_building(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

@@ -39,6 +39,7 @@ from app.config import settings
 logger = logging.getLogger("app.pose_detection")
 
 NOSE = 0
+LEFT_EAR, RIGHT_EAR = 7, 8
 LEFT_SHOULDER, RIGHT_SHOULDER = 11, 12
 LEFT_HIP, RIGHT_HIP = 23, 24
 LEFT_KNEE, RIGHT_KNEE = 25, 26
