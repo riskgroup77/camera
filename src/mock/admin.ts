@@ -1,6 +1,5 @@
 import type {
   AdminUser,
-  AIModule,
   AIModuleGroup,
   AuditLogEntry,
   Building,
@@ -28,48 +27,6 @@ export const AI_MODULE_GROUP_LABELS: Record<AIModuleGroup, string> = {
   E: "Ta'lim jarayoni sifati (dars monitoring)",
   F: 'Favqulodda holatlar',
 };
-
-// TT hujjat 3-bo'lim: 25 ta AI kriteriya (A-F toifalar). Faollik holati
-// TT 12-bo'limdagi bosqichlar rejasiga mos: 1-bosqich (MVP) kriteriyalari
-// hozir faol, qolganlari 2-3-bosqichda joriy etiladi.
-export const aiModules: AIModule[] = [
-  // A. Kirish-chiqish va hudud xavfsizligi
-  { id: 'm1', code: 1, group: 'A', name: 'Notanish/begona shaxsni aniqlash', description: "Yuzni tanish (Face-ID) — xodimlar/talabalar bazasida yo'q shaxs binoga kirsa signal", method: 'YOLOv8-face + ArcFace, mahalliy GPU', accuracy: 97.8, threshold: 85, sensitivity: 'yuqori', cameraCount: 42, active: true },
-  { id: 'm2', code: 2, group: 'A', name: 'Taqiqlangan zonaga kirish', description: 'Rentgen xonasi, laboratoriya, arxiv kabi cheklangan hududlarga ruxsatsiz kirish', method: 'Zona-poligon + object tracking (DeepSORT)', accuracy: 0, threshold: 80, sensitivity: 'yuqori', cameraCount: 0, active: false },
-  { id: 'm3', code: 3, group: 'A', name: 'Notekis/kechki vaqtda kirish', description: 'Ish vaqtidan tashqari binoga kirish holatlari', method: 'Vaqt jadvali + kirish log tahlili (backend rule)', accuracy: 0, threshold: 70, sensitivity: "o'rta", cameraCount: 0, active: false },
-  { id: 'm4', code: 4, group: 'A', name: 'Egasiz qoldirilgan buyum', description: 'Koridor/hovlida uzoq vaqt qoldirilgan sumka, quti', method: 'Statik-obyekt aniqlash (background subtraction)', accuracy: 0, threshold: 75, sensitivity: "o'rta", cameraCount: 0, active: false },
-  { id: 'm5', code: 5, group: 'A', name: 'Olomon zichligi anomaliyasi', description: "Hovli yoki koridorda favqulodda to'planish", method: 'Crowd density estimation (CSRNet/YOLO-crowd)', accuracy: 92.8, threshold: 78, sensitivity: "o'rta", cameraCount: 12, active: true },
-
-  // B. Davomat va shaxsni aniqlash
-  { id: 'm6', code: 6, group: 'B', name: "Xodim/o'qituvchi davomati", description: "Ish boshlanish/tugash vaqtini yuz orqali avtomatik qayd etish", method: 'Face recognition + timestamp log', accuracy: 98.6, threshold: 88, sensitivity: 'yuqori', cameraCount: 30, active: true },
-  { id: 'm7', code: 7, group: 'B', name: 'Talaba davomati', description: "Auditoriyaga kirish/darsda ishtirok etish avtomatik qaydi", method: 'Face recognition (sinf kamerasi)', accuracy: 99.2, threshold: 90, sensitivity: 'yuqori', cameraCount: 28, active: true },
-  { id: 'm8', code: 8, group: 'B', name: 'Darsga kechikish', description: 'Belgilangan vaqtdan N daqiqa keyin kirish holati', method: 'Jadval bilan solishtirish (rule-based)', accuracy: 96.4, threshold: 85, sensitivity: "o'rta", cameraCount: 28, active: true },
-  { id: 'm9', code: 9, group: 'B', name: 'Darsdan/ishdan erta ketish', description: 'Belgilangan tugash vaqtidan oldin xonani tark etish', method: 'Kirish-chiqish log tahlili', accuracy: 0, threshold: 80, sensitivity: "o'rta", cameraCount: 0, active: false },
-
-  // C. Forma va tashqi ko'rinish
-  { id: 'm10', code: 10, group: 'C', name: 'Oq xalat kiyilganligi', description: 'Tibbiy xodim/talabaning oq xalatda ekanligini aniqlash', method: 'Kiyim klassifikatsiyasi (fine-tuned YOLO/CLIP)', accuracy: 95.1, threshold: 82, sensitivity: 'yuqori', cameraCount: 34, active: true },
-  { id: 'm11', code: 11, group: 'C', name: 'Bosh kiyim (kalpakcha) borligi', description: 'Amaliyot/laboratoriya xonalarida bosh kiyim taqilganligi', method: 'Object detection (head-region classifier)', accuracy: 93.7, threshold: 80, sensitivity: "o'rta", cameraCount: 18, active: true },
-  { id: 'm12', code: 12, group: 'C', name: 'ID-badge taqilganligi', description: 'Xodim/talaba identifikatsiya kartochkasi ko\'rinishda ekanligi', method: 'Object detection (kichik obyekt, yaqin kamera talab qiladi)', accuracy: 0, threshold: 70, sensitivity: "o'rta", cameraCount: 0, active: false },
-  { id: 'm13', code: 13, group: 'C', name: "Qo'lqop/niqob (kerakli xonalarda)", description: 'Sanitariya talab qiladigan zonalarda SIZ mavjudligi', method: 'PPE detection modeli', accuracy: 0, threshold: 85, sensitivity: 'yuqori', cameraCount: 0, active: false },
-
-  // D. Xulq-atvor va odob-axloq
-  { id: 'm14', code: 14, group: 'D', name: 'Jang/nizolashish holati', description: 'Jismoniy toqnashuv yoki tajovuzkor harakatlar', method: 'Action recognition (pose + optical flow)', accuracy: 0, threshold: 88, sensitivity: 'yuqori', cameraCount: 0, active: false },
-  { id: 'm15', code: 15, group: 'D', name: 'Chekish / elektron sigareta', description: 'Bino ichida yoki hovlida chekish holatlari', method: 'Obyekt + tutun/harakat klassifikatori', accuracy: 0, threshold: 75, sensitivity: "o'rta", cameraCount: 0, active: false },
-  { id: 'm16', code: 16, group: 'D', name: 'Imtihonda telefondan foydalanish', description: 'Nazorat ishi vaqtida ruxsatsiz qurilma ishlatish', method: 'Telefon obyekt detektsiyasi (YOLO)', accuracy: 0, threshold: 80, sensitivity: 'yuqori', cameraCount: 0, active: false },
-  { id: 'm17', code: 17, group: 'D', name: 'Tartib-intizom buzilishi', description: 'Yugurish, xavfli harakat, koridorda shovqin-suron', method: 'Harakat anomaliyasi (pose estimation)', accuracy: 0, threshold: 65, sensitivity: 'past', cameraCount: 0, active: false },
-  { id: 'm18', code: 18, group: 'D', name: 'Kiyim-bosh (dress code) umumiy', description: "Talabalarning institut nizomiga mos kiyingani", method: 'Kiyim klassifikatsiyasi', accuracy: 0, threshold: 70, sensitivity: "o'rta", cameraCount: 0, active: false },
-
-  // E. Ta'lim jarayoni sifati (dars monitoring)
-  { id: 'm19', code: 19, group: 'E', name: 'Talabaning darsga diqqati', description: "Boshning yo'nalishi, ko'z harakati, telefon bilan chalg'ishi asosida diqqat balli", method: 'Gaze estimation + pose (engagement score)', accuracy: 0, threshold: 60, sensitivity: "o'rta", cameraCount: 0, active: false },
-  { id: 'm20', code: 20, group: 'E', name: 'Talabaning uxlab qolishi', description: "Bosh pastga tushishi, ko'zlarning uzoq yopiq qolishi", method: 'Facial landmark + eye-closure (EAR) tahlili', accuracy: 0, threshold: 70, sensitivity: "o'rta", cameraCount: 0, active: false },
-  { id: 'm21', code: 21, group: 'E', name: "O'qituvchi faolligi", description: "Doska oldida faol harakat, talabalar bilan interaktivlik vaqti", method: 'Pose tracking + zona-vaqt tahlili', accuracy: 0, threshold: 60, sensitivity: 'past', cameraCount: 0, active: false },
-  { id: 'm22', code: 22, group: 'E', name: "O'qituvchining darsga aniq kelishi", description: 'Dars boshlanishi bilan xonada mavjudligi', method: 'Face recognition + jadval taqqoslash', accuracy: 0, threshold: 85, sensitivity: "o'rta", cameraCount: 0, active: false },
-
-  // F. Favqulodda holatlar
-  { id: 'm23', code: 23, group: 'F', name: 'Yong\'in / tutun aniqlash', description: 'Erta bosqichda tutun yoki alanga aniqlash', method: 'Fire/smoke detection CNN', accuracy: 0, threshold: 90, sensitivity: 'yuqori', cameraCount: 0, active: false },
-  { id: 'm24', code: 24, group: 'F', name: 'Yiqilib tushish (fall detection)', description: 'Xodim yoki bemorning yiqilib qolishi', method: 'Pose-based fall detection', accuracy: 0, threshold: 85, sensitivity: 'yuqori', cameraCount: 0, active: false },
-  { id: 'm25', code: 25, group: 'F', name: 'Hovlida transport harakati', description: 'Avtomobil/mototsikl piyodalar zonasida yoki taqiqlangan joyda', method: 'Vehicle detection + zona qoidasi', accuracy: 0, threshold: 75, sensitivity: "o'rta", cameraCount: 0, active: false },
-];
 
 const STUDENT_STAFF_SEED: StudentStaffRecord[] = [
   { id: 's1', fullName: 'Karimova Dildora Baxtiyorovna', type: 'talaba', faculty: 'Davolash ishi', groupOrPosition: '302-guruh, 3-kurs', biometricsStatus: 'tasdiqlangan', initials: 'KD' },
