@@ -17,7 +17,11 @@ export default function CameraCard({
       className="glass flex cursor-pointer flex-col gap-2.5 p-4 transition-transform hover:-translate-y-0.5 hover:shadow-lg"
     >
       <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-slate-900">
-        {isLive && <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections />}
+        {/* Detection (yuz chegarasi) faqat CameraDetailModal'da yoqiladi (onClick orqali
+            ochiladi) — grid'da 30 tagacha kartochka bir vaqtda ko'rinishi mumkin, har biri
+            showDetections bilan har 6s'da live-detection so'rovi yuborsa, bu fon AI
+            sweep'lari (davomat, uxlab qolish) bilan bir xil inference navbatini band qilardi. */}
+        {isLive && <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} />}
         {isLive ? (
           <>
             <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-bold text-white">

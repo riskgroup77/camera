@@ -34,18 +34,19 @@ import logging
 from datetime import datetime, time as time_type
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
+from app.jobs.module_status import any_module_active, camera_allows_module, is_module_active
 from app.models import AttendanceRecord, AuditLog, Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame
+from app.services.frame_grabber import grab_frame, grab_frame_burst
 from app.timezone import local_now, to_local
 from app.ws import manager
 
@@ -53,6 +54,15 @@ logger = logging.getLogger("app.attendance_ai")
 
 OFF_HOURS_MODULE_CODE = 3
 OFF_HOURS_MODULE_NAME = "Notekis/kechki vaqtda kirish"
+# #6/#7 aren't gated the same way the other 13 jobs' single criterion is —
+# this one sweep serves BOTH at once (same face-detection pass credits
+# either a "xodim" or "talaba" match), so the sweep only skips entirely if
+# an admin has turned off attendance tracking for both populations. #3
+# (off-hours) is checked separately, per-sighting, in
+# upsert_attendance_from_recognition — see its off_hours_module_active
+# parameter.
+STAFF_ATTENDANCE_MODULE_CODE = 6
+STUDENT_ATTENDANCE_MODULE_CODE = 7
 
 # Caps how many cameras this sweep processes concurrently (grab + detect +
 # match + DB write, per camera) instead of the old one-camera-at-a-time
@@ -88,7 +98,11 @@ def find_best_match(
 
 
 async def upsert_attendance_from_recognition(
-    db: AsyncSession, student_staff_id: str, occurred_at: datetime, camera: Camera | None = None
+    db: AsyncSession,
+    student_staff_id: str,
+    occurred_at: datetime,
+    camera: Camera | None = None,
+    off_hours_module_active: bool = True,
 ) -> AttendanceRecord:
     """First sighting of the day inserts the row (sets check_in and the
     keldi/kech_keldi status); every later sighting the same day hits the
@@ -104,6 +118,11 @@ async def upsert_attendance_from_recognition(
     sighting today" check (unlike the upsert above) so a person who
     legitimately arrived off-hours doesn't get re-flagged every sweep tick
     for the rest of the day as their check_out keeps advancing.
+
+    `off_hours_module_active` defaults to True so direct/test callers keep
+    working unchanged — the real sweep loop (run_attendance_ai_sweep_once)
+    checks AIModuleConfig.active for module #3 ONCE per sweep and passes
+    the result through here, rather than every call re-querying it.
 
     occurred_at is converted to the institute's local clock (see
     app/timezone.py) before its date/time are extracted — record_date is
@@ -162,7 +181,7 @@ async def upsert_attendance_from_recognition(
     )
 
     event_out: EventOut | None = None
-    if camera is not None and is_first_sighting_today and _is_off_hours(occurred_time):
+    if off_hours_module_active and camera is not None and is_first_sighting_today and _is_off_hours(occurred_time):
         event = Event(
             camera_id=camera.id,
             camera_name=camera.name,
@@ -205,6 +224,7 @@ async def process_camera_frame(
     camera: Camera | None = None,
     occurred_at: datetime | None = None,
     candidates: CandidateMatrix | None = None,
+    off_hours_module_active: bool = True,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -255,7 +275,11 @@ async def process_camera_frame(
         logger.info(
             "attendance AI matched a face", extra={"student_staff_id": student_staff_id, "similarity": similarity}
         )
-        records.append(await upsert_attendance_from_recognition(db, student_staff_id, moment, camera))
+        records.append(
+            await upsert_attendance_from_recognition(
+                db, student_staff_id, moment, camera, off_hours_module_active
+            )
+        )
 
     return records
 
@@ -281,7 +305,19 @@ async def run_attendance_ai_sweep_once(
     (across all cameras, this tick) got an attendance write — not how many
     frames matched, since one frame can match several people at once."""
     async with session_factory() as db:
-        result = await db.execute(select(Camera).where(Camera.status == "faol"))
+        if not await any_module_active(db, [STAFF_ATTENDANCE_MODULE_CODE, STUDENT_ATTENDANCE_MODULE_CODE]):
+            return 0
+        off_hours_module_active = await is_module_active(db, OFF_HOURS_MODULE_CODE)
+        result = await db.execute(
+            select(Camera)
+            .where(Camera.status == "faol")
+            .where(
+                or_(
+                    camera_allows_module(STAFF_ATTENDANCE_MODULE_CODE),
+                    camera_allows_module(STUDENT_ATTENDANCE_MODULE_CODE),
+                )
+            )
+        )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix(db)
 
@@ -290,12 +326,35 @@ async def run_attendance_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> int:
         async with _camera_semaphore:
-            frame = await grab_frame(camera.stream_url)
-            if frame is None:
+            if camera.is_entrance:
+                frames = await grab_frame_burst(
+                    camera.stream_url,
+                    settings.attendance_entrance_burst_frame_count,
+                    settings.attendance_entrance_burst_gap_seconds,
+                )
+            else:
+                frame = await grab_frame(camera.stream_url)
+                frames = [frame] if frame is not None else []
+            if not frames:
                 return 0
+
             async with session_factory() as camera_db:
-                records = await process_camera_frame(frame, camera_db, camera, candidates=candidates)
-                return len(records)
+                # ANY frame in the burst matching a person is enough to
+                # credit them once — not majority voting like vision_ai's
+                # sleep confirmation, since a burst here exists purely to
+                # maximize the chance of catching someone only briefly in
+                # frame, and upsert_attendance_from_recognition is already
+                # idempotent per (person, day), so re-processing the same
+                # person across multiple frames just advances check_out
+                # rather than double-crediting them.
+                credited: set[str] = set()
+                for frame in frames:
+                    records = await process_camera_frame(
+                        frame, camera_db, camera, candidates=candidates,
+                        off_hours_module_active=off_hours_module_active,
+                    )
+                    credited.update(str(r.student_staff_id) for r in records)
+                return len(credited)
 
     results = await asyncio.gather(*(_process_one(camera) for camera in cameras), return_exceptions=True)
 

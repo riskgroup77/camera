@@ -171,6 +171,23 @@ class TestUpsertAttendanceFromRecognition:
         events = (await db_session.execute(select(Event))).scalars().all()
         assert len(events) == 1  # not re-flagged on the later "last seen" update
 
+    async def test_off_hours_sighting_with_module_disabled_raises_no_event(self, db_session, a_camera):
+        """AIModuleConfig code 3 toggled off — same off-hours sighting that
+        would normally raise an Event must not, once the caller (the real
+        sweep loop) has determined the module is inactive."""
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        student = StudentStaff(full_name="Ochirilgan Modul", type="talaba", faculty_id=faculty.id, group_or_position="1")
+        db_session.add(student)
+        await db_session.commit()
+
+        occurred_at = _local_time(22, 30)
+        await upsert_attendance_from_recognition(
+            db_session, str(student.id), occurred_at, a_camera, off_hours_module_active=False
+        )
+
+        events = (await db_session.execute(select(Event))).scalars().all()
+        assert len(events) == 0
+
     async def test_off_hours_sighting_without_a_camera_raises_no_event(self, db_session):
         """camera is optional — callers that don't pass one (e.g. most of
         the tests above) don't get kriteriya 3 behavior, by design."""

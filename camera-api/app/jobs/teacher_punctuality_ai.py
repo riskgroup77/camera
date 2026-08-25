@@ -48,6 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
+from app.jobs.module_status import is_module_active
 from app.models import Event, LessonSession
 from app.schemas.event import EventOut
 from app.services.face_matching import find_best_match
@@ -69,7 +70,12 @@ _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 
 async def _due_sessions(db: AsyncSession) -> list[LessonSession]:
     """Sessions ready to be checked: fully scheduled, not yet checked, and
-    past their grace deadline (scheduled_start_time + grace)."""
+    past their grace deadline (scheduled_start_time + grace). Filtered in
+    Python (not the query) against the camera's excluded_module_codes —
+    LessonSession.camera is lazy="joined" so this is free (already loaded,
+    no extra query), and the "due" set is small (only sessions past their
+    deadline right now), unlike the hundreds-of-cameras case the other
+    sweep loops' queries are optimizing for."""
     cutoff = local_now()
     result = await db.execute(
         select(LessonSession)
@@ -80,6 +86,8 @@ async def _due_sessions(db: AsyncSession) -> list[LessonSession]:
     )
     due = []
     for row in result.scalars().all():
+        if row.camera is None or PUNCTUALITY_MODULE_CODE in (row.camera.excluded_module_codes or []):
+            continue
         deadline = row.scheduled_start_time + timedelta(minutes=settings.teacher_punctuality_grace_minutes)
         if deadline <= cutoff:
             due.append(row)
@@ -170,6 +178,8 @@ async def run_teacher_punctuality_sweep_once(
     app/jobs/attendance_ai.py's run_attendance_ai_sweep_once). Returns how
     many "not on time" Events were raised."""
     async with session_factory() as db:
+        if not await is_module_active(db, PUNCTUALITY_MODULE_CODE):
+            return 0
         due = await _due_sessions(db)
 
     if not due:

@@ -6,6 +6,15 @@ class Settings(BaseSettings):
 
     port: int = 8080
     database_url: str
+    # SQLAlchemy's own defaults (pool_size=5, max_overflow=10 -> 15 total)
+    # were sized for a handful of concurrent requests, not 14 background AI
+    # sweep loops each opening their own per-camera sessions on top of
+    # normal admin-panel traffic. Raise these in .env for a production
+    # server with many cameras; the defaults here are already well above
+    # SQLAlchemy's own for a dev/small deployment.
+    db_pool_size: int = 20
+    db_max_overflow: int = 40
+    db_pool_timeout_seconds: int = 30
     jwt_secret: str
     jwt_ttl_hours: int = 12
     cors_origin: str = "http://localhost:5173"
@@ -70,6 +79,17 @@ class Settings(BaseSettings):
     # (module_code=3), same as any other AI-detected incident.
     attendance_off_hours_start: str = "07:00"
     attendance_off_hours_end: str = "20:00"
+    # Camera.is_entrance cameras get a multi-frame burst instead of one
+    # sampled frame — see app/models/camera.py's is_entrance docstring and
+    # app/jobs/attendance_ai.py's run_attendance_ai_sweep_once. Mirrors
+    # app/services/frame_grabber.py's grab_frame_burst signature/defaults
+    # used by vision_ai.py's sleep confirmation, though attendance doesn't
+    # need majority voting — ANY frame matching a person is enough to
+    # credit them (upsert_attendance_from_recognition is idempotent per
+    # person per day), since the goal is maximizing recall for someone
+    # only briefly in frame, not filtering a noisy classification.
+    attendance_entrance_burst_frame_count: int = 3
+    attendance_entrance_burst_gap_seconds: float = 1.0
 
     # TT kriteriya 20 ("Talabaning uxlab qolishi") — app/jobs/vision_ai.py.
     # Same camera pool as attendance_ai (faol + reachable), separate sweep
@@ -266,6 +286,16 @@ class Settings(BaseSettings):
     # face_recognition_inference_concurrency for the inference-specific
     # cap that composes with this one).
     ai_sweep_camera_concurrency: int = 8
+
+    # Seconds between each AI sweep loop's FIRST tick at startup (see
+    # app/main.py's lifespan) — all 16 loops used to fire their first
+    # sweep in the same instant, all contending for the same camera/
+    # inference semaphores and DB connections at once, then falling back
+    # into sync every ~30s after. Staggering only the START time smooths
+    # that initial burst; each loop's own steady-state interval (still set
+    # independently per job, e.g. attendance_ai_interval_seconds) is
+    # unchanged.
+    ai_loop_stagger_seconds: float = 2.0
 
     # InsightFace/ONNX inference. face_recognition_gpu_enabled requests
     # CUDAExecutionProvider first (falls back to CPU automatically if the

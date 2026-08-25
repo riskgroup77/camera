@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
+from app.jobs.module_status import camera_allows_module, is_module_active
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.fall_detection import is_fallen
@@ -116,7 +117,11 @@ async def run_fall_ai_sweep_once(
     run_attendance_ai_sweep_once, which this mirrors. Returns how many
     fall Events were raised."""
     async with session_factory() as db:
-        result = await db.execute(select(Camera).where(Camera.status == "faol"))
+        if not await is_module_active(db, FALL_MODULE_CODE):
+            return 0
+        result = await db.execute(
+            select(Camera).where(Camera.status == "faol").where(camera_allows_module(FALL_MODULE_CODE))
+        )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
 
     if not cameras:

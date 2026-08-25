@@ -21,6 +21,9 @@ class PublicStatsOut(CamelModel):
     late: int
     sleep_incidents: int
     violations: int
+    live_cameras: int
+    offline_cameras: int
+    buildings: list[str]
 
 
 class PublicTopStudentOut(CamelModel):

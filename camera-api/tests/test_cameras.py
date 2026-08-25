@@ -90,6 +90,51 @@ class TestCameras:
         assert body["success"] is False
         assert body["method"] == "tcp-only"
 
+    async def test_new_camera_defaults_to_not_an_entrance(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = (
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": "Oddiy kamera", "ip": "192.168.1.71",
+                    "building": "1-Bino (Asosiy korpus)", "zone": "A-Zona", "resolution": "1080p",
+                },
+            )
+        ).json()
+        assert created["isEntrance"] is False
+
+    async def test_is_entrance_round_trips_through_create_and_update(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = (
+            await client.post(
+                "/api/cameras",
+                headers=headers,
+                json={
+                    "name": "Kirish kamerasi", "ip": "192.168.1.72",
+                    "building": "1-Bino (Asosiy korpus)", "zone": "Kirish", "resolution": "1080p",
+                    "isEntrance": True,
+                },
+            )
+        ).json()
+        assert created["isEntrance"] is True
+
+        fetched = (await client.get("/api/cameras", headers=headers)).json()["items"]
+        assert next(c for c in fetched if c["id"] == created["id"])["isEntrance"] is True
+
+        updated = (
+            await client.patch(
+                f"/api/cameras/{created['id']}",
+                headers=headers,
+                json={
+                    "name": "Kirish kamerasi", "ip": "192.168.1.72",
+                    "building": "1-Bino (Asosiy korpus)", "zone": "Kirish", "resolution": "1080p",
+                    "isEntrance": False,
+                },
+            )
+        ).json()
+        assert updated["isEntrance"] is False
+
     async def test_update_camera_status(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")
         created = (
@@ -360,5 +405,75 @@ class TestCameraZonePolygon:
             "/api/cameras/00000000-0000-0000-0000-000000000000/zone-polygon",
             headers=headers,
             json={"polygon": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]},
+        )
+        assert resp.status_code == 404
+
+
+@pytest.mark.usefixtures("seeded")
+class TestCameraExcludedModules:
+    async def _create_camera(self, client: AsyncClient, headers: dict[str, str]) -> dict:
+        resp = await client.post(
+            "/api/cameras",
+            headers=headers,
+            json={
+                "name": "Modul kamerasi",
+                "ip": "192.168.9.20",
+                "building": "1-Bino (Asosiy korpus)",
+                "zone": "Hovli",
+                "resolution": "1080p",
+            },
+        )
+        return resp.json()
+
+    async def test_new_camera_has_no_excluded_modules(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        assert created["excludedModuleCodes"] is None
+
+    async def test_setting_excluded_modules_round_trips(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}/modules", headers=headers, json={"excludedModuleCodes": [25, 16]}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["excludedModuleCodes"] == [25, 16]
+
+        fetched = (await client.get("/api/cameras", headers=headers)).json()["items"][0]
+        assert fetched["excludedModuleCodes"] == [25, 16]
+
+    async def test_clearing_excluded_modules_sets_it_back_to_none(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        await client.patch(
+            f"/api/cameras/{created['id']}/modules", headers=headers, json={"excludedModuleCodes": [25]}
+        )
+
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}/modules", headers=headers, json={"excludedModuleCodes": None}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["excludedModuleCodes"] is None
+
+    async def test_empty_list_also_clears_it(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        await client.patch(
+            f"/api/cameras/{created['id']}/modules", headers=headers, json={"excludedModuleCodes": [25]}
+        )
+
+        resp = await client.patch(
+            f"/api/cameras/{created['id']}/modules", headers=headers, json={"excludedModuleCodes": []}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["excludedModuleCodes"] is None
+
+    async def test_unknown_camera_is_404(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.patch(
+            "/api/cameras/00000000-0000-0000-0000-000000000000/modules",
+            headers=headers,
+            json={"excludedModuleCodes": [25]},
         )
         assert resp.status_code == 404

@@ -15,6 +15,7 @@ from app.pagination import Page, PageParams, build_page, paginate
 from app.rtsp import build_rtsp_url
 from app.schemas.camera import (
     CameraCreateIn,
+    CameraModulesIn,
     CameraOut,
     CameraUpdateIn,
     CameraZoneOut,
@@ -76,6 +77,8 @@ def _to_out(camera: Camera) -> CameraOut:
         stream_url=camera.stream_url,
         is_reachable=is_reachable(camera.last_seen_at),
         restricted_zone_polygon=camera.restricted_zone_polygon,
+        excluded_module_codes=camera.excluded_module_codes,
+        is_entrance=camera.is_entrance,
     )
 
 
@@ -140,6 +143,7 @@ async def create_camera(
         resolution=body.resolution,
         fps=body.fps,
         status=body.status,
+        is_entrance=body.is_entrance,
     )
     db.add(camera)
     await log_action(db, request, current_user.id, f"Yangi kamera qo'shdi: {body.name}", "Kameralar")
@@ -176,6 +180,7 @@ async def update_camera(
     camera.resolution = body.resolution
     camera.fps = body.fps
     camera.status = body.status
+    camera.is_entrance = body.is_entrance
 
     await log_action(db, request, current_user.id, f"Kamerani tahrirladi: {body.name}", "Kameralar")
     await db.commit()
@@ -208,6 +213,35 @@ async def set_camera_zone_polygon(
 
     action = "Taqiqlangan zonani o'rnatdi" if camera.restricted_zone_polygon else "Taqiqlangan zonani tozaladi"
     await log_action(db, request, current_user.id, f"{action}: {camera.name}", "Kameralar")
+    await db.commit()
+    await db.refresh(camera, attribute_names=["building"])
+    return _to_out(camera)
+
+
+@router.patch("/{camera_id}/modules", response_model=CameraOut)
+async def set_camera_excluded_modules(
+    camera_id: str,
+    body: CameraModulesIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: PermDep,
+) -> CameraOut:
+    """Separate from update_camera (PATCH /{camera_id}) for the same
+    reason set_camera_zone_polygon is — a distinct admin workflow
+    (checkbox list of AI modules, CameraModulesModal.tsx) shouldn't force
+    re-sending every other camera field. Every app/jobs/*.py sweep loop
+    checks Camera.excluded_module_codes on its next tick — no restart
+    needed for a change here to take effect."""
+    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    camera = result.scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+
+    camera.excluded_module_codes = body.excluded_module_codes if body.excluded_module_codes else None
+
+    await log_action(
+        db, request, current_user.id, f"Kamera uchun AI modullarni sozladi: {camera.name}", "Kameralar"
+    )
     await db.commit()
     await db.refresh(camera, attribute_names=["building"])
     return _to_out(camera)

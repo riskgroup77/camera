@@ -37,6 +37,9 @@ export interface AttendanceStats {
   late: number;
   sleepIncidents: number;
   violations: number;
+  liveCameras: number;
+  offlineCameras: number;
+  buildings: string[];
 }
 
 export interface TopStudent {
@@ -100,6 +103,14 @@ export interface CameraConfig {
    * zonaga kirish). null/aniqlanmagan bo'lsa app/jobs/zone_entry_ai.py bu
    * kamerani butunlay o'tkazib yuboradi. */
   restrictedZonePolygon?: [number, number][] | null;
+  /** AIModule.code raqamlari — bu kamera ULARDAN chetlashtirilgan (allow-list
+   * emas, exclude-list). null/bo'sh massiv = faol modullarning barchasi shu
+   * kamerada ishlaydi (standart holat). */
+  excludedModuleCodes?: number[] | null;
+  /** true bo'lsa, app/jobs/attendance_ai.py bu kamerada bitta kadr o'rniga
+   * bir necha kadr (burst) oladi — tez o'tib ketuvchi odamni ushlash
+   * ehtimolini oshiradi. Faqat kirish/koridor kameralari uchun mo'ljallangan. */
+  isEntrance?: boolean;
 }
 
 export type AIModuleGroup = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';

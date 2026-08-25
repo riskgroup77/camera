@@ -1,11 +1,19 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
 from sqlalchemy import select
 
 from app.models import Faculty, StudentStaff
-from app.services.face_matching import CandidateMatrix, find_best_match, load_candidate_matrix
+from app.services import face_matching
+from app.services.face_matching import (
+    CandidateMatrix,
+    find_best_match,
+    invalidate_candidate_matrix_cache,
+    load_candidate_matrix,
+    load_candidate_matrix_cached,
+)
 
 THRESHOLD = 0.55
 
@@ -97,3 +105,78 @@ class TestLoadCandidateMatrix:
         assert not candidates.is_empty
         assert set(candidates.ids) == {str(a.id), str(b.id)}
         assert candidates.matrix.shape == (2, 2)
+
+
+@pytest.mark.usefixtures("seeded")
+class TestLoadCandidateMatrixCached:
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        # Module-level cache is a process-wide global -- isolate each test
+        # from whatever an earlier test left behind, and from whatever the
+        # next one expects to find empty.
+        invalidate_candidate_matrix_cache()
+        yield
+        invalidate_candidate_matrix_cache()
+
+    async def _enroll_one(self, db_session, faculty, name="Birinchi"):
+        person = StudentStaff(
+            full_name=name, type="talaba", faculty_id=faculty.id, group_or_position="1",
+            biometric_embedding=json.dumps([1.0, 0.0]),
+        )
+        db_session.add(person)
+        await db_session.commit()
+        return person
+
+    async def test_first_call_loads_from_db(self, db_session):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        person = await self._enroll_one(db_session, faculty)
+
+        candidates = await load_candidate_matrix_cached(db_session)
+        assert candidates.ids == [str(person.id)]
+
+    async def test_second_call_within_ttl_reuses_the_cached_matrix(self, db_session, monkeypatch):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        await self._enroll_one(db_session, faculty)
+        await load_candidate_matrix_cached(db_session)  # warms the cache
+
+        calls = {"n": 0}
+        real_load = face_matching.load_candidate_matrix
+
+        async def counting_load(db):
+            calls["n"] += 1
+            return await real_load(db)
+
+        monkeypatch.setattr(face_matching, "load_candidate_matrix", counting_load)
+
+        # A second enrolled person exists in the DB now, but the cache is
+        # still fresh -- the stale result (only the first person) proves
+        # the DB wasn't hit again, not just that the count matches.
+        second = await self._enroll_one(db_session, faculty, name="Ikkinchi")
+        candidates = await load_candidate_matrix_cached(db_session)
+        assert calls["n"] == 0
+        assert str(second.id) not in candidates.ids
+
+    async def test_expired_ttl_forces_a_fresh_reload(self, db_session):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        await self._enroll_one(db_session, faculty)
+        await load_candidate_matrix_cached(db_session)
+
+        # Simulate the TTL having elapsed without needing a real sleep.
+        face_matching._cache_loaded_at = datetime.now(timezone.utc) - timedelta(
+            seconds=face_matching.CANDIDATE_MATRIX_CACHE_TTL_SECONDS + 1
+        )
+
+        second = await self._enroll_one(db_session, faculty, name="Ikkinchi")
+        candidates = await load_candidate_matrix_cached(db_session)
+        assert str(second.id) in candidates.ids
+
+    async def test_invalidate_forces_a_fresh_reload_immediately(self, db_session):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        await self._enroll_one(db_session, faculty)
+        await load_candidate_matrix_cached(db_session)
+
+        second = await self._enroll_one(db_session, faculty, name="Ikkinchi")
+        invalidate_candidate_matrix_cache()
+
+        candidates = await load_candidate_matrix_cached(db_session)
+        assert str(second.id) in candidates.ids

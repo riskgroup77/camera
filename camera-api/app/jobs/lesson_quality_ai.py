@@ -63,6 +63,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
+from app.jobs.module_status import any_module_active
 from app.jobs.phone_ai import PHONE_CLASS_ID
 from app.models import LessonSession
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix
@@ -75,6 +76,9 @@ from app.timezone import local_now
 
 logger = logging.getLogger("app.lesson_quality_ai")
 
+ATTENTION_MODULE_CODE = 19
+TEACHER_ACTIVITY_MODULE_CODE = 21
+
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 
 # {lesson_session_id: sample_count} — see module docstring's "kept in
@@ -84,6 +88,12 @@ _activity_sample_counts: dict[str, int] = defaultdict(int)
 
 
 async def _active_sessions(db: AsyncSession) -> list[LessonSession]:
+    """Filtered in Python against the camera's excluded_module_codes —
+    see app/jobs/teacher_punctuality_ai.py's _due_sessions for why that's
+    fine here (LessonSession.camera is lazy="joined", "active right now"
+    is always a small set). A session is skipped only if its camera
+    excludes BOTH #19 and #21 — same "any" rule run_lesson_quality_ai_
+    sweep_once itself already applies at the whole-sweep level."""
     now = local_now()
     result = await db.execute(
         select(LessonSession)
@@ -93,6 +103,11 @@ async def _active_sessions(db: AsyncSession) -> list[LessonSession]:
     )
     active = []
     for row in result.scalars().all():
+        if row.camera is None:
+            continue
+        excluded = set(row.camera.excluded_module_codes or [])
+        if {ATTENTION_MODULE_CODE, TEACHER_ACTIVITY_MODULE_CODE}.issubset(excluded):
+            continue
         end = row.scheduled_start_time + timedelta(minutes=settings.lesson_duration_minutes)
         if row.scheduled_start_time <= now <= end:
             active.append(row)
@@ -257,6 +272,8 @@ async def run_lesson_quality_ai_sweep_once(
     sessions got at least one score sampled this tick (not an event
     count — this job never raises Events, only updates scores)."""
     async with session_factory() as db:
+        if not await any_module_active(db, [ATTENTION_MODULE_CODE, TEACHER_ACTIVITY_MODULE_CODE]):
+            return 0
         sessions = await _active_sessions(db)
         candidates = await load_candidate_matrix(db)
 

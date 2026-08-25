@@ -87,6 +87,19 @@ class TestDueSessions:
         await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15, checked=True)
         assert await _due_sessions(db_session) == []
 
+    async def test_camera_excluding_module_22_is_not_due(self, db_session, a_teacher, a_camera):
+        a_camera.excluded_module_codes = [22]
+        await db_session.commit()
+        await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
+        assert await _due_sessions(db_session) == []
+
+    async def test_camera_excluding_a_different_module_is_still_due(self, db_session, a_teacher, a_camera):
+        a_camera.excluded_module_codes = [25]  # vehicle detection, unrelated
+        await db_session.commit()
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
+        due = await _due_sessions(db_session)
+        assert [r.id for r in due] == [row.id]
+
 
 @pytest.mark.usefixtures("seeded")
 class TestCheckLessonSession:

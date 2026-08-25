@@ -28,6 +28,7 @@ justified until measured to be necessary.
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import select
@@ -76,6 +77,45 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     ids = [str(row_id) for row_id, _ in rows]
     matrix = np.array([json.loads(embedding_json) for _, embedding_json in rows], dtype=np.float64)
     return CandidateMatrix(ids=ids, matrix=matrix)
+
+
+CANDIDATE_MATRIX_CACHE_TTL_SECONDS = 30
+
+_cache: CandidateMatrix | None = None
+_cache_loaded_at: datetime | None = None
+
+
+async def load_candidate_matrix_cached(db: AsyncSession) -> CandidateMatrix:
+    """Same data as load_candidate_matrix(), reused across calls within a
+    short TTL instead of re-querying + re-parsing every enrolled person's
+    embedding on every call — app/routers/public.py's live-detection
+    endpoint is polled every few seconds per open camera, so this was real,
+    repeated, wasted DB+JSON work at any real enrolled-population size.
+
+    A newly-enrolled person can take up to CANDIDATE_MATRIX_CACHE_TTL_SECONDS
+    to appear here (invalidate_candidate_matrix_cache() shortens that to
+    ~immediately after enrollment — see app/routers/students_staff.py) —
+    acceptable for a live-view convenience endpoint. The AI sweep loops
+    (attendance_ai.py, vision_ai.py, etc.) intentionally keep calling
+    load_candidate_matrix() directly instead, since a stale population
+    there risks a real missed/mismatched attendance write, not just a
+    delayed UI box."""
+    global _cache, _cache_loaded_at
+    now = datetime.now(timezone.utc)
+    if (
+        _cache is None
+        or _cache_loaded_at is None
+        or (now - _cache_loaded_at).total_seconds() > CANDIDATE_MATRIX_CACHE_TTL_SECONDS
+    ):
+        _cache = await load_candidate_matrix(db)
+        _cache_loaded_at = now
+    return _cache
+
+
+def invalidate_candidate_matrix_cache() -> None:
+    global _cache, _cache_loaded_at
+    _cache = None
+    _cache_loaded_at = None
 
 
 def find_best_match(

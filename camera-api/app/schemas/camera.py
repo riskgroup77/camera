@@ -37,6 +37,15 @@ class CameraOut(CamelModel):
     # see app/models/camera.py's Camera.restricted_zone_polygon docstring.
     # None/empty means app/jobs/zone_entry_ai.py skips this camera entirely.
     restricted_zone_polygon: list[list[float]] | None = None
+    # AIModuleConfig.code integers this camera is EXCLUDED from — see
+    # app/models/camera.py's Camera.excluded_module_codes docstring. Empty/
+    # None means every active module still runs on this camera (today's
+    # behavior, unchanged).
+    excluded_module_codes: list[int] | None = None
+    # See app/models/camera.py's Camera.is_entrance docstring —
+    # app/jobs/attendance_ai.py grabs a multi-frame burst from this
+    # camera instead of a single frame.
+    is_entrance: bool = False
 
 
 class CameraCreateIn(CamelModel):
@@ -51,6 +60,7 @@ class CameraCreateIn(CamelModel):
     resolution: str = Field(min_length=2)
     fps: int | None = None
     status: Literal["faol", "nofaol", "tamirda"] = "nofaol"
+    is_entrance: bool = False
 
 
 class CameraUpdateIn(CameraCreateIn):
@@ -73,6 +83,14 @@ class CameraZonePolygonIn(CamelModel):
     swept by app/jobs/zone_entry_ai.py)."""
 
     polygon: list[list[float]] | None = None
+
+
+class CameraModulesIn(CamelModel):
+    """PATCH body for app/routers/cameras.py's modules endpoint — a full
+    replacement of the exclusion list (matches CameraZonePolygonIn's
+    replace-not-merge convention), not an add/remove delta."""
+
+    excluded_module_codes: list[int] | None = None
 
 
 class ConnectionTestIn(CamelModel):

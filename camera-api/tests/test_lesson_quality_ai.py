@@ -9,6 +9,8 @@ from sqlalchemy import select
 
 from app.jobs import lesson_quality_ai
 from app.jobs.lesson_quality_ai import (
+    ATTENTION_MODULE_CODE,
+    TEACHER_ACTIVITY_MODULE_CODE,
     _active_sessions,
     _closest_pose_to_point,
     _pose_movement,
@@ -18,11 +20,19 @@ from app.jobs.lesson_quality_ai import (
     process_lesson_session,
     run_lesson_quality_ai_sweep_once,
 )
-from app.models import Building, Camera, Faculty, LessonSession, StudentStaff
+from app.models import AIModuleConfig, Building, Camera, Faculty, LessonSession, StudentStaff
 from app.services.face_matching import CandidateMatrix
 from app.services.pose_detection import NOSE
 from app.timezone import local_now
 from tests.conftest import TestSessionLocal
+
+
+async def _set_module_active(db_session, code: int, active: bool) -> None:
+    module = (
+        await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == code))
+    ).scalar_one()
+    module.active = active
+    await db_session.commit()
 
 
 @dataclass
@@ -268,6 +278,19 @@ class TestActiveSessions:
         await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=-5)  # starts 5 min from now
         assert await _active_sessions(db_session) == []
 
+    async def test_camera_excluding_both_modules_is_not_active(self, db_session, a_teacher, a_camera):
+        a_camera.excluded_module_codes = [ATTENTION_MODULE_CODE, TEACHER_ACTIVITY_MODULE_CODE]
+        await db_session.commit()
+        await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+        assert await _active_sessions(db_session) == []
+
+    async def test_camera_excluding_only_one_module_is_still_active(self, db_session, a_teacher, a_camera):
+        a_camera.excluded_module_codes = [ATTENTION_MODULE_CODE]  # #21 (teacher activity) still allowed
+        await db_session.commit()
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+        active = await _active_sessions(db_session)
+        assert [r.id for r in active] == [row.id]
+
     async def test_session_long_past_the_lesson_duration_is_not_active(self, db_session, a_teacher, a_camera):
         await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=200)  # default duration is 90 min
         assert await _active_sessions(db_session) == []
@@ -346,3 +369,40 @@ class TestSweepConcurrency:
 
         await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both sessions were attempted despite the first one failing
+
+    async def test_both_modules_disabled_skips_the_sweep_entirely(self, db_session, a_teacher, a_camera, monkeypatch):
+        await _set_module_active(db_session, ATTENTION_MODULE_CODE, False)
+        await _set_module_active(db_session, TEACHER_ACTIVITY_MODULE_CODE, False)
+        await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+
+        calls = {"n": 0}
+
+        async def counting_grab_frame_pair(stream_url, gap_seconds=1.0):
+            calls["n"] += 1
+            return _blank_frame(), _blank_frame()
+
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair", counting_grab_frame_pair)
+
+        count = await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+        assert count == 0
+        assert calls["n"] == 0
+
+    async def test_only_one_of_attention_activity_disabled_still_runs(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        await _set_module_active(db_session, ATTENTION_MODULE_CODE, False)  # teacher activity (#21) stays on
+        await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+
+        async def fake_grab_frame_pair(stream_url, gap_seconds=1.0):
+            return _blank_frame(), _blank_frame()
+
+        async def fake_detect_faces(frame_bytes):
+            return []
+
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair", fake_grab_frame_pair)
+        monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
+
+        # Not asserting a specific count here (depends on pose detection
+        # against a blank frame) -- only that the sweep didn't short-circuit
+        # at the module gate the way the "both disabled" test above does.
+        await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)

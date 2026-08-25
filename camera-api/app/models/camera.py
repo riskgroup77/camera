@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,5 +52,27 @@ class Camera(Base):
     # simply invisible to zone_entry_ai.py, same "not configured yet"
     # pattern as stream_url being unset for the other AI sweep loops.
     restricted_zone_polygon: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # Kamera↔AI-modul bog'lanishi — a list of AIModuleConfig.code integers
+    # this camera is EXCLUDED from (not an allow-list). Exclusion, not
+    # inclusion, so every existing camera (this column is nullable, no
+    # migration backfill needed) keeps its current behavior — every active
+    # module still runs on it — until an admin deliberately opts a camera
+    # out of specific modules (e.g. no vehicle detection (#25) on an
+    # indoor classroom camera). See app/jobs/module_status.py's
+    # camera_allows_module() for the query-side filter every sweep loop
+    # applies alongside AIModuleConfig.active.
+    excluded_module_codes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # TT kriteriya 3/6/7/8 (davomat) — app/jobs/attendance_ai.py grabs a
+    # multi-frame BURST (not one frame) from a camera flagged this way,
+    # since an entrance/corridor camera is exactly where someone passing
+    # through briefly (turned away in one frame, visible in the next) is
+    # most likely to get missed by a single-frame sample. False by
+    # default — an admin marks specific cameras as entrances; every other
+    # camera keeps today's single-frame behavior (burst-grabbing every
+    # camera would just add ffmpeg/inference load with no benefit for a
+    # camera where people linger, e.g. a classroom).
+    is_entrance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")

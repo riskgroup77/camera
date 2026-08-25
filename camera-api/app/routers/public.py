@@ -7,28 +7,38 @@ credentials, and the frontend can't filter by faculty/course/group the way
 an earlier mock-data version pretended to.
 """
 
-import json
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import case, extract, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import and_, case, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
-from app.jobs.attendance_ai import find_best_match
 from app.jobs.camera_health import is_reachable
-from app.models import AttendanceRecord, Camera, Event, LessonSession, StudentStaff
+from app.models import AttendanceRecord, Building, Camera, Event, LessonSession, StudentStaff
+from app.pagination import Page, PageParams, build_page, paginate
 from app.rate_limit import limiter
 from app.schemas.public import DetectedFaceOut, LiveDetectionOut, PublicCameraOut, PublicStatsOut, PublicTopStudentOut
+from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame
 from app.services.sleep_detection import is_asleep
 from app.timezone import local_now
 
 router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+def _is_live_expr():
+    """SQL mirror of app/jobs/camera_health.py's is_reachable() — lets the
+    'JONLI'/'OFLAYN' filter and the live/offline stats counts be computed
+    in the database instead of fetching every camera row into Python."""
+    freshness_cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.camera_health_freshness_seconds)
+    return and_(Camera.status == "faol", Camera.last_seen_at.isnot(None), Camera.last_seen_at >= freshness_cutoff)
 
 
 def _to_public_camera(camera: Camera) -> PublicCameraOut:
@@ -47,10 +57,31 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
     )
 
 
-@router.get("/cameras", response_model=list[PublicCameraOut])
-async def list_public_cameras(db: Annotated[AsyncSession, Depends(get_db)]) -> list[PublicCameraOut]:
-    result = await db.execute(select(Camera).options(selectinload(Camera.building)).order_by(Camera.name))
-    return [_to_public_camera(c) for c in result.scalars().all()]
+@router.get("/cameras", response_model=Page[PublicCameraOut])
+async def list_public_cameras(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    params: Annotated[PageParams, Depends()],
+    search: str | None = None,
+    building: str | None = None,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+) -> Page[PublicCameraOut]:
+    """Paginated (see app/pagination.py's Page/PageParams) so the response
+    stays bounded as the institute's camera count grows — search/building/
+    status are applied in SQL rather than over the full table so filtering
+    still only pulls back one page's worth of rows."""
+    stmt = select(Camera).options(selectinload(Camera.building)).order_by(Camera.name)
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.where(or_(Camera.name.ilike(like), Camera.zone.ilike(like)))
+    if building:
+        stmt = stmt.where(Camera.building.has(Building.name == building))
+    if status_filter == "live":
+        stmt = stmt.where(_is_live_expr())
+    elif status_filter == "offline":
+        stmt = stmt.where(~_is_live_expr())
+
+    rows, total = await paginate(db, stmt, params)
+    return build_page([_to_public_camera(c) for c in rows], total, params)
 
 
 @router.get("/stats", response_model=PublicStatsOut)
@@ -88,6 +119,14 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
         )
     ).scalar_one()
 
+    live_cameras = (
+        await db.execute(select(func.count()).select_from(Camera).where(_is_live_expr()))
+    ).scalar_one()
+    total_cameras = (await db.execute(select(func.count()).select_from(Camera))).scalar_one()
+    buildings = (
+        await db.execute(select(Building.name).distinct().order_by(Building.name))
+    ).scalars().all()
+
     return PublicStatsOut(
         total_students=total_students,
         present=present,
@@ -95,6 +134,9 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
         late=late,
         sleep_incidents=sleep_incidents,
         violations=violations,
+        live_cameras=live_cameras,
+        offline_cameras=total_cameras - live_cameras,
+        buildings=list(buildings),
     )
 
 
@@ -172,16 +214,11 @@ async def get_live_detection(
     frame_height, frame_width = (img.shape[0], img.shape[1]) if img is not None else (0, 0)
 
     faces = await detect_faces(frame_bytes)
-    candidates_result = await db.execute(
-        select(StudentStaff.id, StudentStaff.biometric_embedding).where(
-            StudentStaff.biometric_embedding.is_not(None)
-        )
-    )
-    candidates = [(str(row_id), json.loads(embedding_json)) for row_id, embedding_json in candidates_result.all()]
+    candidates = await load_candidate_matrix_cached(db)
 
     faces_out = []
     for face in faces:
-        match = find_best_match(face.embedding.tolist(), candidates)
+        match = candidates.best_match(face.embedding, settings.attendance_ai_match_threshold)
         person_name = None
         if match is not None:
             person = await db.get(StudentStaff, match[0])

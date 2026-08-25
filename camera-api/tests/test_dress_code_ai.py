@@ -12,8 +12,16 @@ from app.jobs.dress_code_ai import (
     process_camera_frame_pair_for_dress_code,
     run_dress_code_ai_sweep_once,
 )
-from app.models import Building, Camera, Event, StudentStaff
+from app.models import AIModuleConfig, Building, Camera, Event, StudentStaff
 from tests.conftest import TestSessionLocal
+
+
+async def _set_module_active(db_session, code: int, active: bool) -> None:
+    module = (
+        await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == code))
+    ).scalar_one()
+    module.active = active
+    await db_session.commit()
 
 
 def _blank_frame() -> bytes:
@@ -183,3 +191,59 @@ class TestSweepConcurrency:
 
         await run_dress_code_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing
+
+    async def test_both_modules_disabled_skips_the_sweep_entirely(
+        self, db_session, a_staff_member, monkeypatch
+    ):
+        await _set_module_active(db_session, COAT_MODULE_CODE, False)
+        await _set_module_active(db_session, HEAD_COVERING_MODULE_CODE, False)
+
+        building = (await db_session.execute(select(Building))).scalars().first()
+        db_session.add(Camera(
+            name="Kamera", ip="10.0.9.70", stream_url="rtsp://fake/x",
+            building_id=building.id, zone="Z", resolution="1080p", status="faol",
+            last_seen_at=datetime.now(timezone.utc),
+        ))
+        await db_session.commit()
+
+        calls = {"n": 0}
+
+        async def counting_grab_frame_pair(stream_url, gap_seconds=1.0):
+            calls["n"] += 1
+            frame = _blank_frame()
+            return frame, frame
+
+        monkeypatch.setattr(dress_code_ai, "grab_frame_pair", counting_grab_frame_pair)
+
+        count = await run_dress_code_ai_sweep_once(session_factory=TestSessionLocal)
+        assert count == 0
+        assert calls["n"] == 0
+
+    async def test_only_one_of_coat_head_covering_disabled_still_runs(
+        self, db_session, a_staff_member, monkeypatch
+    ):
+        await _set_module_active(db_session, COAT_MODULE_CODE, False)  # head covering (#11) stays on
+
+        building = (await db_session.execute(select(Building))).scalars().first()
+        db_session.add(Camera(
+            name="Kamera", ip="10.0.9.71", stream_url="rtsp://fake/y",
+            building_id=building.id, zone="Z", resolution="1080p", status="faol",
+            last_seen_at=datetime.now(timezone.utc),
+        ))
+        await db_session.commit()
+
+        calls = {"n": 0}
+
+        async def counting_grab_frame_pair(stream_url, gap_seconds=1.0):
+            calls["n"] += 1
+            frame = _blank_frame()
+            return frame, frame
+
+        async def fake_missing(frame_bytes, candidates, staff_ids):
+            return False, False
+
+        monkeypatch.setattr(dress_code_ai, "grab_frame_pair", counting_grab_frame_pair)
+        monkeypatch.setattr(dress_code_ai, "_staff_missing_compliance", fake_missing)
+
+        await run_dress_code_ai_sweep_once(session_factory=TestSessionLocal)
+        assert calls["n"] == 1  # module #11 alone was enough to keep the sweep running

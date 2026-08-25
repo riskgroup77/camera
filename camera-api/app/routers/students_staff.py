@@ -12,6 +12,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.models import Faculty, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.student_staff import StudentStaffCreateIn, StudentStaffOut, StudentStaffUpdateIn
+from app.services.face_matching import invalidate_candidate_matrix_cache
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
 from app.storage import presigned_url, upload_file
 from app.utils import compute_initials
@@ -149,4 +150,5 @@ async def enroll_biometrics(
     await log_action(db, request, current_user.id, f"Biometrik ma'lumot saqlandi: {record.full_name}", "Talabalar")
     await db.commit()
     await db.refresh(record)
+    invalidate_candidate_matrix_cache()
     return _to_out(record, record.faculty.name if record.faculty else "")

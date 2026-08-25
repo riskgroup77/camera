@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Eye, Loader2, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
+import { Cpu, Eye, Loader2, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
+import CameraModulesModal from '../../components/admin/CameraModulesModal';
 import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -44,6 +45,7 @@ export default function CamerasZonesPage() {
   const [editing, setEditing] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
   const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
+  const [editingModules, setEditingModules] = useState<CameraConfig | null>(null);
   const [counts, setCounts] = useState<{ faol: number; nofaol: number; tamirda: number } | null>(null);
   const { zones } = useCameraZones(buildingFilter ?? undefined);
 
@@ -246,6 +248,18 @@ export default function CamerasZonesPage() {
                         <MapPinned size={12} />
                         Zona
                       </button>
+                      <button
+                        onClick={() => setEditingModules(c)}
+                        title="AI modullarni sozlash"
+                        className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                          c.excludedModuleCodes && c.excludedModuleCodes.length > 0
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-indigo-600 dark:text-indigo-400'
+                        }`}
+                      >
+                        <Cpu size={12} />
+                        Modullar
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -265,6 +279,12 @@ export default function CamerasZonesPage() {
         open={!!drawingZone}
         camera={drawingZone}
         onClose={() => setDrawingZone(null)}
+        onSave={() => reload()}
+      />
+      <CameraModulesModal
+        open={!!editingModules}
+        camera={editingModules}
+        onClose={() => setEditingModules(null)}
         onSave={() => reload()}
       />
     </section>

@@ -35,8 +35,8 @@ class TestPublicEndpoints:
         resp = await client.get("/api/public/cameras")
         assert resp.status_code == 200
         body = resp.json()
-        assert len(body) == 1
-        cam = body[0]
+        assert body["total"] == 1
+        cam = body["items"][0]
         assert cam["name"] == "Ommaviy test kamerasi"
         assert cam["status"] == "live"
         assert "ip" not in cam
@@ -62,7 +62,7 @@ class TestPublicEndpoints:
         await db_session.commit()
 
         resp = await client.get("/api/public/cameras")
-        cam = next(c for c in resp.json() if c["name"] == "Hech qachon tekshirilmagan kamera")
+        cam = next(c for c in resp.json()["items"] if c["name"] == "Hech qachon tekshirilmagan kamera")
         assert cam["status"] == "offline"
 
     async def test_public_stats_requires_no_auth(self, client: AsyncClient):
@@ -71,6 +71,7 @@ class TestPublicEndpoints:
         body = resp.json()
         assert set(body.keys()) == {
             "totalStudents", "present", "absent", "late", "sleepIncidents", "violations",
+            "liveCameras", "offlineCameras", "buildings",
         }
 
     async def test_public_stats_reflects_real_attendance(self, client: AsyncClient):
@@ -113,6 +114,121 @@ class TestPublicEndpoints:
         assert resp.status_code == 200
         body = resp.json()
         assert any(s["id"] == student["id"] and s["attendanceRate"] == 100 for s in body)
+
+    async def test_live_detection_unknown_camera_is_404(self, client: AsyncClient):
+        resp = await client.get("/api/public/cameras/00000000-0000-0000-0000-000000000000/live-detection")
+        assert resp.status_code == 404
+
+    async def test_live_detection_camera_without_stream_returns_empty(self, client: AsyncClient, a_camera):
+        # a_camera has no stream_url configured -- no ffmpeg/RTSP available
+        # to actually grab a frame from in this test environment, so the
+        # endpoint's early-return path is what's under test here.
+        resp = await client.get(f"/api/public/cameras/{a_camera.id}/live-detection")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["faces"] == []
+        assert body["frameWidth"] == 0
+        assert body["frameHeight"] == 0
+
+    async def test_public_cameras_pagination_bounds_page_size(self, client: AsyncClient, db_session):
+        building = (await db_session.execute(select(Building))).scalars().first()
+        for i in range(5):
+            db_session.add(
+                Camera(
+                    name=f"Sahifa kamerasi {i}", ip=f"10.0.1.{i}", building_id=building.id, zone="Z",
+                    resolution="1080p", status="faol",
+                )
+            )
+        await db_session.commit()
+
+        resp = await client.get("/api/public/cameras?pageSize=2&page=1")
+        body = resp.json()
+        assert body["total"] == 5
+        assert body["totalPages"] == 3
+        assert len(body["items"]) == 2
+
+        resp2 = await client.get("/api/public/cameras?pageSize=2&page=3")
+        assert len(resp2.json()["items"]) == 1  # last page has the 1 remaining camera
+
+    async def test_public_cameras_search_filters_by_name_or_zone(self, client: AsyncClient, db_session):
+        building = (await db_session.execute(select(Building))).scalars().first()
+        db_session.add(
+            Camera(
+                name="Kirish nazorati", ip="10.0.2.1", building_id=building.id, zone="Bosh kirish",
+                resolution="1080p", status="faol",
+            )
+        )
+        db_session.add(
+            Camera(
+                name="Boshqa kamera", ip="10.0.2.2", building_id=building.id, zone="Ombor",
+                resolution="1080p", status="faol",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/api/public/cameras?search=kirish")
+        names = [c["name"] for c in resp.json()["items"]]
+        assert names == ["Kirish nazorati"]  # matches by name
+
+        resp2 = await client.get("/api/public/cameras?search=Ombor")
+        names2 = [c["name"] for c in resp2.json()["items"]]
+        assert names2 == ["Boshqa kamera"]  # matches by zone
+
+    async def test_public_cameras_status_filter(self, client: AsyncClient, a_camera, db_session):
+        building = (await db_session.execute(select(Building))).scalars().first()
+        db_session.add(
+            Camera(
+                name="Oflayn kamera", ip="10.0.3.1", building_id=building.id, zone="Z",
+                resolution="1080p", status="faol", last_seen_at=None,
+            )
+        )
+        await db_session.commit()
+
+        live_resp = await client.get("/api/public/cameras?status=live")
+        live_names = [c["name"] for c in live_resp.json()["items"]]
+        assert live_names == [a_camera.name]
+
+        offline_resp = await client.get("/api/public/cameras?status=offline")
+        offline_names = [c["name"] for c in offline_resp.json()["items"]]
+        assert offline_names == ["Oflayn kamera"]
+
+    async def test_public_cameras_building_filter(self, client: AsyncClient, db_session):
+        buildings = (await db_session.execute(select(Building))).scalars().all()
+        assert len(buildings) >= 2
+        db_session.add(
+            Camera(
+                name="Birinchi bino kamerasi", ip="10.0.4.1", building_id=buildings[0].id, zone="Z",
+                resolution="1080p", status="faol",
+            )
+        )
+        db_session.add(
+            Camera(
+                name="Ikkinchi bino kamerasi", ip="10.0.4.2", building_id=buildings[1].id, zone="Z",
+                resolution="1080p", status="faol",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get(f"/api/public/cameras?building={buildings[0].name}")
+        names = [c["name"] for c in resp.json()["items"]]
+        assert "Birinchi bino kamerasi" in names
+        assert "Ikkinchi bino kamerasi" not in names
+
+    async def test_public_stats_camera_counts_and_buildings(self, client: AsyncClient, a_camera, db_session):
+        building = (await db_session.execute(select(Building))).scalars().first()
+        db_session.add(
+            Camera(
+                name="Oflayn statistika kamerasi", ip="10.0.5.1", building_id=building.id, zone="Z",
+                resolution="1080p", status="faol", last_seen_at=None,
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/api/public/stats")
+        body = resp.json()
+        assert body["liveCameras"] >= 1
+        assert body["offlineCameras"] >= 1
+        assert building.name in body["buildings"]
 
     async def test_top_students_excludes_students_with_no_attendance(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

@@ -7,11 +7,12 @@ import CameraFilterBar, { EMPTY_FILTERS, type CameraFilters } from '../../compon
 import CameraDetailModal from '../../components/CameraDetailModal';
 import TopStudentsModal from '../../components/TopStudentsModal';
 import QuickAccessBar from '../../components/QuickAccessBar';
-import { api } from '../../lib/apiClient';
+import { api, buildQuery, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { AttendanceStats, CameraFeed } from '../../types';
 
 const PAGE_SIZE = 30;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const EMPTY_STATS: AttendanceStats = {
   totalStudents: 0,
@@ -20,76 +21,116 @@ const EMPTY_STATS: AttendanceStats = {
   late: 0,
   sleepIncidents: 0,
   violations: 0,
+  liveCameras: 0,
+  offlineCameras: 0,
+  buildings: [],
 };
 
 export default function MonitoringPage() {
   const navigate = useNavigate();
   const { role, logout } = useAuth();
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filters, setFilters] = useState<CameraFilters>(EMPTY_FILTERS);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [page, setPage] = useState(1);
   const [selectedCamera, setSelectedCamera] = useState<CameraFeed | null>(null);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
   const [cameras, setCameras] = useState<CameraFeed[]>([]);
+  const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
   const [stats, setStats] = useState<AttendanceStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Qidiruv har bosilgan tugmada emas, foydalanuvchi to'xtaganda so'rov
+  // yuboradi — endi qidiruv serverda bajariladi (kameralar soni ko'payganda
+  // ularning hammasini oldindan yuklab olish shart emas).
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const statusFilter = filters.status === 'JONLI' ? 'live' : filters.status === 'OFLAYN' ? 'offline' : undefined;
+
+  // Statistikalar (jami/jonli/oflayn kameralar, binolar ro'yxati) —
+  // sahifalash va filtrlardan mustaqil, alohida so'raladi.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    Promise.all([api.get<CameraFeed[]>('/api/public/cameras'), api.get<AttendanceStats>('/api/public/stats')])
-      .then(([camerasRes, statsRes]) => {
-        if (cancelled) return;
-        setCameras(camerasRes);
-        setStats(statsRes);
-        setError(null);
+    api
+      .get<AttendanceStats>('/api/public/stats')
+      .then((res) => {
+        if (!cancelled) setStats(res);
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+      .catch(() => {
+        /* statistikani yuklab bo'lmadi — standart (bo'sh) qiymatlar bilan davom etamiz */
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const attendanceRate = stats.totalStudents > 0 ? Math.round((stats.present / stats.totalStudents) * 100) : 0;
+  // Qidiruv yoki filtr o'zgarsa — birinchi sahifadan qayta boshlaymiz.
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters.building, statusFilter]);
 
-  const buildings = useMemo(() => Array.from(new Set(cameras.map((c) => c.building))).sort(), [cameras]);
+  // Joriy sahifani (yoki "Ko'proq ko'rsatish" bosilganda keyingi sahifani)
+  // serverdan yuklaydi — javob endi bitta katta massiv emas, chegaralangan
+  // Page<T> (app/pagination.py), shuning uchun kameralar soni ortsa ham
+  // bitta so'rov hajmi cheklangan bo'lib qoladi.
+  useEffect(() => {
+    let cancelled = false;
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
+
+    const qs = buildQuery({
+      page,
+      pageSize: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+      building: filters.building || undefined,
+      status: statusFilter,
+    });
+
+    api
+      .get<Page<CameraFeed>>(`/api/public/cameras${qs}`)
+      .then((res) => {
+        if (cancelled) return;
+        setCameras((prev) => (page === 1 ? res.items : [...prev, ...res.items]));
+        setPageInfo({ total: res.total, totalPages: res.totalPages });
+        setError(null);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, debouncedSearch, filters.building, statusFilter]);
+
+  const attendanceRate = stats.totalStudents > 0 ? Math.round((stats.present / stats.totalStudents) * 100) : 0;
 
   const quickStats = useMemo(
     () => ({
-      live: cameras.filter((c) => c.status === 'live').length,
+      live: stats.liveCameras,
       risk: stats.violations,
-      offline: cameras.filter((c) => c.status === 'offline').length,
+      offline: stats.offlineCameras,
       late: stats.late,
     }),
-    [cameras, stats],
+    [stats],
   );
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return cameras.filter((c) => {
-      if (q && !c.name.toLowerCase().includes(q) && !c.zone.toLowerCase().includes(q)) return false;
-      if (filters.building && c.building !== filters.building) return false;
-      if (filters.status) {
-        const wantLive = filters.status === 'JONLI';
-        if ((c.status === 'live') !== wantLive) return false;
-      }
-      return true;
-    });
-  }, [cameras, search, filters]);
-
-  const visible = filtered.slice(0, visibleCount);
-  const remaining = filtered.length - visible.length;
+  const visible = cameras;
+  const remaining = pageInfo.total - cameras.length;
 
   function resetFilters(next: CameraFilters) {
     setFilters(next);
-    setVisibleCount(PAGE_SIZE);
   }
 
   return (
@@ -184,7 +225,7 @@ export default function MonitoringPage() {
               Video Monitoring Markazi
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {filtered.length} ta kamera topildi · {visible.length} ta ko'rsatilmoqda
+              {pageInfo.total} ta kamera topildi · {visible.length} ta ko'rsatilmoqda
               (kamerani bosing — batafsil ma'lumot)
             </p>
           </div>
@@ -196,10 +237,7 @@ export default function MonitoringPage() {
             />
             <input
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setVisibleCount(PAGE_SIZE);
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Kamera nomi yoki zona bo'yicha qidiruv..."
               aria-label="Kameralarni qidirish"
               className="w-full rounded-xl border border-white/80 dark:border-white/10 bg-white/60 dark:bg-white/5 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 dark:text-slate-500 focus:border-indigo-300"
@@ -207,7 +245,7 @@ export default function MonitoringPage() {
           </div>
         </div>
 
-        <CameraFilterBar filters={filters} onChange={resetFilters} stats={quickStats} buildings={buildings} />
+        <CameraFilterBar filters={filters} onChange={resetFilters} stats={quickStats} buildings={stats.buildings} />
 
         {loading && cameras.length === 0 ? (
           <div className="flex items-center justify-center py-10 text-slate-400">
@@ -232,10 +270,11 @@ export default function MonitoringPage() {
         {remaining > 0 && (
           <div className="mt-6 flex justify-center">
             <button
-              onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-              className="btn-glass"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={loadingMore}
+              className="btn-glass disabled:opacity-60"
             >
-              Ko'proq ko'rsatish (+{Math.min(PAGE_SIZE, remaining)} kamera)
+              {loadingMore ? "Yuklanmoqda..." : `Ko'proq ko'rsatish (+${Math.min(PAGE_SIZE, remaining)} kamera)`}
             </button>
           </div>
         )}

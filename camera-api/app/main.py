@@ -55,6 +55,20 @@ from app.seed import seed_all
 configure_logging()
 logger = logging.getLogger("app")
 
+# All 16 AI sweep loops below used to fire their first sweep in the exact
+# same instant (asyncio.create_task returns immediately, so a plain loop
+# of create_task calls schedules every loop's first iteration for the very
+# next event-loop tick) — contending for the same camera/inference
+# semaphores and DB connections all at once, then drifting back in sync
+# every ~30s after since each loop's own interval is fixed. Wrapping each
+# with _staggered() delays only that first tick; asyncio.create_task still
+# returns immediately (the sleep happens inside the task's own execution,
+# not the lifespan coroutine), so server startup isn't slowed down by this.
+async def _staggered(delay_seconds: float, loop_coro) -> None:
+    if delay_seconds > 0:
+        await asyncio.sleep(delay_seconds)
+    await loop_coro
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,26 +83,33 @@ async def lifespan(app: FastAPI):
     is_leader = await try_become_leader()
     tasks = [asyncio.create_task(cleanup_loop())]
     if is_leader:
-        tasks += [
-            asyncio.create_task(camera_health_loop()),
-            asyncio.create_task(attendance_ai_loop()),
-            asyncio.create_task(vision_ai_loop()),
-            asyncio.create_task(fire_ai_loop()),
-            asyncio.create_task(teacher_punctuality_ai_loop()),
-            asyncio.create_task(unauthorized_person_ai_loop()),
-            asyncio.create_task(crowd_density_ai_loop()),
-            asyncio.create_task(abandoned_object_ai_loop()),
-            asyncio.create_task(disorder_ai_loop()),
-            asyncio.create_task(dress_code_ai_loop()),
-            asyncio.create_task(phone_ai_loop()),
-            asyncio.create_task(vehicle_ai_loop()),
-            asyncio.create_task(fall_ai_loop()),
-            asyncio.create_task(zone_entry_ai_loop()),
-            asyncio.create_task(lesson_quality_ai_loop()),
-            asyncio.create_task(fight_ai_loop()),
-            asyncio.create_task(stream_cache_reaper_loop()),
+        stagger = settings.ai_loop_stagger_seconds
+        ai_loops = [
+            camera_health_loop(),
+            attendance_ai_loop(),
+            vision_ai_loop(),
+            fire_ai_loop(),
+            teacher_punctuality_ai_loop(),
+            unauthorized_person_ai_loop(),
+            crowd_density_ai_loop(),
+            abandoned_object_ai_loop(),
+            disorder_ai_loop(),
+            dress_code_ai_loop(),
+            phone_ai_loop(),
+            vehicle_ai_loop(),
+            fall_ai_loop(),
+            zone_entry_ai_loop(),
+            lesson_quality_ai_loop(),
+            fight_ai_loop(),
         ]
-        logger.info("acquired AI sweep leader lock — sweep loops running in this worker", extra={"event": "leader_elected"})
+        tasks += [
+            asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)
+        ]
+        tasks.append(asyncio.create_task(stream_cache_reaper_loop()))
+        logger.info(
+            "acquired AI sweep leader lock — sweep loops running in this worker (staggered start)",
+            extra={"event": "leader_elected", "stagger_seconds": stagger},
+        )
     else:
         logger.info(
             "another worker already holds the AI sweep leader lock — sweep loops NOT started here",

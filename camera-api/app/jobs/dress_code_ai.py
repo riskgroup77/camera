@@ -32,12 +32,13 @@ from datetime import datetime, timedelta, timezone
 
 import cv2
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
+from app.jobs.module_status import any_module_active, camera_allows_module
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.coat_detection import is_wearing_white_coat
@@ -210,7 +211,13 @@ async def run_dress_code_ai_sweep_once(
     this mirrors. Returns how many Events (coat + head covering combined)
     were raised."""
     async with session_factory() as db:
-        result = await db.execute(select(Camera).where(Camera.status == "faol"))
+        if not await any_module_active(db, [COAT_MODULE_CODE, HEAD_COVERING_MODULE_CODE]):
+            return 0
+        result = await db.execute(
+            select(Camera)
+            .where(Camera.status == "faol")
+            .where(or_(camera_allows_module(COAT_MODULE_CODE), camera_allows_module(HEAD_COVERING_MODULE_CODE)))
+        )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix(db)
         staff_ids = await _load_staff_ids(db)
