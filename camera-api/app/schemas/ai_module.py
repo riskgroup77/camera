@@ -17,13 +17,15 @@ class AIModuleOut(CamelModel):
     sensitivity: Literal["past", "o'rta", "yuqori"]
     camera_count: int
     active: bool
+    has_detector: bool
 
 
 class AIModuleUpdateIn(CamelModel):
-    """Registry-level config an admin can change — NOT model retraining.
-    Toggling `active` without a real inference worker behind this module
-    is a no-op for actual detections; it only changes what the frontend
-    shows as enabled. See the router docstring for the honest caveat."""
+    """Registry-level config an admin can change. `active` is enforced by
+    every app/jobs/*.py sweep loop (see app/jobs/module_status.py) — for
+    the handful of criteria with no detector written yet (has_detector on
+    AIModuleConfig), the router rejects activation outright rather than
+    silently accepting a toggle that would do nothing."""
 
     threshold: int
     sensitivity: Literal["past", "o'rta", "yuqori"]

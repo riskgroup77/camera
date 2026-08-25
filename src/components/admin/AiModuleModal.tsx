@@ -109,18 +109,23 @@ export default function AiModuleModal({
             ]}
           />
 
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
+          <label
+            className={`flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400 ${
+              !module.hasDetector ? 'opacity-50' : ''
+            }`}
+          >
             <input
               type="checkbox"
               checked={form.active}
+              disabled={!module.hasDetector}
               onChange={(e) => set('active', e.target.checked)}
               className="rounded border-slate-300 dark:border-white/10"
             />
             Modul faol
           </label>
-          {module.accuracy === 0 && !form.active && (
+          {!module.hasDetector && (
             <p className="text-[11px] text-slate-400 dark:text-slate-500">
-              Bu modul uchun hali haqiqiy AI model ulanmagan (aniqlik 0%) — faollashtirib bo'lmaydi.
+              Bu modul uchun hali aniqlash logikasi yozilmagan — faollashtirib bo'lmaydi.
             </p>
           )}
 

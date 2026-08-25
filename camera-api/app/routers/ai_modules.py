@@ -1,15 +1,14 @@
 """AI modules REGISTRY endpoints.
 
-Honest scope note: this manages which of the TT hujjat's 25 criteria are
-configured/enabled and their tuning knobs (threshold, sensitivity) — it
-does NOT run any actual computer-vision inference. Building real
-detectors for all 25 criteria (fire detection, fall detection, crowd
-density, dress-code classification, etc.) is a multi-month ML engineering
-project requiring trained models most of which don't exist as off-the-shelf
-packages. The one criterion with genuine inference wired up is face
-recognition — see app/services/face_recognition.py and /api/face/compare.
-Every other row here has accuracy=0 and active=False until a real model
-is plugged in behind it.
+Manages which of the TT hujjat's 25 criteria are enabled and their tuning
+knobs (threshold, sensitivity). Most criteria DO have a real detector
+behind them (classical CV/heuristics in app/jobs/*.py — see each row's
+`method` field and app/seed.py's per-criterion notes), enforced by every
+sweep loop via app/jobs/module_status.py; `accuracy` is frequently 0 not
+because nothing runs, but because nobody has benchmarked that heuristic
+against ground truth yet. Only `has_detector=False` rows (ID-badge, PPE,
+smoking, general dress-code) have no detector at all — activating those
+is rejected outright since the toggle would otherwise do nothing.
 """
 
 from typing import Annotated
@@ -42,6 +41,7 @@ def _to_out(m: AIModuleConfig) -> AIModuleOut:
         sensitivity=m.sensitivity,
         camera_count=m.camera_count,
         active=m.active,
+        has_detector=m.has_detector,
     )
 
 
@@ -64,10 +64,10 @@ async def update_ai_module(
     if module is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Modul topilmadi")
 
-    if body.active and module.accuracy == 0:
+    if body.active and not module.has_detector:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "Bu modul uchun hali haqiqiy AI model ulanmagan (accuracy=0) — faollashtirib bo'lmaydi",
+            "Bu modul uchun hali aniqlash logikasi yozilmagan — faollashtirib bo'lmaydi",
         )
 
     module.threshold = body.threshold

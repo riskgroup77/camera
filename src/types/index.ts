@@ -127,6 +127,12 @@ export interface AIModule {
   sensitivity: 'past' | "o'rta" | 'yuqori';
   cameraCount: number;
   active: boolean;
+  /** false bo'lsa, bu kriteriya uchun hali hech qanday aniqlash kodi
+   * yozilmagan (sof registr qatori) — shuning uchun uni faollashtirish
+   * backend tomonidan rad etiladi (409). true bo'lganlarning barchasida
+   * app/jobs/*.py'da haqiqiy (garchi hali baholanmagan bo'lsa ham)
+   * aniqlash logikasi bor. */
+  hasDetector: boolean;
 }
 
 export interface Report {
