@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Settings2 } from 'lucide-react';
+import { Loader2, Settings2, Video } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Badge from '../../components/Badge';
 import AiModuleModal from '../../components/admin/AiModuleModal';
+import ModuleCamerasModal from '../../components/admin/ModuleCamerasModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
@@ -15,12 +16,14 @@ export default function AIModulesPage() {
   const { role, token } = useAuth();
   const { can } = usePermissions();
   const canConfigure = can('configureAi', role);
+  const canManageCameras = can('manageCameras', role);
 
   const [modules, setModules] = useState<AIModule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<AIModuleGroup>('A');
   const [editing, setEditing] = useState<AIModule | null>(null);
+  const [assigningCameras, setAssigningCameras] = useState<AIModule | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -61,6 +64,11 @@ export default function AIModulesPage() {
   function handleSave(saved: AIModule) {
     setModules((prev) => prev.map((m) => (m.id === saved.id ? saved : m)));
     setEditing(null);
+  }
+
+  function reloadModules() {
+    if (!token) return;
+    api.get<AIModule[]>('/api/ai-modules', token).then(setModules).catch(() => {});
   }
 
   const currentModules = byGroup.get(activeGroup) ?? [];
@@ -140,19 +148,40 @@ export default function AIModulesPage() {
                   <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
                     {m.active ? `${m.accuracy}%` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{m.cameraCount || '—'}</td>
-                  <td className="px-4 py-3">
-                    {canConfigure ? (
-                      <button
-                        onClick={() => openEdit(m)}
-                        className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                      >
-                        <Settings2 size={12} />
-                        Sozlash
-                      </button>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                    {m.hasDetector ? (
+                      <span title="Faol kameralarda bu modul yoqilgan">
+                        {m.cameraCount}
+                      </span>
                     ) : (
-                      <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                      '—'
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {canManageCameras && m.hasDetector && (
+                        <button
+                          onClick={() => setAssigningCameras(m)}
+                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          <Video size={12} />
+                          Kameralar
+                        </button>
+                      )}
+                      {canConfigure ? (
+                        <button
+                          onClick={() => openEdit(m)}
+                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          <Settings2 size={12} />
+                          Sozlash
+                        </button>
+                      ) : (
+                        !canManageCameras && (
+                          <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                        )
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -162,6 +191,12 @@ export default function AIModulesPage() {
       )}
 
       <AiModuleModal open={!!editing} onClose={() => setEditing(null)} module={editing} onSave={handleSave} />
+      <ModuleCamerasModal
+        open={!!assigningCameras}
+        module={assigningCameras}
+        onClose={() => setAssigningCameras(null)}
+        onSaved={reloadModules}
+      />
     </section>
   );
 }

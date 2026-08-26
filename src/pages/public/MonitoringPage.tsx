@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Clock3, LogOut, Loader2, Moon, Search, Trophy, UserCheck, Users, UserX } from 'lucide-react';
 import StatCard from '../../components/StatCard';
-import CameraCard from '../../components/CameraCard';
 import CameraFilterBar, { EMPTY_FILTERS, type CameraFilters } from '../../components/CameraFilterBar';
 import CameraDetailModal from '../../components/CameraDetailModal';
+import VirtualCameraGrid from '../../components/VirtualCameraGrid';
+import type { GridLayoutMode } from '../../lib/virtualCameraGrid';
 import TopStudentsModal from '../../components/TopStudentsModal';
 import QuickAccessBar from '../../components/QuickAccessBar';
 import { api, buildQuery, type Page } from '../../lib/apiClient';
@@ -35,6 +36,7 @@ export default function MonitoringPage() {
   const [page, setPage] = useState(1);
   const [selectedCamera, setSelectedCamera] = useState<CameraFeed | null>(null);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<GridLayoutMode>('scroll');
 
   const [cameras, setCameras] = useState<CameraFeed[]>([]);
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
@@ -226,8 +228,32 @@ export default function MonitoringPage() {
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {pageInfo.total} ta kamera topildi · {visible.length} ta ko'rsatilmoqda
-              (kamerani bosing — batafsil ma'lumot)
+              (kamerani bosing — batafsil ma'lumot · bir vaqtda max 8 ta jonli oqim)
             </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {(
+              [
+                ['scroll', 'Ro\'yxat'],
+                ['wall-4', '4 ta devor'],
+                ['wall-9', '9 ta devor'],
+                ['wall-16', '16 ta devor'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setLayoutMode(mode)}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  layoutMode === mode
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           <div className="relative w-full max-w-xs">
@@ -256,18 +282,14 @@ export default function MonitoringPage() {
             Filtrlarga mos kamera topilmadi
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {visible.map((camera) => (
-              <CameraCard
-                key={camera.id}
-                camera={camera}
-                onClick={() => setSelectedCamera(camera)}
-              />
-            ))}
-          </div>
+          <VirtualCameraGrid
+            cameras={visible}
+            layoutMode={layoutMode}
+            onSelect={setSelectedCamera}
+          />
         )}
 
-        {remaining > 0 && (
+        {layoutMode === 'scroll' && remaining > 0 && (
           <div className="mt-6 flex justify-center">
             <button
               onClick={() => setPage((p) => p + 1)}

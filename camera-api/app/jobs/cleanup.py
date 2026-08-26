@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import AuditLog, PasswordResetToken, RevokedToken
+from app.models import AuditLog, Event, PasswordResetToken, RevokedToken
 
 logger = logging.getLogger("app.cleanup")
 
@@ -32,12 +32,15 @@ async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
         )
     )
     audit_result = await db.execute(delete(AuditLog).where(AuditLog.occurred_at < retention_cutoff))
+    event_cutoff = now - timedelta(days=settings.event_retention_days)
+    event_result = await db.execute(delete(Event).where(Event.occurred_at < event_cutoff))
     await db.commit()
 
     counts = {
         "revoked_tokens": revoked_result.rowcount or 0,
         "password_reset_tokens": reset_result.rowcount or 0,
         "audit_logs": audit_result.rowcount or 0,
+        "events": event_result.rowcount or 0,
     }
     if any(counts.values()):
         logger.info("cleanup sweep removed expired rows", extra=counts)

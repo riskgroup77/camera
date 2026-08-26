@@ -15,22 +15,30 @@ from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.fire_ai import fire_ai_loop
 from app.jobs.abandoned_object_ai import abandoned_object_ai_loop
+from app.jobs.badge_ai import badge_ai_loop
 from app.jobs.crowd_density_ai import crowd_density_ai_loop
 from app.jobs.disorder_ai import disorder_ai_loop
 from app.jobs.dress_code_ai import dress_code_ai_loop
 from app.jobs.fall_ai import fall_ai_loop
 from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
+from app.jobs.ai_scheduler import ai_scheduler_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
 from app.jobs.phone_ai import phone_ai_loop
+from app.jobs.ppe_ai import ppe_ai_loop
+from app.jobs.smoking_ai import smoking_ai_loop
+from app.jobs.student_dress_code_ai import student_dress_code_ai_loop
 from app.jobs.teacher_punctuality_ai import teacher_punctuality_ai_loop
 from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
+from app.jobs.unified_face_sweep import unified_face_sweep_loop
 from app.jobs.vehicle_ai import vehicle_ai_loop
 from app.jobs.vision_ai import vision_ai_loop
 from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.logging_config import configure_logging
 from app.rate_limit import limiter
+from app.redis_bus import start_redis_listener, stop_redis_listener
 from app.services import video_gateway
+from app.ws import manager
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
 from app.storage import check_bucket
 from app.routers import (
@@ -51,6 +59,7 @@ from app.routers import (
     users,
 )
 from app.seed import seed_all
+from app.services.stream_sync import sync_all_active_camera_streams
 
 configure_logging()
 logger = logging.getLogger("app")
@@ -75,40 +84,77 @@ async def lifespan(app: FastAPI):
     async with SessionLocal() as session:
         await seed_all(session)
 
+    is_leader = await try_become_leader()
+    if is_leader:
+        try:
+            async with SessionLocal() as session:
+                synced, failed = await sync_all_active_camera_streams(session)
+            logger.info(
+                "startup MediaMTX stream sync complete",
+                extra={"event": "stream_sync", "synced": synced, "failed": failed},
+            )
+        except Exception:
+            logger.exception("startup MediaMTX stream sync failed")
+
     # See app/jobs/leader_lock.py: with WEB_CONCURRENCY>1 (multiple
     # uvicorn worker processes), only one worker should run the AI sweep
     # loops — otherwise every camera gets swept once per worker, per
     # interval, producing duplicate writes. cleanup_loop stays ungated
     # (its deletes are idempotent; redundant runs are harmless).
-    is_leader = await try_become_leader()
     tasks = [asyncio.create_task(cleanup_loop())]
+    if settings.redis_url.strip():
+        await start_redis_listener(manager.deliver_from_redis)
     if is_leader:
         stagger = settings.ai_loop_stagger_seconds
-        ai_loops = [
-            camera_health_loop(),
-            attendance_ai_loop(),
-            vision_ai_loop(),
-            fire_ai_loop(),
-            teacher_punctuality_ai_loop(),
-            unauthorized_person_ai_loop(),
-            crowd_density_ai_loop(),
-            abandoned_object_ai_loop(),
-            disorder_ai_loop(),
-            dress_code_ai_loop(),
-            phone_ai_loop(),
-            vehicle_ai_loop(),
-            fall_ai_loop(),
-            zone_entry_ai_loop(),
-            lesson_quality_ai_loop(),
-            fight_ai_loop(),
-        ]
-        tasks += [
-            asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)
-        ]
+        if settings.ai_scheduler_enabled:
+            tasks.append(asyncio.create_task(ai_scheduler_loop()))
+            tasks.append(asyncio.create_task(camera_health_loop()))
+            logger.info(
+                "AI central scheduler enabled — individual module loops not started",
+                extra={"event": "ai_scheduler", "poll_seconds": settings.ai_scheduler_poll_seconds},
+            )
+        else:
+            face_loops = (
+                [unified_face_sweep_loop()]
+                if settings.unified_face_sweep_enabled
+                else [
+                    attendance_ai_loop(),
+                    vision_ai_loop(),
+                    unauthorized_person_ai_loop(),
+                    crowd_density_ai_loop(),
+                ]
+            )
+            ai_loops = [
+                camera_health_loop(),
+                *face_loops,
+                fire_ai_loop(),
+                teacher_punctuality_ai_loop(),
+                abandoned_object_ai_loop(),
+                disorder_ai_loop(),
+                dress_code_ai_loop(),
+                phone_ai_loop(),
+                badge_ai_loop(),
+                ppe_ai_loop(),
+                smoking_ai_loop(),
+                student_dress_code_ai_loop(),
+                vehicle_ai_loop(),
+                fall_ai_loop(),
+                zone_entry_ai_loop(),
+                lesson_quality_ai_loop(),
+                fight_ai_loop(),
+            ]
+            tasks += [
+                asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)
+            ]
         tasks.append(asyncio.create_task(stream_cache_reaper_loop()))
         logger.info(
-            "acquired AI sweep leader lock — sweep loops running in this worker (staggered start)",
-            extra={"event": "leader_elected", "stagger_seconds": stagger},
+            "acquired AI sweep leader lock — sweep loops running in this worker",
+            extra={
+                "event": "leader_elected",
+                "stagger_seconds": stagger if not settings.ai_scheduler_enabled else None,
+                "unified_face_sweep": settings.unified_face_sweep_enabled,
+                "ai_scheduler": settings.ai_scheduler_enabled,
+            },
         )
     else:
         logger.info(
@@ -122,6 +168,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
     if is_leader:
         await shutdown_stream_cache()
+    await stop_redis_listener()
     await release_leadership()
     logger.info("shutting down", extra={"event": "shutdown"})
 

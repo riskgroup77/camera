@@ -17,6 +17,7 @@ import numpy as np
 from insightface.app import FaceAnalysis
 
 from app.config import settings
+from app.services.inference_gate import PRIORITY_BACKGROUND, PRIORITY_LIVE, face_inference_gate
 
 logger = logging.getLogger("app.face_recognition")
 
@@ -53,7 +54,8 @@ class NoFaceDetectedError(Exception):
 # unused. Read once at import time (like the rest of this module's
 # settings-derived state) — changing it requires a restart, same as
 # MATCH_THRESHOLD.
-_inference_semaphore = asyncio.Semaphore(settings.face_recognition_inference_concurrency)
+# Slot allocation is via app/services/inference_gate.py — live-detection
+# and enrollment jump ahead of background AI sweeps.
 
 
 def _get_app() -> FaceAnalysis:
@@ -129,8 +131,8 @@ async def compare_faces(image_a: bytes, image_b: bytes) -> FaceCompareResult:
     """Runs on a worker thread — InsightFace/ONNX inference is CPU-bound
     and synchronous; running it directly on the event loop would stall
     every other request for the ~100-300ms a comparison takes. Gated by
-    _inference_semaphore — see its docstring."""
-    async with _inference_semaphore:
+    face_inference_gate — see inference_gate.py."""
+    async with face_inference_gate.slot(priority=PRIORITY_LIVE):
         return await asyncio.to_thread(_compare_sync, image_a, image_b)
 
 
@@ -145,8 +147,8 @@ async def extract_embedding(image_bytes: bytes) -> list[float]:
     """Used at enrollment time (app/routers/students_staff.py) to persist
     the enrollment photo's embedding — separate from compare_faces() since
     enrollment only ever has one photo to embed, not two to compare. Gated
-    by _inference_semaphore — see its docstring."""
-    async with _inference_semaphore:
+    by face_inference_gate with live priority."""
+    async with face_inference_gate.slot(priority=PRIORITY_LIVE):
         return await asyncio.to_thread(_extract_embedding_sync, image_bytes)
 
 
@@ -178,7 +180,30 @@ def _detect_faces_sync(image_bytes: bytes) -> list[DetectedFace]:
     ]
 
 
-async def detect_faces(image_bytes: bytes) -> list[DetectedFace]:
-    """Gated by _inference_semaphore — see its docstring."""
-    async with _inference_semaphore:
+async def detect_faces(
+    image_bytes: bytes, *, priority: int = PRIORITY_BACKGROUND
+) -> list[DetectedFace]:
+    """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection."""
+    async with face_inference_gate.slot(priority=priority):
         return await asyncio.to_thread(_detect_faces_sync, image_bytes)
+
+
+def _detect_faces_batch_sync(images: list[bytes]) -> list[list[DetectedFace]]:
+    """Process multiple frames under one inference gate acquisition."""
+    return [_detect_faces_sync(img) for img in images]
+
+
+async def detect_faces_batch(
+    image_bytes_list: list[bytes], *, priority: int = PRIORITY_BACKGROUND
+) -> list[list[DetectedFace]]:
+    """Batch face detection — chunks by face_recognition_batch_size."""
+    if not image_bytes_list:
+        return []
+    batch_size = max(1, settings.face_recognition_batch_size)
+    all_results: list[list[DetectedFace]] = []
+    async with face_inference_gate.slot(priority=priority):
+        for i in range(0, len(image_bytes_list), batch_size):
+            chunk = image_bytes_list[i : i + batch_size]
+            chunk_results = await asyncio.to_thread(_detect_faces_batch_sync, chunk)
+            all_results.extend(chunk_results)
+    return all_results

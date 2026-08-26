@@ -53,3 +53,14 @@ class LessonSessionScheduleIn(CamelModel):
     teacher_id: str | None = None
     camera_id: str | None = None
     scheduled_start_time: str | None = None
+
+
+class LessonSessionImportErrorOut(CamelModel):
+    row: int
+    message: str
+
+
+class LessonSessionImportResultOut(CamelModel):
+    imported: int
+    skipped: int
+    errors: list[LessonSessionImportErrorOut]

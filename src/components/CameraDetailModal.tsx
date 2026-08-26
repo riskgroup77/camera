@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Building2, Circle, Expand, MapPin, Minimize2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Building2, Circle, Expand, Eye, EyeOff, MapPin, Minimize2 } from 'lucide-react';
 import Modal from './Modal';
 import LiveVideoPlayer from './LiveVideoPlayer';
 import type { CameraFeed } from '../types';
@@ -12,7 +12,12 @@ export default function CameraDetailModal({
   onClose: () => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
+  const [showDetections, setShowDetections] = useState(false);
   const isLive = camera?.status === 'live';
+
+  useEffect(() => {
+    setShowDetections(false);
+  }, [camera?.id]);
 
   return (
     <Modal open={!!camera} onClose={onClose} title={camera?.name} maxWidth="max-w-2xl">
@@ -23,7 +28,13 @@ export default function CameraDetailModal({
               fullscreen ? 'fixed inset-4 z-[60] rounded-2xl' : 'aspect-video'
             }`}
           >
-            {isLive && <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections />}
+            {isLive && (
+              <LiveVideoPlayer
+                streamUrl={camera.streamUrl}
+                cameraId={camera.id}
+                showDetections={showDetections}
+              />
+            )}
             {isLive ? (
               <>
                 <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-bold text-white">
@@ -39,6 +50,13 @@ export default function CameraDetailModal({
                 OFLAYN
               </span>
             )}
+            <button
+              onClick={() => setShowDetections((v) => !v)}
+              className="absolute bottom-3 left-3 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-black/70"
+            >
+              {showDetections ? <EyeOff size={13} /> : <Eye size={13} />}
+              {showDetections ? 'AI o\'chirish' : 'AI ko\'rsatkich'}
+            </button>
             <button
               onClick={() => setFullscreen((v) => !v)}
               className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-black/70"

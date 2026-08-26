@@ -81,11 +81,45 @@ Both scripts use the same `S3_*` env vars as `app/storage.py` (loaded via
 ## Scheduling
 
 Neither script schedules itself — wire either into your platform's own
-scheduler. A daily cron entry, run from wherever the scripts + `pg_dump` +
+scheduler.
+
+### Docker Compose (recommended)
+
+```bash
+cd /opt/camera/camera-api
+export BACKUP_DIR=/var/backups/camera-api
+bash scripts/backup_docker.sh
+```
+
+Or run both bare-metal scripts in sequence:
+
+```bash
+bash scripts/run_all_backups.sh
+```
+
+### systemd timer (deploy/)
+
+Copy `deploy/camera-backup.service` and `deploy/camera-backup.timer` to
+`/etc/systemd/system/`, adjust `WorkingDirectory` and `BACKUP_DIR`, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now camera-backup.timer
+```
+
+### cron (bare metal)
+
+A daily cron entry, run from wherever the scripts + `pg_dump` +
 python venv are available:
 
 ```cron
 # Daily at 02:00, keep 14 days of Postgres dumps, mirror MinIO in full each time
+0 2 * * * cd /opt/camera-api && bash scripts/run_all_backups.sh >> /var/log/camera-api-backup.log 2>&1
+```
+
+Legacy split cron (still supported):
+
+```cron
 0 2 * * * cd /opt/camera-api && DATABASE_URL=... BACKUP_DIR=/var/backups/camera-api/postgres bash scripts/backup_postgres.sh >> /var/log/camera-api-backup.log 2>&1
 5 2 * * * cd /opt/camera-api && S3_BUCKET=camera-uploads BACKUP_DIR=/var/backups/camera-api/minio ./.venv/bin/python scripts/backup_minio.py >> /var/log/camera-api-backup.log 2>&1
 ```

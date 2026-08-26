@@ -41,7 +41,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
-from app.jobs.module_status import any_module_active, camera_allows_module, is_module_active
+from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import AttendanceRecord, AuditLog, Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix
@@ -76,6 +77,7 @@ STUDENT_ATTENDANCE_MODULE_CODE = 7
 # ai_sweep_camera_concurrency in .env on the production server; the
 # in-process default here is conservative for a dev machine.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("attendance_ai")
 
 
 def _is_off_hours(occurred_time: time_type) -> bool:
@@ -225,6 +227,9 @@ async def process_camera_frame(
     occurred_at: datetime | None = None,
     candidates: CandidateMatrix | None = None,
     off_hours_module_active: bool = True,
+    staff_module_active: bool = True,
+    student_module_active: bool = True,
+    faces: list | None = None,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -249,8 +254,12 @@ async def process_camera_frame(
     tick, instead of each camera re-querying and re-parsing the same
     embeddings from the DB (see app/services/face_matching.py's module
     docstring for why that matters at scale). Defaults to a self-load for
-    simple/one-off callers (tests, mainly)."""
-    faces = await detect_faces(frame_bytes)
+    simple/one-off callers (tests, mainly).
+
+    `faces` lets app/jobs/unified_face_sweep.py pass pre-detected faces
+    from a shared detect_faces() call — skips a redundant inference pass."""
+    if faces is None:
+        faces = await detect_faces(frame_bytes)
     if not faces:
         return []
 
@@ -271,6 +280,11 @@ async def process_camera_frame(
         student_staff_id, similarity = match
         if student_staff_id in matched_ids:
             continue  # two faces in one frame matching the same person is a coincidence, not two sightings
+        person_type = candidates.person_type(student_staff_id)
+        if person_type == "xodim" and not staff_module_active:
+            continue
+        if person_type == "talaba" and not student_module_active:
+            continue
         matched_ids.add(student_staff_id)
         logger.info(
             "attendance AI matched a face", extra={"student_staff_id": student_staff_id, "similarity": similarity}
@@ -305,7 +319,9 @@ async def run_attendance_ai_sweep_once(
     (across all cameras, this tick) got an attendance write — not how many
     frames matched, since one frame can match several people at once."""
     async with session_factory() as db:
-        if not await any_module_active(db, [STAFF_ATTENDANCE_MODULE_CODE, STUDENT_ATTENDANCE_MODULE_CODE]):
+        staff_module_active = await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE)
+        student_module_active = await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
+        if not staff_module_active and not student_module_active:
             return 0
         off_hours_module_active = await is_module_active(db, OFF_HOURS_MODULE_CODE)
         result = await db.execute(
@@ -350,8 +366,13 @@ async def run_attendance_ai_sweep_once(
                 credited: set[str] = set()
                 for frame in frames:
                     records = await process_camera_frame(
-                        frame, camera_db, camera, candidates=candidates,
+                        frame,
+                        camera_db,
+                        camera,
+                        candidates=candidates,
                         off_hours_module_active=off_hours_module_active,
+                        staff_module_active=staff_module_active,
+                        student_module_active=student_module_active,
                     )
                     credited.update(str(r.student_staff_id) for r in records)
                 return len(credited)
@@ -372,7 +393,7 @@ async def run_attendance_ai_sweep_once(
 async def attendance_ai_loop() -> None:
     while True:
         try:
-            count = await run_attendance_ai_sweep_once()
+            count = await _sweep_guard.run(run_attendance_ai_sweep_once)
             if count:
                 logger.info("attendance AI sweep complete", extra={"matches": count})
         except Exception:

@@ -74,6 +74,16 @@ services:
       - "8888:8888" # HLS
       - "127.0.0.1:9997:9997" # control API (faqat serverning ozi uchun)
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   api:
     build: .
     restart: unless-stopped
@@ -84,6 +94,8 @@ services:
         condition: service_completed_successfully
       mediamtx:
         condition: service_started
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://camera_api:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/camera_api
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
@@ -97,6 +109,11 @@ services:
       S3_BUCKET: ${S3_BUCKET:-camera-uploads}
       MEDIAMTX_API_URL: http://mediamtx:9997
       MEDIAMTX_HLS_BASE_URL: ${MEDIAMTX_HLS_BASE_URL:-http://localhost:8888}
+      # Internal HLS base for ffmpeg/frame_grabber inside Docker — rewrites
+      # browser-facing stream URLs before opening them (see frame_grabber.py).
+      MEDIAMTX_HLS_INTERNAL_BASE_URL: ${MEDIAMTX_HLS_INTERNAL_BASE_URL:-http://mediamtx:8888}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AI_SCHEDULER_ENABLED: ${AI_SCHEDULER_ENABLED:-false}
       # Number of uvicorn worker processes (see Dockerfile). Leave at 1 for
       # a single low-traffic instance; scale up (e.g. 4) for production —
       # each core can roughly handle one worker for this kind of I/O-bound

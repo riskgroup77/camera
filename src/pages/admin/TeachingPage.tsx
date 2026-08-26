@@ -10,15 +10,19 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Brain, CalendarClock, Loader2, Moon, Plus, Presentation, Timer, Trash2 } from 'lucide-react';
+import { Brain, CalendarClock, FileUp, Loader2, Moon, Plus, Presentation, Timer, Trash2 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ScheduleLessonModal from '../../components/admin/ScheduleLessonModal';
+import LessonImportModal from '../../components/admin/LessonImportModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { formatLessonScheduleTime, isLessonScheduleComplete } from '../../lib/lessonSchedule';
 import type { LessonSession } from '../../types';
+
+type ScheduleFilter = 'all' | 'scheduled' | 'pending' | 'ai_ready';
 
 const AXIS_COLOR = '#94a3b8';
 const GRID_COLOR = 'rgba(148,163,184,0.25)';
@@ -29,6 +33,8 @@ export default function TeachingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const [scheduleFilter, setScheduleFilter] = useState<ScheduleFilter>('all');
+  const [importOpen, setImportOpen] = useState(false);
   const [deleting, setDeleting] = useState<LessonSession | null>(null);
   const [scheduling, setScheduling] = useState<LessonSession | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -66,10 +72,17 @@ export default function TeachingPage() {
 
   const groups = useMemo(() => Array.from(new Set(sessions.map((s) => s.group))), [sessions]);
 
-  const filtered = useMemo(
-    () => (groupFilter ? sessions.filter((s) => s.group === groupFilter) : sessions),
-    [sessions, groupFilter],
-  );
+  const filtered = useMemo(() => {
+    let rows = groupFilter ? sessions.filter((s) => s.group === groupFilter) : sessions;
+    if (scheduleFilter === 'scheduled') {
+      rows = rows.filter((s) => !!s.scheduledStartTime);
+    } else if (scheduleFilter === 'pending') {
+      rows = rows.filter((s) => !s.scheduledStartTime);
+    } else if (scheduleFilter === 'ai_ready') {
+      rows = rows.filter(isLessonScheduleComplete);
+    }
+    return rows;
+  }, [sessions, groupFilter, scheduleFilter]);
 
   const stats = useMemo(() => {
     if (!filtered.length) return { attention: 0, sleep: 0, activity: 0, onTime: 0 };
@@ -121,6 +134,13 @@ export default function TeachingPage() {
         action={
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <button
+              onClick={() => setImportOpen(true)}
+              className="btn-glass flex items-center gap-1.5"
+            >
+              <FileUp size={14} />
+              CSV import
+            </button>
+            <button
               onClick={() => setAddOpen(true)}
               className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
             >
@@ -145,6 +165,27 @@ export default function TeachingPage() {
                 }`}
               >
                 {g}
+              </button>
+            ))}
+            <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
+            {(
+              [
+                ['all', 'Barchasi'],
+                ['ai_ready', 'AI tayyor'],
+                ['scheduled', 'Jadval bor'],
+                ['pending', 'Jadvalsiz'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setScheduleFilter(key)}
+                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                  scheduleFilter === key
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300'
+                }`}
+              >
+                {label}
               </button>
             ))}
           </div>
@@ -242,6 +283,8 @@ export default function TeachingPage() {
                     <th className="px-4 py-3">Uxlash</th>
                     <th className="px-4 py-3">Faollik</th>
                     <th className="px-4 py-3">Vaqtida</th>
+                    <th className="px-4 py-3">Jadval</th>
+                    <th className="px-4 py-3">AI holati</th>
                     <th className="px-4 py-3">Amallar</th>
                   </tr>
                 </thead>
@@ -264,6 +307,14 @@ export default function TeachingPage() {
                       <td className="px-4 py-3">
                         <Badge tone={s.teacherOnTime ? 'green' : 'amber'}>
                           {s.teacherOnTime ? 'Ha' : "Yo'q"}
+                        </Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        {formatLessonScheduleTime(s.scheduledStartTime)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={isLessonScheduleComplete(s) ? 'green' : 'slate'}>
+                          {isLessonScheduleComplete(s) ? 'Kuzatiladi' : 'To\'liq emas'}
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
@@ -298,6 +349,11 @@ export default function TeachingPage() {
         </>
       )}
 
+      <LessonImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={() => setReloadKey((k) => k + 1)}
+      />
       <ConfirmDialog
         open={!!deleting}
         title="Dars monitoring yozuvini o'chirish"

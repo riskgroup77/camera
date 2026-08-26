@@ -47,6 +47,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _mean_flow_magnitude
 from app.models import Camera, Event
 from app.schemas.event import EventOut
@@ -63,6 +64,7 @@ FIGHT_MODULE_NAME = "Jang/nizolashish holati"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("fight_ai")
 
 
 def _person_center(points) -> tuple[float, float] | None:
@@ -197,7 +199,7 @@ async def run_fight_ai_sweep_once(
 async def fight_ai_loop() -> None:
     while True:
         try:
-            count = await run_fight_ai_sweep_once()
+            count = await _sweep_guard.run(run_fight_ai_sweep_once)
             if count:
                 logger.warning("fight AI sweep raised events", extra={"events": count})
         except Exception:

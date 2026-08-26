@@ -45,6 +45,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix
@@ -61,6 +62,7 @@ UNAUTHORIZED_MODULE_NAME = "Notanish/begona shaxsni aniqlash"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("unauthorized_person_ai")
 
 
 async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
@@ -88,11 +90,18 @@ def _has_unmatched_face(faces, candidates: CandidateMatrix) -> bool:
 
 
 async def process_camera_frame_pair_for_unauthorized(
-    frame_a: bytes, frame_b: bytes, db: AsyncSession, camera: Camera, candidates: CandidateMatrix | None = None
+    frame_a: bytes,
+    frame_b: bytes,
+    db: AsyncSession,
+    camera: Camera,
+    candidates: CandidateMatrix | None = None,
+    faces_a: list | None = None,
+    faces_b: list | None = None,
 ) -> bool:
     """Returns True if a (deduped) unauthorized-person Event was raised —
     see the module docstring for the two-frame confirmation rationale."""
-    faces_b = await detect_faces(frame_b)
+    if faces_b is None:
+        faces_b = await detect_faces(frame_b)
     if not faces_b:
         return False
 
@@ -102,7 +111,8 @@ async def process_camera_frame_pair_for_unauthorized(
     if not _has_unmatched_face(faces_b, candidates):
         return False  # everyone detected in frame_b matched an enrolled person
 
-    faces_a = await detect_faces(frame_a)
+    if faces_a is None:
+        faces_a = await detect_faces(frame_a)
     if not _has_unmatched_face(faces_a, candidates):
         return False  # frame_a had no unmatched face — frame_b's miss looks like a one-off angle/lighting glitch
 
@@ -191,7 +201,7 @@ async def run_unauthorized_person_ai_sweep_once(
 async def unauthorized_person_ai_loop() -> None:
     while True:
         try:
-            count = await run_unauthorized_person_ai_sweep_once()
+            count = await _sweep_guard.run(run_unauthorized_person_ai_sweep_once)
             if count:
                 logger.warning("unauthorized person AI sweep raised events", extra={"events": count})
         except Exception:

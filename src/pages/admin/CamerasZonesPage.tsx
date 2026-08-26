@@ -9,7 +9,9 @@ import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailMo
 import CameraModulesModal from '../../components/admin/CameraModulesModal';
 import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import { api } from '../../lib/apiClient';
+import { formatModuleSummary } from '../../lib/cameraModules';
 import { useAuth } from '../../lib/auth';
+import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
 import { useServerPage } from '../../lib/useServerPage';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
@@ -38,6 +40,7 @@ const STATUS_VALUE: Record<(typeof STATUS_FILTERS)[number], CameraConfig['status
 export default function CamerasZonesPage() {
   const { token } = useAuth();
   const { buildings } = useBuildings();
+  const { modules: moduleOptions } = useCameraModuleOptions();
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('Barchasi');
   const [buildingFilter, setBuildingFilter] = useState<string | null>(null);
   const [zoneFilter, setZoneFilter] = useState<string | null>(null);
@@ -81,11 +84,16 @@ export default function CamerasZonesPage() {
     };
   }, [token, cameras]);
 
+  function handleModulesSaved(saved: CameraConfig) {
+    reload();
+    if (viewing?.id === saved.id) setViewing(saved);
+  }
+
   return (
     <section className="glass p-6">
       <PageHeader
         title="Kameralar va Zonalar"
-        subtitle="RTSP kamera konfiguratsiyasi va zona boshqaruvi"
+        subtitle="RTSP kamera konfiguratsiyasi, zona va AI modul bog‘lanishi"
         action={
           <button
             onClick={() => setAddOpen(true)}
@@ -176,6 +184,7 @@ export default function CamerasZonesPage() {
                 <th className="px-4 py-3">IP / RTSP</th>
                 <th className="px-4 py-3">Bino</th>
                 <th className="px-4 py-3">Zona</th>
+                <th className="px-4 py-3">AI modullar</th>
                 <th className="px-4 py-3">Ruxsat / FPS</th>
                 <th className="px-4 py-3">Holat</th>
                 <th className="px-4 py-3">Aloqa</th>
@@ -183,87 +192,106 @@ export default function CamerasZonesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/60 dark:divide-white/5">
-              {cameras.map((c) => (
-                <tr key={c.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                  <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{c.name}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">{c.ip}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{c.building}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{c.zone}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                    {c.resolution} / {c.fps ? `${c.fps} fps` : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    {c.status !== 'faol' ? (
-                      <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
-                    ) : (
-                      <span
-                        title={
-                          c.isReachable
-                            ? "Kamera oxirgi tekshiruvda topildi"
-                            : "Kamera hozircha javob bermayapti — kabel/tarmoq muammosi bo'lishi mumkin"
-                        }
-                        className={`flex items-center gap-1.5 text-xs font-semibold ${
-                          c.isReachable
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-red-500 dark:text-red-400'
-                        }`}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            c.isReachable ? 'bg-emerald-500' : 'bg-red-500'
-                          }`}
-                        />
-                        {c.isReachable ? 'Ulangan' : "Javob yo'q"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
+              {cameras.map((c) => {
+                const moduleSummary =
+                  moduleOptions.length > 0 ? formatModuleSummary(moduleOptions, c) : '—';
+                const hasCustomModules = (c.excludedModuleCodes?.length ?? 0) > 0;
+                return (
+                  <tr key={c.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
+                    <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{c.name}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">{c.ip}</td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{c.building}</td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{c.zone}</td>
+                    <td className="px-4 py-3">
                       <button
-                        onClick={() => setViewing(c)}
-                        className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                      >
-                        <Eye size={12} />
-                        Ko'rish
-                      </button>
-                      <button
-                        onClick={() => setEditing(c)}
-                        className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                      >
-                        <Settings2 size={12} />
-                        Sozlash
-                      </button>
-                      <button
-                        onClick={() => setDrawingZone(c)}
-                        title="Taqiqlangan zonani belgilash"
-                        className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
-                          c.restrictedZonePolygon && c.restrictedZonePolygon.length > 0
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-indigo-600 dark:text-indigo-400'
-                        }`}
-                      >
-                        <MapPinned size={12} />
-                        Zona
-                      </button>
-                      <button
+                        type="button"
                         onClick={() => setEditingModules(c)}
                         title="AI modullarni sozlash"
-                        className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
-                          c.excludedModuleCodes && c.excludedModuleCodes.length > 0
+                        className={`text-xs font-semibold hover:underline ${
+                          hasCustomModules
                             ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-indigo-600 dark:text-indigo-400'
+                            : 'text-slate-600 dark:text-slate-400'
                         }`}
                       >
-                        <Cpu size={12} />
-                        Modullar
+                        {moduleSummary}
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                      {c.resolution} / {c.fps ? `${c.fps} fps` : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.status !== 'faol' ? (
+                        <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
+                      ) : (
+                        <span
+                          title={
+                            c.isReachable
+                              ? 'Kamera oxirgi tekshiruvda topildi'
+                              : "Kamera hozircha javob bermayapti — kabel/tarmoq muammosi bo'lishi mumkin"
+                          }
+                          className={`flex items-center gap-1.5 text-xs font-semibold ${
+                            c.isReachable
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-red-500 dark:text-red-400'
+                          }`}
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              c.isReachable ? 'bg-emerald-500' : 'bg-red-500'
+                            }`}
+                          />
+                          {c.isReachable ? 'Ulangan' : "Javob yo'q"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          onClick={() => setViewing(c)}
+                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          <Eye size={12} />
+                          Ko'rish
+                        </button>
+                        <button
+                          onClick={() => setEditing(c)}
+                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          <Settings2 size={12} />
+                          Sozlash
+                        </button>
+                        <button
+                          onClick={() => setDrawingZone(c)}
+                          title="Taqiqlangan zonani belgilash"
+                          className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                            c.restrictedZonePolygon && c.restrictedZonePolygon.length > 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-indigo-600 dark:text-indigo-400'
+                          }`}
+                        >
+                          <MapPinned size={12} />
+                          Zona
+                        </button>
+                        <button
+                          onClick={() => setEditingModules(c)}
+                          title="AI modullarni sozlash"
+                          className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                            hasCustomModules
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-indigo-600 dark:text-indigo-400'
+                          }`}
+                        >
+                          <Cpu size={12} />
+                          Modullar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div className="px-4">
@@ -272,9 +300,22 @@ export default function CamerasZonesPage() {
         </div>
       )}
 
-      <AddCameraModal open={addOpen} onClose={() => setAddOpen(false)} onSave={() => reload()} />
+      <AddCameraModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSave={(cam) => {
+          reload();
+          setEditingModules(cam);
+        }}
+      />
       <AddCameraModal open={!!editing} camera={editing} onClose={() => setEditing(null)} onSave={() => reload()} />
-      <CameraConfigDetailModal camera={viewing} onClose={() => setViewing(null)} />
+      <CameraConfigDetailModal
+        camera={viewing}
+        onClose={() => setViewing(null)}
+        onEditModules={() => {
+          if (viewing) setEditingModules(viewing);
+        }}
+      />
       <CameraZoneModal
         open={!!drawingZone}
         camera={drawingZone}
@@ -285,7 +326,7 @@ export default function CamerasZonesPage() {
         open={!!editingModules}
         camera={editingModules}
         onClose={() => setEditingModules(null)}
-        onSave={() => reload()}
+        onSave={handleModulesSaved}
       />
     </section>
   );

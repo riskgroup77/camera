@@ -26,6 +26,7 @@ from app.rate_limit import limiter
 from app.schemas.public import DetectedFaceOut, LiveDetectionOut, PublicCameraOut, PublicStatsOut, PublicTopStudentOut
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
+from app.services.inference_gate import PRIORITY_LIVE
 from app.services.frame_grabber import grab_frame
 from app.services.sleep_detection import is_asleep
 from app.timezone import local_now
@@ -213,7 +214,7 @@ async def get_live_detection(
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     frame_height, frame_width = (img.shape[0], img.shape[1]) if img is not None else (0, 0)
 
-    faces = await detect_faces(frame_bytes)
+    faces = await detect_faces(frame_bytes, priority=PRIORITY_LIVE)
     candidates = await load_candidate_matrix_cached(db)
 
     faces_out = []

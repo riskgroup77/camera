@@ -33,6 +33,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.fall_detection import is_fallen
@@ -49,6 +50,7 @@ FALL_MODULE_NAME = "Yiqilib tushish"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("fall_ai")
 
 
 async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
@@ -151,7 +153,7 @@ async def run_fall_ai_sweep_once(
 async def fall_ai_loop() -> None:
     while True:
         try:
-            count = await run_fall_ai_sweep_once()
+            count = await _sweep_guard.run(run_fall_ai_sweep_once)
             if count:
                 logger.warning("fall AI sweep raised events", extra={"events": count})
         except Exception:

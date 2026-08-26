@@ -32,8 +32,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN useradd --create-home appuser && chown -R appuser:appuser /app
+RUN useradd --create-home appuser \
+    && mkdir -p /home/appuser/.insightface/models \
+    && chown -R appuser:appuser /app /home/appuser/.insightface
 USER appuser
+
+# Persists InsightFace ONNX downloads across container rebuilds when mounted
+# as a named volume (see docker-compose.yml insightface_models).
+VOLUME /home/appuser/.insightface
 
 EXPOSE 8080
 

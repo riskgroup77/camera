@@ -14,9 +14,22 @@ difference.
 import asyncio
 import logging
 
+from app.config import settings
 from app.services.stream_cache import get_cached_frame
 
 logger = logging.getLogger("app.frame_grabber")
+
+
+def _internal_stream_url(stream_url: str) -> str:
+    """Rewrite a browser-facing HLS URL to the internal base the API
+    container can actually reach. Camera rows store the public URL for
+    LiveVideoPlayer; ffmpeg inside Docker cannot open https://stream.* when
+    that hostname isn't routed into the compose network."""
+    internal_base = (settings.mediamtx_hls_internal_base_url or settings.mediamtx_hls_base_url).rstrip("/")
+    public_base = settings.mediamtx_hls_base_url.rstrip("/")
+    if internal_base != public_base and stream_url.startswith(public_base):
+        return internal_base + stream_url[len(public_base) :]
+    return stream_url
 
 
 async def grab_frame(stream_url: str) -> bytes | None:
@@ -26,7 +39,7 @@ async def grab_frame(stream_url: str) -> bytes | None:
     etc.) — callers (app/jobs/attendance_ai.py etc.) treat that as
     "nothing to process this tick", not an error worth crashing the sweep
     over. Starts this stream's persistent reader on first call."""
-    return await get_cached_frame(stream_url)
+    return await get_cached_frame(_internal_stream_url(stream_url))
 
 
 async def grab_frame_pair(stream_url: str, gap_seconds: float = 1.0) -> tuple[bytes, bytes] | None:

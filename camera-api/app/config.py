@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     mediamtx_api_url: str = "http://127.0.0.1:9997"
     mediamtx_hls_base_url: str = "http://127.0.0.1:8888"
+    # Browser-facing HLS base (mediamtx_hls_base_url) often differs from what
+    # the API container can reach (e.g. https://stream.cam.fermi.uz vs
+    # http://mediamtx:8888 inside Docker). AI/frame_grabber uses this internal
+    # base to rewrite public stream URLs before ffmpeg opens them.
+    mediamtx_hls_internal_base_url: str | None = None
 
     # Parolni tiklash havolasi shu manzil ostida quriladi (frontend'ning
     # ResetPasswordPage marshruti). SMTP sozlanmagan bo'lsa (dev holati),
@@ -45,6 +50,9 @@ class Settings(BaseSettings):
     # plain asyncio loop started from main.py's lifespan is enough for a
     # single periodic sweep.
     audit_log_retention_days: int = 90
+    # AI-detected incidents (app/models/event.py) — older rows are purged
+    # by app/jobs/cleanup.py on the same schedule as audit logs.
+    event_retention_days: int = 180
     cleanup_interval_hours: int = 24
 
     # Camera reachability sweep (app/jobs/camera_health.py) — how often every
@@ -55,6 +63,9 @@ class Settings(BaseSettings):
     # "offline".
     camera_health_interval_seconds: int = 30
     camera_health_freshness_seconds: int = 90
+    # How long a faol camera must stay unreachable before raising an admin
+    # alert (AuditLog entry + structured WARNING log). Zero disables alerts.
+    camera_offline_alert_minutes: int = 5
 
     # Automatic attendance via face recognition (app/jobs/attendance_ai.py,
     # app/services/frame_grabber.py) — TT kriteriya 6/7/8, no external AI
@@ -325,6 +336,66 @@ class Settings(BaseSettings):
     stream_cache_max_age_seconds: float = 15.0
     stream_cache_idle_timeout_seconds: float = 300.0
     stream_cache_capture_fps: float = 2.0
+
+    # Unified face sweep (app/jobs/unified_face_sweep.py) — one frame grab +
+    # one face-detect pass per camera tick, feeding attendance/crowd/unauthorized/
+    # sleep modules instead of four independent loops each re-grabbing/re-detecting.
+    # When true, the four individual face-based loops are NOT started.
+    unified_face_sweep_enabled: bool = True
+    unified_face_sweep_interval_seconds: int = 30
+
+    # Optional Redis — shared rate limits (slowapi) + WebSocket pub/sub fan-out
+    # across multiple API workers/instances. Unset = in-memory (single instance).
+    redis_url: str = ""
+
+    # Central AI scheduler (app/jobs/ai_scheduler.py) — when true, individual
+    # per-module asyncio loops are NOT started; one coordinator dispatches sweeps.
+    ai_scheduler_enabled: bool = False
+    ai_scheduler_poll_seconds: int = 5
+
+    # GPU batch inference caps — detect_faces_batch / detect_objects_batch chunk size.
+    face_recognition_batch_size: int = 4
+    object_detection_batch_size: int = 4
+
+    # FAISS exact IP search when enrolled count >= this threshold (requires faiss-cpu).
+    face_match_faiss_min_size: int = 10_000
+
+    # MediaMTX horizontal sharding — comma-separated URLs, equal length pairs.
+    # Empty = single MEDIAMTX_API_URL / MEDIAMTX_HLS_BASE_URL.
+    mediamtx_shard_api_urls: str = ""
+    mediamtx_shard_hls_base_urls: str = ""
+
+    # TT kriteriya 12 — ID-badge evristikasi
+    badge_ai_interval_seconds: int = 45
+    badge_dedup_minutes: int = 30
+    badge_min_landmark_visibility: float = 0.5
+    badge_chest_width_factor: float = 0.35
+    badge_chest_height_factor: float = 0.45
+    badge_min_rect_fraction: float = 0.02
+    badge_max_rect_fraction: float = 0.25
+    badge_min_aspect: float = 0.5
+    badge_max_aspect: float = 2.5
+
+    # TT kriteriya 13 — SIZ
+    ppe_ai_interval_seconds: int = 45
+    ppe_dedup_minutes: int = 20
+    ppe_detection_model_path: str = ""
+    ppe_detection_confidence: float = 0.5
+    ppe_mask_saturation_min: int = 40
+    ppe_mask_value_min: int = 40
+    ppe_mask_fraction_threshold: float = 0.15
+
+    # TT kriteriya 15 — chekish postura
+    smoking_ai_interval_seconds: int = 45
+    smoking_dedup_minutes: int = 15
+    smoking_min_landmark_visibility: float = 0.5
+    smoking_wrist_mouth_distance: float = 0.12
+
+    # TT kriteriya 18 — talaba dress code
+    student_uniform_ai_interval_seconds: int = 45
+    student_uniform_dedup_minutes: int = 30
+    student_uniform_min_landmark_visibility: float = 0.5
+    student_uniform_contrast_min: float = 15.0
 
     frontend_base_url: str = "http://localhost:5173"
     smtp_host: str = ""

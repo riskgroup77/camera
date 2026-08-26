@@ -63,7 +63,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
-from app.jobs.module_status import any_module_active
+from app.jobs.module_status import any_module_active, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.jobs.phone_ai import PHONE_CLASS_ID
 from app.models import LessonSession
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix
@@ -80,6 +81,7 @@ ATTENTION_MODULE_CODE = 19
 TEACHER_ACTIVITY_MODULE_CODE = 21
 
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("lesson_quality_ai")
 
 # {lesson_session_id: sample_count} — see module docstring's "kept in
 # memory only" note.
@@ -235,7 +237,13 @@ async def _sample_activity(frame_a: bytes, frame_b: bytes, teacher_embedding: li
 
 
 async def process_lesson_session(
-    session_row: LessonSession, frame_a: bytes, frame_b: bytes, db: AsyncSession, candidates
+    session_row: LessonSession,
+    frame_a: bytes,
+    frame_b: bytes,
+    db: AsyncSession,
+    candidates,
+    attention_module_active: bool = True,
+    teacher_activity_module_active: bool = True,
 ) -> None:
     """Samples both scores for one active LessonSession and commits any
     update — either signal can independently be "nothing to sample this
@@ -243,14 +251,14 @@ async def process_lesson_session(
     score is simply left unchanged."""
     session_id = str(session_row.id)
 
-    attention_sample = await _sample_attention(frame_b, candidates)
+    attention_sample = await _sample_attention(frame_b, candidates) if attention_module_active else None
     if attention_sample is not None:
         session_row.attention_score = _running_average_update(
             _attention_sample_counts, session_id, session_row.attention_score, attention_sample
         )
 
     teacher = session_row.teacher_ref
-    if teacher is not None and teacher.biometric_embedding:
+    if teacher_activity_module_active and teacher is not None and teacher.biometric_embedding:
         teacher_embedding = json.loads(teacher.biometric_embedding)
         activity_sample = await _sample_activity(frame_a, frame_b, teacher_embedding)
         if activity_sample is not None:
@@ -272,7 +280,9 @@ async def run_lesson_quality_ai_sweep_once(
     sessions got at least one score sampled this tick (not an event
     count — this job never raises Events, only updates scores)."""
     async with session_factory() as db:
-        if not await any_module_active(db, [ATTENTION_MODULE_CODE, TEACHER_ACTIVITY_MODULE_CODE]):
+        attention_module_active = await is_module_active(db, ATTENTION_MODULE_CODE)
+        teacher_activity_module_active = await is_module_active(db, TEACHER_ACTIVITY_MODULE_CODE)
+        if not attention_module_active and not teacher_activity_module_active:
             return 0
         sessions = await _active_sessions(db)
         candidates = await load_candidate_matrix(db)
@@ -293,7 +303,15 @@ async def run_lesson_quality_ai_sweep_once(
             row = await db.get(LessonSession, session_row.id)
             if row is None:
                 return False
-            await process_lesson_session(row, frame_a, frame_b, db, candidates)
+            await process_lesson_session(
+                row,
+                frame_a,
+                frame_b,
+                db,
+                candidates,
+                attention_module_active,
+                teacher_activity_module_active,
+            )
         return True
 
     results = await asyncio.gather(*(_process_one(row) for row in sessions), return_exceptions=True)
@@ -311,7 +329,7 @@ async def run_lesson_quality_ai_sweep_once(
 async def lesson_quality_ai_loop() -> None:
     while True:
         try:
-            count = await run_lesson_quality_ai_sweep_once()
+            count = await _sweep_guard.run(run_lesson_quality_ai_sweep_once)
             if count:
                 logger.info("lesson quality sweep sampled sessions", extra={"sessions": count})
         except Exception:

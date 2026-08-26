@@ -2,17 +2,18 @@ import logging
 
 from fastapi import WebSocket
 
+from app.redis_bus import publish_event
+
 logger = logging.getLogger("app.ws")
 
 
 class ConnectionManager:
-    """In-memory registry of connected WebSocket clients — good enough for
-    a single-instance deployment. A multi-instance deployment would need
-    to fan broadcasts out through Redis pub/sub (or similar) so a client
-    connected to instance A gets events created via instance B."""
+    """WebSocket client registry. With REDIS_URL set, broadcasts are also
+    published to Redis so every API worker forwards to its local clients."""
 
     def __init__(self) -> None:
         self.active: set[WebSocket] = set()
+        self._local_only = False
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -23,7 +24,7 @@ class ConnectionManager:
         self.active.discard(websocket)
         logger.info("ws client disconnected", extra={"total_connections": len(self.active)})
 
-    async def broadcast(self, message: dict) -> None:
+    async def _send_local(self, message: dict) -> None:
         dead: list[WebSocket] = []
         for ws in self.active:
             try:
@@ -32,6 +33,16 @@ class ConnectionManager:
                 dead.append(ws)
         for ws in dead:
             self.active.discard(ws)
+
+    async def broadcast(self, message: dict) -> None:
+        """Publish to Redis (multi-instance) and always fan out locally."""
+        published = await publish_event(message)
+        if not published or self._local_only:
+            await self._send_local(message)
+
+    async def deliver_from_redis(self, message: dict) -> None:
+        """Called by Redis listener — forward to local clients only."""
+        await self._send_local(message)
 
 
 manager = ConnectionManager()

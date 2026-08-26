@@ -38,7 +38,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
-from app.jobs.module_status import any_module_active, camera_allows_module
+from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.coat_detection import is_wearing_white_coat
@@ -58,6 +59,7 @@ HEAD_COVERING_MODULE_NAME = "Bosh kiyim (kalpakcha) borligi"
 
 # See app/jobs/attendance_ai.py's _camera_semaphore docstring.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("dress_code_ai")
 
 
 async def _load_staff_ids(db: AsyncSession) -> set[str]:
@@ -176,6 +178,8 @@ async def process_camera_frame_pair_for_dress_code(
     camera: Camera,
     candidates: CandidateMatrix | None = None,
     staff_ids: set[str] | None = None,
+    coat_module_active: bool = True,
+    head_covering_module_active: bool = True,
 ) -> tuple[bool, bool]:
     """Returns (coat_event_raised, head_covering_event_raised)."""
     if candidates is None:
@@ -192,12 +196,14 @@ async def process_camera_frame_pair_for_dress_code(
     head_confirmed = head_missing_b and head_missing_a
 
     coat_raised = False
-    if coat_confirmed and not await _recently_flagged(db, camera.id, COAT_MODULE_CODE):
+    if coat_confirmed and coat_module_active and not await _recently_flagged(db, camera.id, COAT_MODULE_CODE):
         await _raise_event(db, camera, COAT_MODULE_CODE, COAT_MODULE_NAME)
         coat_raised = True
 
     head_raised = False
-    if head_confirmed and not await _recently_flagged(db, camera.id, HEAD_COVERING_MODULE_CODE):
+    if head_confirmed and head_covering_module_active and not await _recently_flagged(
+        db, camera.id, HEAD_COVERING_MODULE_CODE
+    ):
         await _raise_event(db, camera, HEAD_COVERING_MODULE_CODE, HEAD_COVERING_MODULE_NAME)
         head_raised = True
 
@@ -211,7 +217,9 @@ async def run_dress_code_ai_sweep_once(
     this mirrors. Returns how many Events (coat + head covering combined)
     were raised."""
     async with session_factory() as db:
-        if not await any_module_active(db, [COAT_MODULE_CODE, HEAD_COVERING_MODULE_CODE]):
+        coat_module_active = await is_module_active(db, COAT_MODULE_CODE)
+        head_covering_module_active = await is_module_active(db, HEAD_COVERING_MODULE_CODE)
+        if not coat_module_active and not head_covering_module_active:
             return 0
         result = await db.execute(
             select(Camera)
@@ -233,7 +241,14 @@ async def run_dress_code_ai_sweep_once(
             frame_a, frame_b = frames
             async with session_factory() as camera_db:
                 return await process_camera_frame_pair_for_dress_code(
-                    frame_a, frame_b, camera_db, camera, candidates, staff_ids
+                    frame_a,
+                    frame_b,
+                    camera_db,
+                    camera,
+                    candidates,
+                    staff_ids,
+                    coat_module_active,
+                    head_covering_module_active,
                 )
 
     results = await asyncio.gather(*(_process_one(camera) for camera in cameras), return_exceptions=True)
@@ -251,7 +266,7 @@ async def run_dress_code_ai_sweep_once(
 async def dress_code_ai_loop() -> None:
     while True:
         try:
-            count = await run_dress_code_ai_sweep_once()
+            count = await _sweep_guard.run(run_dress_code_ai_sweep_once)
             if count:
                 logger.info("dress code AI sweep raised events", extra={"events": count})
         except Exception:

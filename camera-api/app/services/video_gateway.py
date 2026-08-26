@@ -1,11 +1,11 @@
-"""RTSP -> HLS gateway integration (MediaMTX). This is the piece the old
-frontend-only prototype could never have — a browser cannot speak RTSP,
-so something has to pull the camera's RTSP stream and re-serve it as
-HLS/WebRTC. MediaMTX does that; this module just tells it which camera
-to pull from and hands back the URL LiveVideoPlayer.tsx actually plays.
+"""RTSP -> HLS gateway integration (MediaMTX). Supports optional horizontal
+sharding via MEDIAMTX_SHARD_API_URLS + MEDIAMTX_SHARD_HLS_BASE_URLS
+(comma-separated, equal length) — cameras are assigned by stable hash.
 """
 
+import hashlib
 import logging
+from dataclasses import dataclass
 
 import httpx
 
@@ -14,55 +14,91 @@ from app.config import settings
 logger = logging.getLogger("app.video_gateway")
 
 
+@dataclass(frozen=True)
+class _Shard:
+    api_url: str
+    hls_base_url: str
+
+
+_shards: list[_Shard] | None = None
+
+
+def _parse_csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _get_shards() -> list[_Shard]:
+    global _shards
+    if _shards is not None:
+        return _shards
+    api_urls = _parse_csv(settings.mediamtx_shard_api_urls)
+    hls_urls = _parse_csv(settings.mediamtx_shard_hls_base_urls)
+    if api_urls and hls_urls and len(api_urls) == len(hls_urls):
+        _shards = [_Shard(api, hls) for api, hls in zip(api_urls, hls_urls, strict=True)]
+    else:
+        _shards = [_Shard(settings.mediamtx_api_url.rstrip("/"), settings.mediamtx_hls_base_url.rstrip("/"))]
+    return _shards
+
+
+def _shard_index(camera_id: str, count: int) -> int:
+    digest = hashlib.sha256(camera_id.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % count
+
+
+def _shard_for(camera_id: str) -> _Shard:
+    shards = _get_shards()
+    return shards[_shard_index(camera_id, len(shards))]
+
+
 def _path_name(camera_id: str) -> str:
     return f"cam-{camera_id}"
 
 
 async def check_reachable() -> None:
-    """Raises if MediaMTX's control API is unreachable — used by GET
-    /health. Unlike register_camera_stream()/unregister_camera_stream(),
-    this is NOT best-effort: /health exists specifically to surface this
-    kind of dependency outage to an operator."""
+    """Raises if any configured MediaMTX shard control API is unreachable."""
     async with httpx.AsyncClient(timeout=3.0) as client:
-        resp = await client.get(f"{settings.mediamtx_api_url}/v3/paths/list")
-        resp.raise_for_status()
+        for shard in _get_shards():
+            resp = await client.get(f"{shard.api_url}/v3/paths/list")
+            resp.raise_for_status()
 
 
 def hls_url_for(camera_id: str) -> str:
-    return f"{settings.mediamtx_hls_base_url}/{_path_name(camera_id)}/index.m3u8"
+    shard = _shard_for(camera_id)
+    return f"{shard.hls_base_url}/{_path_name(camera_id)}/index.m3u8"
 
 
 async def register_camera_stream(camera_id: str, rtsp_url: str) -> str:
-    """Registers (or updates) a MediaMTX path that pulls from rtsp_url and
-    returns the HLS URL to store on the camera row. Best-effort: if the
-    gateway is unreachable this logs and returns the URL anyway — cameras
-    with stream_url set won't play, but the resource still exists and the
-    rest of the API stays usable (an outage of the video gateway shouldn't
-    also take down camera CRUD)."""
+    shard = _shard_for(camera_id)
     name = _path_name(camera_id)
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
             resp = await client.post(
-                f"{settings.mediamtx_api_url}/v3/config/paths/add/{name}",
+                f"{shard.api_url}/v3/config/paths/add/{name}",
                 json={"source": rtsp_url},
             )
             if resp.status_code == 400:
-                # path already exists from a previous registration — update it instead.
                 resp = await client.patch(
-                    f"{settings.mediamtx_api_url}/v3/config/paths/patch/{name}",
+                    f"{shard.api_url}/v3/config/paths/patch/{name}",
                     json={"source": rtsp_url},
                 )
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            logger.error("video gateway registration failed", extra={"camera_id": camera_id, "error": str(exc)})
+            logger.error(
+                "video gateway registration failed",
+                extra={"camera_id": camera_id, "shard": shard.api_url, "error": str(exc)},
+            )
 
     return hls_url_for(camera_id)
 
 
 async def unregister_camera_stream(camera_id: str) -> None:
+    shard = _shard_for(camera_id)
     name = _path_name(camera_id)
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            await client.delete(f"{settings.mediamtx_api_url}/v3/config/paths/delete/{name}")
+            await client.delete(f"{shard.api_url}/v3/config/paths/delete/{name}")
         except httpx.HTTPError as exc:
-            logger.warning("video gateway unregistration failed", extra={"camera_id": camera_id, "error": str(exc)})
+            logger.warning(
+                "video gateway unregistration failed",
+                extra={"camera_id": camera_id, "shard": shard.api_url, "error": str(exc)},
+            )

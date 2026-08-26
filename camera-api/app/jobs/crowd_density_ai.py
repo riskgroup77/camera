@@ -36,6 +36,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.face_recognition import detect_faces
@@ -51,6 +52,7 @@ CROWD_MODULE_NAME = "Olomon zichligi anomaliyasi"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("crowd_density_ai")
 
 # Per-camera rolling history of recent face counts, keyed by camera id
 # (string). Module-level, in-memory, unbounded number of keys (one per
@@ -86,9 +88,12 @@ def _is_spike(camera_id: str, current_count: int) -> bool:
     return is_spike
 
 
-async def process_camera_frame_for_crowd(frame_bytes: bytes, db: AsyncSession, camera: Camera) -> bool:
+async def process_camera_frame_for_crowd(
+    frame_bytes: bytes, db: AsyncSession, camera: Camera, faces: list | None = None
+) -> bool:
     """Returns True if a (deduped) crowd-anomaly Event was raised."""
-    faces = await detect_faces(frame_bytes)
+    if faces is None:
+        faces = await detect_faces(frame_bytes)
     count = len(faces)
 
     if not _is_spike(str(camera.id), count):
@@ -172,7 +177,7 @@ async def run_crowd_density_ai_sweep_once(
 async def crowd_density_ai_loop() -> None:
     while True:
         try:
-            count = await run_crowd_density_ai_sweep_once()
+            count = await _sweep_guard.run(run_crowd_density_ai_sweep_once)
             if count:
                 logger.warning("crowd density AI sweep raised events", extra={"events": count})
         except Exception:

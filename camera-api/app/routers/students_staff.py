@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -12,12 +13,16 @@ from app.dependencies import CurrentUser, require_permission
 from app.models import Faculty, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.student_staff import StudentStaffCreateIn, StudentStaffOut, StudentStaffUpdateIn
+from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import invalidate_candidate_matrix_cache
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
+from app.services.student_import import import_students_staff_csv
 from app.storage import presigned_url, upload_file
 from app.utils import compute_initials
 
 router = APIRouter(prefix="/api/students-staff", tags=["students-staff"])
+
+logger = logging.getLogger("app.students_staff")
 
 MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -86,6 +91,34 @@ async def create_student_staff(
     await db.commit()
     await db.refresh(record)
     return _to_out(record, faculty.name)
+
+
+@router.post("/import", response_model=StudentStaffImportResultOut)
+async def import_students_staff(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    file: Annotated[UploadFile, File(description="UTF-8 CSV: full_name,type,faculty,group_or_position")],
+) -> StudentStaffImportResultOut:
+    """Bulk-import talaba/xodim rows from CSV. Biometrics are NOT imported —
+    each row starts with biometrics_status=yoq."""
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 5 MB dan oshmasligi kerak")
+    result = await import_students_staff_csv(db, raw)
+    if result.imported:
+        invalidate_candidate_matrix_cache()
+    await log_action(
+        db,
+        request,
+        current_user.id,
+        f"CSV import: {result.imported} qo'shildi, {result.skipped} o'tkazib yuborildi, {len(result.errors)} xato",
+        "Talabalar",
+    )
+    await db.commit()
+    if result.imported:
+        logger.info("CSV import complete", extra={"imported": result.imported, "skipped": result.skipped})
+    return result
 
 
 @router.patch("/{record_id}", response_model=StudentStaffOut)

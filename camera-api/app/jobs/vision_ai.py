@@ -50,6 +50,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix
@@ -67,6 +68,7 @@ SLEEP_MODULE_NAME = "Talabaning uxlab qolishi"
 # rationale, own semaphore so a slow/backed-up vision_ai sweep can't starve
 # attendance_ai's camera slots or vice versa.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("vision_ai")
 
 
 async def _recently_flagged(db: AsyncSession, camera_id, person_name: str | None) -> bool:
@@ -140,7 +142,11 @@ def _tally_votes(
 
 
 async def process_camera_frame_for_sleep(
-    frames: list[bytes], db: AsyncSession, camera: Camera, candidates: CandidateMatrix | None = None
+    frames: list[bytes],
+    db: AsyncSession,
+    camera: Camera,
+    candidates: CandidateMatrix | None = None,
+    frames_faces: list[list] | None = None,
 ) -> int:
     """Runs face detection on every frame in the burst, tallies per-identity
     asleep-vote ratios (see _tally_votes), and raises a (deduped) Event for
@@ -161,7 +167,8 @@ async def process_camera_frame_for_sleep(
     if candidates is None:
         candidates = await load_candidate_matrix(db)
 
-    frames_faces = [await detect_faces(frame) for frame in frames]
+    if frames_faces is None:
+        frames_faces = [await detect_faces(frame) for frame in frames]
     appearances, asleep_votes = _tally_votes(frames_faces, candidates)
 
     raised = 0
@@ -269,7 +276,7 @@ async def run_vision_ai_sweep_once(
 async def vision_ai_loop() -> None:
     while True:
         try:
-            count = await run_vision_ai_sweep_once()
+            count = await _sweep_guard.run(run_vision_ai_sweep_once)
             if count:
                 logger.info("vision AI sweep complete", extra={"sleep_events": count})
         except Exception:

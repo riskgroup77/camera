@@ -112,7 +112,12 @@ export default function LiveVideoPlayer({
         autoPlay
         className={`absolute inset-0 h-full w-full object-cover ${className}`}
       />
-      {showDetections && <FaceDetectionOverlay videoRef={videoRef} detection={detection} />}
+      {showDetections && <FaceDetectionOverlay videoRef={videoRef} detection={detection.result} />}
+      {showDetections && detection.slotDenied && (
+        <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] font-medium text-amber-200">
+          Boshqa kamerada AI ko&apos;rsatkich yoqilgan — navbatda
+        </div>
+      )}
       {zoneEditing && (
         <ZoneOverlay videoRef={videoRef} points={zonePoints} editable onAddPoint={onZonePointAdd} />
       )}

@@ -80,6 +80,46 @@ def _detect_sync(image_bytes: bytes, class_ids: list[int], confidence: float) ->
     return detections
 
 
+def _decode_image(image_bytes: bytes):
+    arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def _detect_batch_sync(
+    images: list[bytes], class_ids: list[int], confidence: float
+) -> list[list[DetectedObject]]:
+    decoded = [_decode_image(b) for b in images]
+    valid_indices = [i for i, img in enumerate(decoded) if img is not None]
+    if not valid_indices:
+        return [[] for _ in images]
+
+    imgs = [decoded[i] for i in valid_indices]
+    model = _get_model()
+    device = 0 if settings.object_detection_gpu_enabled else "cpu"
+    batch_size = max(1, settings.object_detection_batch_size)
+    per_image: list[list[DetectedObject]] = [[] for _ in images]
+
+    for start in range(0, len(imgs), batch_size):
+        chunk = imgs[start : start + batch_size]
+        chunk_indices = valid_indices[start : start + batch_size]
+        results = model.predict(chunk, classes=class_ids, conf=confidence, device=device, verbose=False)
+        for idx, result in zip(chunk_indices, results, strict=True):
+            names = result.names
+            detections: list[DetectedObject] = []
+            for box in result.boxes:
+                cls_id = int(box.cls[0])
+                detections.append(
+                    DetectedObject(
+                        class_id=cls_id,
+                        class_name=names.get(cls_id, str(cls_id)),
+                        confidence=float(box.conf[0]),
+                        bbox=tuple(float(v) for v in box.xyxy[0]),
+                    )
+                )
+            per_image[idx] = detections
+    return per_image
+
+
 async def detect_objects(image_bytes: bytes, class_ids: list[int], confidence: float = 0.5) -> list[DetectedObject]:
     """Runs on a worker thread — YOLO inference is CPU/GPU-bound and
     synchronous, same rationale as face_recognition.detect_faces(). Gated
@@ -90,3 +130,13 @@ async def detect_objects(image_bytes: bytes, class_ids: list[int], confidence: f
     matches entirely, not just filtering them out after the fact."""
     async with _inference_semaphore:
         return await asyncio.to_thread(_detect_sync, image_bytes, class_ids, confidence)
+
+
+async def detect_objects_batch(
+    image_bytes_list: list[bytes], class_ids: list[int], confidence: float = 0.5
+) -> list[list[DetectedObject]]:
+    """YOLO batch predict — chunks by object_detection_batch_size."""
+    if not image_bytes_list:
+        return []
+    async with _inference_semaphore:
+        return await asyncio.to_thread(_detect_batch_sync, image_bytes_list, class_ids, confidence)

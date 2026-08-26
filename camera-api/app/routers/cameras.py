@@ -10,11 +10,11 @@ from app.crypto import decrypt, encrypt
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.jobs.camera_health import is_reachable
-from app.models import Building, Camera
+from app.models import AIModuleConfig, Building, Camera
 from app.pagination import Page, PageParams, build_page, paginate
-from app.rtsp import build_rtsp_url
 from app.schemas.camera import (
     CameraCreateIn,
+    CameraModuleOptionOut,
     CameraModulesIn,
     CameraOut,
     CameraUpdateIn,
@@ -22,9 +22,14 @@ from app.schemas.camera import (
     CameraZonePolygonIn,
     ConnectionTestIn,
     ConnectionTestOut,
+    ModuleCameraAssignmentUpdateIn,
+    ModuleCameraAssignmentsOut,
+    ModuleCameraAssignmentsPatchIn,
+    ModuleCameraAssignmentOut,
 )
+from app.services.camera_module_mapping import camera_allows_module_code, set_camera_module_enabled
 from app.services.connectivity import test_camera_connection
-from app.services.video_gateway import register_camera_stream, unregister_camera_stream
+from app.services.stream_sync import sync_camera_stream
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -44,22 +49,7 @@ async def _sync_stream(db: AsyncSession, camera: Camera) -> None:
     status. Only 'faol' cameras get a live HLS URL — this is the piece
     the frontend's LiveVideoPlayer.tsx has been waiting for since it was
     built with a streamUrl prop and no way to populate it."""
-    if camera.status == "faol":
-        camera.stream_url = await register_camera_stream(
-            str(camera.id),
-            build_rtsp_url(
-                camera.ip,
-                camera.port,
-                camera.rtsp_path,
-                decrypt(camera.rtsp_username) if camera.rtsp_username else None,
-                decrypt(camera.rtsp_password) if camera.rtsp_password else None,
-            ),
-        )
-    elif camera.stream_url is not None:
-        await unregister_camera_stream(str(camera.id))
-        camera.stream_url = None
-    await db.commit()
-    await db.refresh(camera, attribute_names=["building"])
+    await sync_camera_stream(db, camera)
 
 
 def _to_out(camera: Camera) -> CameraOut:
@@ -102,6 +92,95 @@ async def list_cameras(
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(c) for c in records]
     return build_page(items, total, page_params)
+
+
+@router.get("/module-options", response_model=list[CameraModuleOptionOut])
+async def list_camera_module_options(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+) -> list[CameraModuleOptionOut]:
+    """Module checklist data for CameraModulesModal — manageCameras permission
+    only (no configureAi needed to assign modules to cameras)."""
+    result = await db.execute(select(AIModuleConfig).order_by(AIModuleConfig.code))
+    return [
+        CameraModuleOptionOut(
+            code=m.code,
+            group=m.group,
+            name=m.name,
+            active=m.active,
+            has_detector=m.has_detector,
+        )
+        for m in result.scalars().all()
+    ]
+
+
+async def _module_assignments_out(db: AsyncSession, module_code: int) -> ModuleCameraAssignmentsOut:
+    module = (
+        await db.execute(select(AIModuleConfig).where(AIModuleConfig.code == module_code))
+    ).scalar_one_or_none()
+    if module is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Modul topilmadi")
+
+    result = await db.execute(
+        select(Camera).options(selectinload(Camera.building)).order_by(Camera.name)
+    )
+    cameras = result.scalars().all()
+    return ModuleCameraAssignmentsOut(
+        module_code=module.code,
+        module_name=module.name,
+        cameras=[
+            ModuleCameraAssignmentOut(
+                camera_id=str(c.id),
+                camera_name=c.name,
+                building=c.building.name if c.building else "",
+                zone=c.zone,
+                status=c.status,
+                enabled=camera_allows_module_code(c.excluded_module_codes, module_code),
+            )
+            for c in cameras
+        ],
+    )
+
+
+@router.get("/by-module/{module_code}/assignments", response_model=ModuleCameraAssignmentsOut)
+async def list_module_camera_assignments(
+    module_code: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+) -> ModuleCameraAssignmentsOut:
+    """Reverse view: for one AI criterion, which cameras have it enabled."""
+    return await _module_assignments_out(db, module_code)
+
+
+@router.patch("/by-module/{module_code}/assignments", response_model=ModuleCameraAssignmentsOut)
+async def patch_module_camera_assignments(
+    module_code: int,
+    body: ModuleCameraAssignmentsPatchIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: PermDep,
+) -> ModuleCameraAssignmentsOut:
+    module = (
+        await db.execute(select(AIModuleConfig).where(AIModuleConfig.code == module_code))
+    ).scalar_one_or_none()
+    if module is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Modul topilmadi")
+
+    for item in body.assignments:
+        camera = await db.get(Camera, item.camera_id)
+        if camera is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Kamera topilmadi: {item.camera_id}")
+        set_camera_module_enabled(camera, module_code, item.enabled)
+
+    await log_action(
+        db,
+        request,
+        current_user.id,
+        f"Modul #{module_code} uchun kameralarni sozladi: {module.name}",
+        "Kameralar",
+    )
+    await db.commit()
+    return await _module_assignments_out(db, module_code)
 
 
 @router.get("/zones", response_model=list[CameraZoneOut])

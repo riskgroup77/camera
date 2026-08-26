@@ -477,3 +477,51 @@ class TestCameraExcludedModules:
             json={"excludedModuleCodes": [25]},
         )
         assert resp.status_code == 404
+
+    async def test_module_options_lists_all_criteria(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.get("/api/cameras/module-options", headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 25
+        assert all("code" in row and "name" in row and "hasDetector" in row for row in body)
+
+    async def test_module_camera_assignments_toggle(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        created = await self._create_camera(client, headers)
+        await client.patch(
+            f"/api/cameras/{created['id']}",
+            headers=headers,
+            json={
+                **{
+                    "name": created["name"],
+                    "ip": created["ip"],
+                    "port": created["port"],
+                    "building": created["building"],
+                    "zone": created["zone"],
+                    "resolution": created["resolution"],
+                },
+                "status": "faol",
+            },
+        )
+
+        listed = await client.get("/api/cameras/by-module/25/assignments", headers=headers)
+        assert listed.status_code == 200
+        body = listed.json()
+        assert body["moduleCode"] == 25
+        row = next(c for c in body["cameras"] if c["cameraId"] == created["id"])
+        assert row["enabled"] is True
+
+        patched = await client.patch(
+            "/api/cameras/by-module/25/assignments",
+            headers=headers,
+            json={"assignments": [{"cameraId": created["id"], "enabled": False}]},
+        )
+        assert patched.status_code == 200
+        row2 = next(c for c in patched.json()["cameras"] if c["cameraId"] == created["id"])
+        assert row2["enabled"] is False
+
+        fetched = (
+            await client.get("/api/cameras", headers=headers, params={"zone": "Hovli"})
+        ).json()["items"][0]
+        assert 25 in fetched["excludedModuleCodes"]

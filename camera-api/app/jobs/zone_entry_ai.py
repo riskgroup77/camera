@@ -32,6 +32,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.frame_grabber import grab_frame_pair
@@ -48,6 +49,7 @@ ZONE_MODULE_NAME = "Taqiqlangan zonaga kirish"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("zone_entry_ai")
 
 
 def _any_person_in_zone(poses, polygon: list) -> bool:
@@ -166,7 +168,7 @@ async def run_zone_entry_ai_sweep_once(
 async def zone_entry_ai_loop() -> None:
     while True:
         try:
-            count = await run_zone_entry_ai_sweep_once()
+            count = await _sweep_guard.run(run_zone_entry_ai_sweep_once)
             if count:
                 logger.warning("zone entry AI sweep raised events", extra={"events": count})
         except Exception:

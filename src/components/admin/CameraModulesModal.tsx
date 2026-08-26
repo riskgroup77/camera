@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import Modal from '../Modal';
+import AIModuleChecklist from './AIModuleChecklist';
 import { ApiError, api } from '../../lib/apiClient';
+import {
+  countEnabledModulesOnCamera,
+  MODULE_PRESETS,
+  presetExcludedCodes,
+  toggleGroupExclusion,
+} from '../../lib/cameraModules';
 import { useAuth } from '../../lib/auth';
-import { useAiModules } from '../../lib/useAiModules';
-import { AI_MODULE_GROUP_LABELS } from '../../mock/admin';
-import type { AIModule, AIModuleGroup, CameraConfig } from '../../types';
+import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
+import type { AIModuleGroup, CameraConfig } from '../../types';
 
-const GROUPS = Object.keys(AI_MODULE_GROUP_LABELS) as AIModuleGroup[];
-
-/** Har bir belgi (checkbox) — "shu modul shu kamerada ISHLASIN" ma'nosida
- * ko'rsatiladi (intuitiv, admin uchun tabiiyroq), garchi backendda buning
- * teskarisi — excludedModuleCodes (chetlashtirilganlar ro'yxati) — saqlansa
- * ham. Belgi olib tashlanganda kod excludedModuleCodes'ga qo'shiladi. */
 export default function CameraModulesModal({
   open,
   camera,
@@ -25,7 +25,7 @@ export default function CameraModulesModal({
   onSave: (camera: CameraConfig) => void;
 }) {
   const { token } = useAuth();
-  const { modules, loading: modulesLoading } = useAiModules();
+  const { modules, loading: modulesLoading } = useCameraModuleOptions();
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,20 +37,30 @@ export default function CameraModulesModal({
     }
   }, [open, camera]);
 
-  const byGroup = useMemo(() => {
-    const map = new Map<AIModuleGroup, AIModule[]>();
-    for (const g of GROUPS) map.set(g, []);
-    for (const m of modules) map.get(m.group)?.push(m);
-    return map;
-  }, [modules]);
+  const stats = useMemo(
+    () => (camera ? countEnabledModulesOnCamera(modules, { excludedModuleCodes: Array.from(excluded) }) : null),
+    [camera, modules, excluded],
+  );
+
+  const allCodes = useMemo(() => modules.map((m) => m.code), [modules]);
 
   function toggle(code: number) {
+    const mod = modules.find((m) => m.code === code);
+    if (!mod?.hasDetector) return;
     setExcluded((prev) => {
       const next = new Set(prev);
       if (next.has(code)) next.delete(code);
       else next.add(code);
       return next;
     });
+  }
+
+  function applyPreset(presetId: (typeof MODULE_PRESETS)[number]['id']) {
+    setExcluded(presetExcludedCodes(presetId, allCodes));
+  }
+
+  function handleToggleGroup(group: AIModuleGroup, enable: boolean) {
+    setExcluded((prev) => toggleGroupExclusion(prev, group, enable, modules));
   }
 
   async function handleSave() {
@@ -73,56 +83,53 @@ export default function CameraModulesModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={camera ? `AI modullar — ${camera.name}` : ''} maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title={camera ? `AI modullar — ${camera.name}` : ''} maxWidth="max-w-xl">
       {camera && (
         <div className="space-y-4">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Belgilangan modullar shu kamerada ishlaydi. Belgini olib tashlasangiz, o'sha AI kriteriyasi shu kameraga
-            umuman tegishli bo'lmaydi (masalan, ichki auditoriya kamerasida transport aniqlashning keragi yo'q) —
-            server tomondagi hisoblash yukini kamaytiradi.
-          </p>
+          <div className="glass-deep space-y-2 p-3 text-xs text-slate-500 dark:text-slate-400">
+            <p>
+              Belgilangan modullar shu kamerada ishlaydi. Belgini olib tashlasangiz, AI kriteriyasi shu kameraga
+              tegishli bo‘lmaydi — server yuki kamayadi.
+            </p>
+            {stats && (
+              <p className="font-semibold text-indigo-600 dark:text-indigo-400">
+                {stats.enabled} / {stats.runnable} ishlaydigan modul yoqilgan
+                {excluded.size > 0 ? ` · ${excluded.size} ta maxsus o‘chirilgan` : ' · standart (hammasi)'}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+              <Sparkles size={12} />
+              Shablonlar
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {MODULE_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  title={p.description}
+                  onClick={() => applyPreset(p.id)}
+                  className="rounded-lg bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {modulesLoading ? (
             <div className="flex items-center justify-center py-8 text-slate-400">
               <Loader2 size={18} className="animate-spin" />
             </div>
           ) : (
-            <div className="max-h-96 space-y-4 overflow-y-auto pr-1">
-              {GROUPS.map((group) => {
-                const groupModules = byGroup.get(group) ?? [];
-                if (groupModules.length === 0) return null;
-                return (
-                  <div key={group}>
-                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                      {AI_MODULE_GROUP_LABELS[group]}
-                    </p>
-                    <div className="space-y-1">
-                      {groupModules.map((m) => (
-                        <label
-                          key={m.code}
-                          className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-white/60 dark:hover:bg-white/5"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!excluded.has(m.code)}
-                            onChange={() => toggle(m.code)}
-                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <span className={excluded.has(m.code) ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}>
-                            #{m.code} {m.name}
-                          </span>
-                          {!m.active && (
-                            <span className="ml-auto text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-                              (o'chirilgan)
-                            </span>
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <AIModuleChecklist
+              modules={modules}
+              excluded={excluded}
+              onToggle={toggle}
+              onToggleGroup={handleToggleGroup}
+            />
           )}
 
           {error && (
@@ -131,7 +138,7 @@ export default function CameraModulesModal({
             </p>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2 border-t border-white/60 pt-3 dark:border-white/10">
             <button type="button" onClick={onClose} className="btn-glass">
               Bekor qilish
             </button>

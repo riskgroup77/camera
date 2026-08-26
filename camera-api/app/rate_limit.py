@@ -1,7 +1,12 @@
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-# IP-based, in-memory limiter — good enough for a single-instance deployment.
-# Multi-instance deployments should point slowapi at Redis instead
-# (Limiter(storage_uri="redis://...")) so limits are shared across workers.
-limiter = Limiter(key_func=get_remote_address)
+from app.config import settings
+
+_limiter_kwargs: dict = {"key_func": get_remote_address}
+_redis = (settings.redis_url or "").strip()
+if _redis:
+    _limiter_kwargs["storage_uri"] = _redis
+
+# IP-based limiter — in-memory when REDIS_URL is unset; shared across workers when set.
+limiter = Limiter(**_limiter_kwargs)

@@ -107,3 +107,38 @@ class ConnectionTestOut(CamelModel):
     method: Literal["tcp-only", "rtsp-probe"]
     latency_ms: int | None = None
     video_info: str | None = None
+
+
+class CameraModuleOptionOut(CamelModel):
+    """Lightweight module row for CameraModulesModal — readable under
+    manageCameras without configureAi (full /api/ai-modules registry)."""
+
+    code: int
+    group: Literal["A", "B", "C", "D", "E", "F"]
+    name: str
+    active: bool
+    has_detector: bool
+
+
+class ModuleCameraAssignmentOut(CamelModel):
+    camera_id: str
+    camera_name: str
+    building: str
+    zone: str
+    status: Literal["faol", "nofaol", "tamirda"]
+    enabled: bool
+
+
+class ModuleCameraAssignmentsOut(CamelModel):
+    module_code: int
+    module_name: str
+    cameras: list[ModuleCameraAssignmentOut]
+
+
+class ModuleCameraAssignmentUpdateIn(CamelModel):
+    camera_id: str
+    enabled: bool
+
+
+class ModuleCameraAssignmentsPatchIn(CamelModel):
+    assignments: list[ModuleCameraAssignmentUpdateIn]

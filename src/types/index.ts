@@ -135,6 +135,30 @@ export interface AIModule {
   hasDetector: boolean;
 }
 
+/** GET /api/cameras/module-options — manageCameras uchun yengil modul ro'yxati */
+export interface CameraModuleOption {
+  code: number;
+  group: AIModuleGroup;
+  name: string;
+  active: boolean;
+  hasDetector: boolean;
+}
+
+export interface ModuleCameraAssignment {
+  cameraId: string;
+  cameraName: string;
+  building: string;
+  zone: string;
+  status: CameraConfig['status'];
+  enabled: boolean;
+}
+
+export interface ModuleCameraAssignments {
+  moduleCode: number;
+  moduleName: string;
+  cameras: ModuleCameraAssignment[];
+}
+
 export interface Report {
   id: string;
   period: 'Kunlik' | 'Haftalik' | 'Oylik';

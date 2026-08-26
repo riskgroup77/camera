@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from './apiClient';
+import { tryAcquireLiveDetection, releaseLiveDetection } from './liveDetectionGate';
 import type { LiveDetectionResult } from '../types';
 
 // 6s, not 3s — found from real testing: each call is a genuine ffmpeg
@@ -22,10 +23,25 @@ const POLL_INTERVAL_MS = 6000;
  * actually being watched (`enabled`) matters here more than usual. */
 export function useLiveDetection(cameraId: string | undefined, enabled: boolean) {
   const [result, setResult] = useState<LiveDetectionResult | null>(null);
+  const [slotDenied, setSlotDenied] = useState(false);
   const inFlight = useRef(false);
+  const hasSlot = useRef(false);
 
   useEffect(() => {
     if (!cameraId || !enabled) {
+      setResult(null);
+      setSlotDenied(false);
+      if (cameraId && hasSlot.current) {
+        releaseLiveDetection(cameraId);
+        hasSlot.current = false;
+      }
+      return;
+    }
+
+    const acquired = tryAcquireLiveDetection(cameraId);
+    hasSlot.current = acquired;
+    setSlotDenied(!acquired);
+    if (!acquired) {
       setResult(null);
       return;
     }
@@ -50,8 +66,12 @@ export function useLiveDetection(cameraId: string | undefined, enabled: boolean)
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (hasSlot.current) {
+        releaseLiveDetection(cameraId);
+        hasSlot.current = false;
+      }
     };
   }, [cameraId, enabled]);
 
-  return result;
+  return { result, slotDenied };
 }

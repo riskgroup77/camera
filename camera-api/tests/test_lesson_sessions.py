@@ -110,3 +110,43 @@ class TestLessonSessionScheduling:
             json={},
         )
         assert resp.status_code == 404
+
+
+@pytest.mark.usefixtures("seeded")
+class TestLessonSessionImport:
+    async def test_csv_import_creates_rows(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        csv_body = (
+            "date,group,faculty,subject\n"
+            "2026-09-01,101-guruh,Davolash ishi,Anatomiya\n"
+            "2026-09-02,102-guruh,Davolash ishi,Fiziologiya\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            "/api/lesson-sessions/import",
+            headers=headers,
+            files={"file": ("lessons.csv", csv_body, "text/csv")},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["imported"] == 2
+        assert body["skipped"] == 0
+
+    async def test_csv_import_skips_duplicate(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        csv_body = (
+            "date,group,faculty,subject\n"
+            "2026-09-03,103-guruh,Davolash ishi,Bioximiya\n"
+        ).encode("utf-8")
+        await client.post(
+            "/api/lesson-sessions/import",
+            headers=headers,
+            files={"file": ("lessons.csv", csv_body, "text/csv")},
+        )
+        resp = await client.post(
+            "/api/lesson-sessions/import",
+            headers=headers,
+            files={"file": ("lessons.csv", csv_body, "text/csv")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["imported"] == 0
+        assert resp.json()["skipped"] == 1

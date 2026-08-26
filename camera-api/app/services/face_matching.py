@@ -3,57 +3,68 @@ app/jobs/attendance_ai.py and app/jobs/vision_ai.py, which both need to
 answer "who (if anyone) is this face?" against the same
 StudentStaff.biometric_embedding pool.
 
-Replaces an earlier version of this logic (a plain Python for-loop
-computing one np.dot per candidate) that does not scale: at 10,000+
-enrolled people, comparing a single detected face meant 10,000 sequential
-Python-level dot products, repeated for every face in every camera's
-frame, every sweep tick, on every camera. CandidateMatrix instead loads
-every embedding into one (N, 512) numpy array and does the whole
-comparison as a single matrix multiply (BLAS-backed, not a Python loop) —
-one np.ndarray.__matmul__ call replaces N Python-level operations. Still
-O(N) work overall (this is exact nearest-neighbor, not an approximate
-index), but the constant factor drops by orders of magnitude, and it lets
-a sweep loop load the candidate pool ONCE per sweep instead of once per
-camera (see run_attendance_ai_sweep_once/run_vision_ai_sweep_once), which
-matters just as much at hundreds of cameras: that was hundreds of
-redundant DB round-trips and JSON-parses of the same data every tick.
-
-If the enrolled population grows well past what an exact matrix multiply
-can do in real time (tens of thousands+), the next step is an approximate
-nearest-neighbor index (FAISS or pgvector's ANN index) instead of this
-exact search — noted here rather than built preemptively, since it adds
-real complexity (index rebuilds on enrollment changes) that isn't
-justified until measured to be necessary.
+At 10k+ enrolled people, exact numpy matmul is still correct but heavy;
+when N >= face_match_faiss_min_size and faiss-cpu is installed, an
+IndexFlatIP approximate path is used (exact for normalized vectors).
 """
 
 import json
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import StudentStaff
+
+logger = logging.getLogger("app.face_matching")
+
+try:
+    import faiss
+
+    _FAISS_AVAILABLE = True
+except ImportError:
+    faiss = None  # type: ignore[assignment,misc]
+    _FAISS_AVAILABLE = False
 
 
 @dataclass
 class CandidateMatrix:
     ids: list[str]
     matrix: np.ndarray  # shape (N, 512) — rows are L2-normalized ArcFace embeddings
+    person_types: dict[str, str] | None = None  # id -> 'talaba' | 'xodim'
+    _faiss_index: object | None = field(default=None, repr=False, compare=False)
 
     @property
     def is_empty(self) -> bool:
         return len(self.ids) == 0
 
+    def person_type(self, person_id: str) -> str | None:
+        if self.person_types is None:
+            return None
+        return self.person_types.get(person_id)
+
     def best_matches(self, embeddings: np.ndarray, threshold: float) -> list[tuple[str, float] | None]:
-        """embeddings: shape (F, 512), one row per detected face. Returns
-        one (student_staff_id, similarity) or None per row, in order — the
-        vectorized equivalent of calling best_match() once per face."""
         if self.is_empty or len(embeddings) == 0:
             return [None] * len(embeddings)
 
-        similarities = embeddings @ self.matrix.T  # (F, N) — cosine similarity, both sides L2-normalized
+        if self._faiss_index is not None and _FAISS_AVAILABLE:
+            query = embeddings.astype(np.float32)
+            sims, indices = self._faiss_index.search(query, 1)  # type: ignore[union-attr]
+            out: list[tuple[str, float] | None] = []
+            for sim_row, idx_row in zip(sims, indices, strict=True):
+                sim = float(sim_row[0])
+                idx = int(idx_row[0])
+                if idx < 0 or sim < threshold:
+                    out.append(None)
+                else:
+                    out.append((self.ids[idx], sim))
+            return out
+
+        similarities = embeddings @ self.matrix.T
         best_idx = np.argmax(similarities, axis=1)
         best_sim = similarities[np.arange(len(embeddings)), best_idx]
         return [
@@ -64,19 +75,31 @@ class CandidateMatrix:
         return self.best_matches(np.array([embedding]), threshold)[0]
 
 
+def _maybe_build_faiss_index(matrix: np.ndarray) -> object | None:
+    if not _FAISS_AVAILABLE or matrix.shape[0] < settings.face_match_faiss_min_size:
+        return None
+    index = faiss.IndexFlatIP(matrix.shape[1])  # type: ignore[union-attr]
+    index.add(matrix.astype(np.float32))
+    return index
+
+
 async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     result = await db.execute(
-        select(StudentStaff.id, StudentStaff.biometric_embedding).where(
+        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(
             StudentStaff.biometric_embedding.is_not(None)
         )
     )
     rows = result.all()
     if not rows:
-        return CandidateMatrix(ids=[], matrix=np.empty((0, 0)))
+        return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
 
-    ids = [str(row_id) for row_id, _ in rows]
-    matrix = np.array([json.loads(embedding_json) for _, embedding_json in rows], dtype=np.float64)
-    return CandidateMatrix(ids=ids, matrix=matrix)
+    ids = [str(row_id) for row_id, _, _ in rows]
+    matrix = np.array([json.loads(embedding_json) for _, embedding_json, _ in rows], dtype=np.float64)
+    person_types = {str(row_id): person_type for row_id, _, person_type in rows}
+    faiss_index = _maybe_build_faiss_index(matrix)
+    if faiss_index is not None:
+        logger.debug("FAISS index built", extra={"candidates": len(ids)})
+    return CandidateMatrix(ids=ids, matrix=matrix, person_types=person_types, _faiss_index=faiss_index)
 
 
 CANDIDATE_MATRIX_CACHE_TTL_SECONDS = 30
@@ -86,20 +109,6 @@ _cache_loaded_at: datetime | None = None
 
 
 async def load_candidate_matrix_cached(db: AsyncSession) -> CandidateMatrix:
-    """Same data as load_candidate_matrix(), reused across calls within a
-    short TTL instead of re-querying + re-parsing every enrolled person's
-    embedding on every call — app/routers/public.py's live-detection
-    endpoint is polled every few seconds per open camera, so this was real,
-    repeated, wasted DB+JSON work at any real enrolled-population size.
-
-    A newly-enrolled person can take up to CANDIDATE_MATRIX_CACHE_TTL_SECONDS
-    to appear here (invalidate_candidate_matrix_cache() shortens that to
-    ~immediately after enrollment — see app/routers/students_staff.py) —
-    acceptable for a live-view convenience endpoint. The AI sweep loops
-    (attendance_ai.py, vision_ai.py, etc.) intentionally keep calling
-    load_candidate_matrix() directly instead, since a stale population
-    there risks a real missed/mismatched attendance write, not just a
-    delayed UI box."""
     global _cache, _cache_loaded_at
     now = datetime.now(timezone.utc)
     if (
@@ -121,14 +130,9 @@ def invalidate_candidate_matrix_cache() -> None:
 def find_best_match(
     embedding: list[float], candidates: list[tuple[str, list[float]]], threshold: float
 ) -> tuple[str, float] | None:
-    """Single-embedding, list-of-tuples convenience wrapper kept for
-    callers that already have candidates in that shape (mainly tests) —
-    builds a CandidateMatrix on the fly. Sweep loops should use
-    load_candidate_matrix()/CandidateMatrix.best_matches() directly and
-    reuse the matrix across every face/camera in the sweep instead of
-    rebuilding it on every call, which is what this wrapper does."""
     if not candidates:
         return None
     ids = [c[0] for c in candidates]
     matrix = np.array([c[1] for c in candidates], dtype=np.float64)
-    return CandidateMatrix(ids=ids, matrix=matrix).best_match(embedding, threshold)
+    cm = CandidateMatrix(ids=ids, matrix=matrix, _faiss_index=_maybe_build_faiss_index(matrix))
+    return cm.best_match(embedding, threshold)

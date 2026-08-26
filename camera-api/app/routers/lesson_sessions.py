@@ -10,7 +10,7 @@ POST here is a manual/admin entry point until that pipeline exists.
 from datetime import date as date_type, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,13 @@ from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
 from app.models import Camera, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
-from app.schemas.lesson_session import LessonSessionCreateIn, LessonSessionOut, LessonSessionScheduleIn
+from app.schemas.lesson_session import (
+    LessonSessionCreateIn,
+    LessonSessionImportResultOut,
+    LessonSessionOut,
+    LessonSessionScheduleIn,
+)
+from app.services.lesson_import import import_lesson_sessions_csv
 from app.timezone import INSTITUTE_TZ
 
 router = APIRouter(prefix="/api/lesson-sessions", tags=["lesson-sessions"])
@@ -163,6 +169,30 @@ async def schedule_lesson_session(
     await db.commit()
     await db.refresh(session)
     return _to_out(session)
+
+
+@router.post("/import", response_model=LessonSessionImportResultOut)
+async def import_lesson_sessions(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    file: Annotated[UploadFile, File(description="UTF-8 CSV: date,group,faculty,subject,...")],
+) -> LessonSessionImportResultOut:
+    """Bulk-import dars jadvali — teacher_id, camera_id, scheduled_start_time ixtiyoriy."""
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 5 MB dan oshmasligi kerak")
+    result = await import_lesson_sessions_csv(db, raw)
+    if result.imported:
+        await log_action(
+            db,
+            request,
+            current_user.id,
+            f"Dars jadvali CSV import: {result.imported} qo'shildi, {result.skipped} o'tkazib yuborildi",
+            "Ta'lim",
+        )
+        await db.commit()
+    return result
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

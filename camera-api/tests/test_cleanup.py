@@ -69,4 +69,4 @@ class TestCleanup:
 
     async def test_no_op_when_nothing_expired(self, db_session: AsyncSession):
         counts = await run_cleanup_once(db_session)
-        assert counts == {"revoked_tokens": 0, "password_reset_tokens": 0, "audit_logs": 0}
+        assert counts == {"revoked_tokens": 0, "password_reset_tokens": 0, "audit_logs": 0, "events": 0}

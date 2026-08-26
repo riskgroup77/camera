@@ -49,6 +49,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Event, LessonSession
 from app.schemas.event import EventOut
 from app.services.face_matching import find_best_match
@@ -66,6 +67,7 @@ PUNCTUALITY_MODULE_NAME = "O'qituvchining darsga aniq kelishi"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("teacher_punctuality_ai")
 
 
 async def _due_sessions(db: AsyncSession) -> list[LessonSession]:
@@ -209,7 +211,7 @@ async def run_teacher_punctuality_sweep_once(
 async def teacher_punctuality_ai_loop() -> None:
     while True:
         try:
-            count = await run_teacher_punctuality_sweep_once()
+            count = await _sweep_guard.run(run_teacher_punctuality_sweep_once)
             if count:
                 logger.info("teacher punctuality sweep raised events", extra={"events": count})
         except Exception:

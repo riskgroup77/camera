@@ -22,13 +22,14 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models import AIModuleConfig
 from app.schemas.ai_module import AIModuleOut, AIModuleUpdateIn
+from app.services.camera_module_mapping import count_faol_cameras_for_module
 
 router = APIRouter(prefix="/api/ai-modules", tags=["ai-modules"])
 
 PermDep = Annotated[CurrentUser, Depends(require_permission("configureAi"))]
 
 
-def _to_out(m: AIModuleConfig) -> AIModuleOut:
+def _to_out(m: AIModuleConfig, camera_count: int) -> AIModuleOut:
     return AIModuleOut(
         id=str(m.id),
         code=m.code,
@@ -39,7 +40,7 @@ def _to_out(m: AIModuleConfig) -> AIModuleOut:
         accuracy=m.accuracy,
         threshold=m.threshold,
         sensitivity=m.sensitivity,
-        camera_count=m.camera_count,
+        camera_count=camera_count,
         active=m.active,
         has_detector=m.has_detector,
     )
@@ -48,7 +49,12 @@ def _to_out(m: AIModuleConfig) -> AIModuleOut:
 @router.get("", response_model=list[AIModuleOut])
 async def list_ai_modules(db: Annotated[AsyncSession, Depends(get_db)], _: PermDep) -> list[AIModuleOut]:
     result = await db.execute(select(AIModuleConfig).order_by(AIModuleConfig.code))
-    return [_to_out(m) for m in result.scalars().all()]
+    modules = result.scalars().all()
+    out: list[AIModuleOut] = []
+    for m in modules:
+        count = await count_faol_cameras_for_module(db, m.code)
+        out.append(_to_out(m, count))
+    return out
 
 
 @router.patch("/{module_id}", response_model=AIModuleOut)
@@ -77,4 +83,5 @@ async def update_ai_module(
     await log_action(db, request, current_user.id, f"AI modulni sozladi: {module.name}", "AI Modullari")
     await db.commit()
     await db.refresh(module)
-    return _to_out(module)
+    count = await count_faol_cameras_for_module(db, module.code)
+    return _to_out(module, count)

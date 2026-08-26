@@ -29,6 +29,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.fire_detection import fire_pixel_fraction, is_likely_fire
@@ -44,6 +45,7 @@ FIRE_MODULE_NAME = "Yong'in / tutun aniqlash"
 # rationale, own semaphore so fire_ai can't starve (or be starved by)
 # attendance_ai/vision_ai's camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("fire_ai")
 
 
 async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
@@ -147,7 +149,7 @@ async def run_fire_ai_sweep_once(
 async def fire_ai_loop() -> None:
     while True:
         try:
-            count = await run_fire_ai_sweep_once()
+            count = await _sweep_guard.run(run_fire_ai_sweep_once)
             if count:
                 logger.warning("fire AI sweep raised events", extra={"fire_events": count})
         except Exception:

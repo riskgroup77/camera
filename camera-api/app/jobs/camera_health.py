@@ -9,6 +9,10 @@ not anything observed. This runs a lightweight TCP check against every
 'faol' camera on a timer and stamps last_seen_at on success;
 is_reachable() below is computed from how fresh that stamp is and is what
 app/routers/cameras.py and app/routers/public.py actually expose.
+
+When a camera stays unreachable longer than camera_offline_alert_minutes,
+an AuditLog alert is written once (deduplicated per outage) so admins
+can spot chronic network failures without watching the monitoring page.
 """
 
 import asyncio
@@ -20,19 +24,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import Camera
+from app.jobs.sweep_guard import SweepGuard
+from app.models import AuditLog, Camera
 from app.services.connectivity import tcp_check
 
 logger = logging.getLogger("app.camera_health")
 
-# Same rationale as app/jobs/attendance_ai.py's _camera_semaphore: a
-# sequential TCP check per camera means a full sweep takes N times one
-# camera's timeout at N cameras — at 400 cameras with even a few offline
-# (each eating a real connect timeout), that adds up fast. tcp_check() is
-# pure socket I/O, not CPU/DB work, so these can safely run concurrently
-# against the same `db` session below — the ORM mutations happen after
-# gather() completes, not while it's running.
 _health_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("camera_health")
+
+# camera_id -> UTC moment when the current offline streak started
+_offline_since: dict[str, datetime] = {}
+# camera_ids that already received an alert for the current offline streak
+_alerted: set[str] = set()
 
 
 def is_reachable(last_seen_at: datetime | None) -> bool:
@@ -46,6 +50,56 @@ def is_reachable(last_seen_at: datetime | None) -> bool:
 async def _check_one(camera: Camera) -> tuple[bool, float]:
     async with _health_semaphore:
         return await tcp_check(camera.ip, camera.port)
+
+
+async def _maybe_raise_offline_alert(db: AsyncSession, camera: Camera, offline_since: datetime) -> None:
+    alert_minutes = settings.camera_offline_alert_minutes
+    if alert_minutes <= 0:
+        return
+    camera_id = str(camera.id)
+    if camera_id in _alerted:
+        return
+    if datetime.now(timezone.utc) - offline_since < timedelta(minutes=alert_minutes):
+        return
+
+    _alerted.add(camera_id)
+    message = (
+        f"Kamera {alert_minutes} daqiqadan beri javob bermayapti: "
+        f"{camera.name} ({camera.ip}:{camera.port})"
+    )
+    logger.warning(
+        "camera offline alert",
+        extra={
+            "camera_id": camera_id,
+            "camera_name": camera.name,
+            "ip": camera.ip,
+            "port": camera.port,
+            "offline_since": offline_since.isoformat(),
+        },
+    )
+    db.add(
+        AuditLog(
+            user_id=None,
+            user_name="Kamera monitoring",
+            action=message,
+            module="Kameralar",
+            status="xavfli",
+            ip="internal",
+        )
+    )
+
+
+def _track_offline_camera(camera: Camera, now: datetime) -> datetime:
+    camera_id = str(camera.id)
+    if camera_id not in _offline_since:
+        _offline_since[camera_id] = now
+    return _offline_since[camera_id]
+
+
+def _mark_camera_online(camera: Camera) -> None:
+    camera_id = str(camera.id)
+    _offline_since.pop(camera_id, None)
+    _alerted.discard(camera_id)
 
 
 async def run_camera_health_sweep_once(db: AsyncSession) -> int:
@@ -62,11 +116,17 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
     for camera, outcome in zip(cameras, results, strict=True):
         if isinstance(outcome, BaseException):
             logger.exception("camera health check failed", extra={"camera_id": str(camera.id)}, exc_info=outcome)
+            offline_since = _track_offline_camera(camera, now)
+            await _maybe_raise_offline_alert(db, camera, offline_since)
             continue
         ok, _latency_ms = outcome
         if ok:
             camera.last_seen_at = now
+            _mark_camera_online(camera)
             reachable_count += 1
+        else:
+            offline_since = _track_offline_camera(camera, now)
+            await _maybe_raise_offline_alert(db, camera, offline_since)
     await db.commit()
     return reachable_count
 
@@ -77,8 +137,13 @@ async def camera_health_loop() -> None:
     for up to camera_health_interval_seconds right after a restart."""
     while True:
         try:
-            async with SessionLocal() as db:
-                count = await run_camera_health_sweep_once(db)
+
+            async def _tick() -> int:
+                async with SessionLocal() as db:
+                    return await run_camera_health_sweep_once(db)
+
+            count = await _sweep_guard.run(_tick)
+            if count is not None:
                 logger.info("camera health sweep complete", extra={"reachable": count})
         except Exception:
             logger.exception("camera health sweep failed")

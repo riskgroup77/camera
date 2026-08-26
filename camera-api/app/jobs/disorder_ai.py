@@ -46,6 +46,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.frame_grabber import grab_frame_pair
@@ -60,6 +61,7 @@ DISORDER_MODULE_NAME = "Tartib-intizom buzilishi"
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
 _camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_sweep_guard = SweepGuard("disorder_ai")
 
 # Per-camera rolling history of recent flow magnitudes — see
 # app/jobs/crowd_density_ai.py's _face_count_history for the identical
@@ -197,7 +199,7 @@ async def run_disorder_ai_sweep_once(
 async def disorder_ai_loop() -> None:
     while True:
         try:
-            count = await run_disorder_ai_sweep_once()
+            count = await _sweep_guard.run(run_disorder_ai_sweep_once)
             if count:
                 logger.warning("disorder AI sweep raised events", extra={"events": count})
         except Exception:
