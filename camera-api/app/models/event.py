@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +17,9 @@ class Event(Base):
     __table_args__ = (
         CheckConstraint("severity IN ('past', 'o''rta', 'yuqori')", name="ck_events_severity"),
         CheckConstraint("status IN ('yangi', 'tasdiqlangan', 'rad_etilgan')", name="ck_events_status"),
+        # Every AI sweep's _recently_flagged() dedup query:
+        # WHERE camera_id = ? AND module_code = ? AND occurred_at >= ?
+        Index("ix_events_camera_module_occurred", "camera_id", "module_code", "occurred_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())

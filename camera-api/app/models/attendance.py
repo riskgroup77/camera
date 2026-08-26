@@ -1,7 +1,7 @@
 import uuid
 from datetime import date as date_type, time
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, String, Time, UniqueConstraint
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, String, Time, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -21,6 +21,11 @@ class AttendanceRecord(Base):
     __table_args__ = (
         CheckConstraint("status IN ('keldi', 'kelmadi', 'kech_keldi', 'dam_olish')", name="ck_attendance_status"),
         UniqueConstraint("student_staff_id", "date", name="uq_attendance_person_date"),
+        # /api/public/stats scans WHERE date = today across all enrolled students —
+        # without this, the table seq-scans once row count reaches ~1M+.
+        Index("ix_attendance_records_date", "date"),
+        # Stats and reports often filter by date then aggregate status in Python/SQL.
+        Index("ix_attendance_records_date_status", "date", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
