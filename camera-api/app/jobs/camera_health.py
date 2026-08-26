@@ -17,6 +17,7 @@ can spot chronic network failures without watching the monitoring page.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -24,13 +25,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal
+from app.jobs.camera_health_metrics import (
+    record_camera_health_skip,
+    record_camera_health_sweep,
+)
 from app.jobs.sweep_guard import SweepGuard
 from app.models import AuditLog, Camera
 from app.services.connectivity import tcp_check
 
 logger = logging.getLogger("app.camera_health")
 
-_health_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+_health_semaphore = asyncio.Semaphore(settings.camera_health_concurrency)
 _sweep_guard = SweepGuard("camera_health")
 
 # camera_id -> UTC moment when the current offline streak started
@@ -83,7 +88,7 @@ async def _maybe_raise_offline_alert(db: AsyncSession, camera: Camera, offline_s
             user_name="Kamera monitoring",
             action=message,
             module="Kameralar",
-            status="xavfli",
+            status="ogohlantirish",
             ip="internal",
         )
     )
@@ -106,6 +111,7 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
     """Checks every 'faol' camera CONCURRENTLY (bounded by
     _health_semaphore), stamps last_seen_at on the reachable ones. Returns
     how many were reachable this sweep (for logging)."""
+    started = time.monotonic()
     result = await db.execute(select(Camera).where(Camera.status == "faol"))
     cameras = result.scalars().all()
 
@@ -128,6 +134,11 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
             offline_since = _track_offline_camera(camera, now)
             await _maybe_raise_offline_alert(db, camera, offline_since)
     await db.commit()
+    record_camera_health_sweep(
+        duration_seconds=time.monotonic() - started,
+        faol_checked=len(cameras),
+        reachable=reachable_count,
+    )
     return reachable_count
 
 
@@ -143,7 +154,9 @@ async def camera_health_loop() -> None:
                     return await run_camera_health_sweep_once(db)
 
             count = await _sweep_guard.run(_tick)
-            if count is not None:
+            if count is None:
+                record_camera_health_skip()
+            else:
                 logger.info("camera health sweep complete", extra={"reachable": count})
         except Exception:
             logger.exception("camera health sweep failed")

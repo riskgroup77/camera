@@ -77,7 +77,7 @@ if [ -f /opt/camera/deploy/enable-backup-timer.sh ]; then
 fi
 
 echo "=== Pytest (changed modules) ==="
-"${COMPOSE[@]}" exec -T api python -m pytest tests/test_system_ai_status.py tests/test_scale_indexes.py tests/test_ai_scheduler.py tests/test_sweep_concurrency.py -q --tb=line 2>&1 | tail -15 || echo "WARN: pytest skipped (pip install -r requirements-dev.txt in container)"
+"${COMPOSE[@]}" exec -T api python -m pytest tests/test_system_p3.py tests/test_system_ai_status.py tests/test_scale_indexes.py tests/test_ai_scheduler.py tests/test_sweep_concurrency.py -q --tb=line 2>&1 | tail -18 || echo "WARN: pytest skipped (pip install -r requirements-dev.txt in container)"
 """
 
 

@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     # "offline".
     camera_health_interval_seconds: int = 30
     camera_health_freshness_seconds: int = 90
+    # Parallel TCP checks during camera_health sweep (300 cameras @ 48 ≈ 19 waves × 3s)
+    camera_health_concurrency: int = 32
     # How long a faol camera must stay unreachable before raising an admin
     # alert (AuditLog entry + structured WARNING log). Zero disables alerts.
     camera_offline_alert_minutes: int = 5

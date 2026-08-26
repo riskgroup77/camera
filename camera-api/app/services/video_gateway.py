@@ -50,6 +50,45 @@ def _shard_for(camera_id: str) -> _Shard:
     return shards[_shard_index(camera_id, len(shards))]
 
 
+def shard_count() -> int:
+    return len(_get_shards())
+
+
+def shard_index_for(camera_id: str) -> int:
+    return _shard_index(camera_id, shard_count())
+
+
+async def probe_shards() -> list[dict[str, object]]:
+    """Live probe of each MediaMTX control API — path counts and reachability."""
+    shards = _get_shards()
+    out: list[dict[str, object]] = []
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        for index, shard in enumerate(shards):
+            path_count = 0
+            reachable = False
+            error: str | None = None
+            try:
+                resp = await client.get(f"{shard.api_url}/v3/paths/list")
+                resp.raise_for_status()
+                data = resp.json()
+                items = data.get("items") if isinstance(data, dict) else None
+                path_count = len(items) if isinstance(items, list) else 0
+                reachable = True
+            except httpx.HTTPError as exc:
+                error = str(exc)
+            out.append(
+                {
+                    "index": index,
+                    "api_url": shard.api_url,
+                    "hls_base_url": shard.hls_base_url,
+                    "reachable": reachable,
+                    "path_count": path_count,
+                    "error": error,
+                }
+            )
+    return out
+
+
 def _path_name(camera_id: str) -> str:
     return f"cam-{camera_id}"
 

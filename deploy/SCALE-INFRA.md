@@ -91,7 +91,9 @@ docker logs camera-api-api-1 2>&1 | grep -i gpu
 
 Admin panel → **Boshqaruv paneli** → **AI infratuzilma** (GPU, scheduler tick, sweep slots).
 
-API: `GET /api/system/ai-status` (auth kerak).
+API: `GET /api/system/ai-status`, `GET /api/system/stream-status`, `GET /api/system/camera-network` (auth kerak).
+
+MediaMTX pathlar yo'qolsa: `POST /api/system/resync-streams` (systemSettings ruxsati).
 
 ### GPU o'rnatish (hostda driver yo'q bo'lsa)
 

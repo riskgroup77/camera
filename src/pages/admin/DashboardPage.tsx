@@ -43,6 +43,36 @@ interface SystemAiStatus {
   embeddingSweepCacheTtlSeconds: number;
 }
 
+interface SystemStreamStatus {
+  shardingEnabled: boolean;
+  shardCount: number;
+  faolCameras: number;
+  registeredStreams: number;
+  shards: {
+    index: number;
+    reachable: boolean;
+    pathCount: number;
+    assignedCameras: number;
+  }[];
+  recommendation: string;
+}
+
+interface SystemCameraNetwork {
+  faolCameras: number;
+  reachableCameras: number;
+  offlineCameras: number;
+  linkLocalIpCount: number;
+  chronicOfflineCount: number;
+  recentOfflineAlerts24h: number;
+  lastSweep: {
+    durationSeconds: number;
+    reachable: number;
+    faolChecked: number;
+    skippedOverlap: boolean;
+  };
+  recommendation: string;
+}
+
 function ResourceBar({ label, value }: { label: string; value: number }) {
   const tone = value > 80 ? 'bg-red-500' : value > 60 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
@@ -66,6 +96,8 @@ export default function DashboardPage() {
   const [aiModules, setAiModules] = useState<AIModule[]>([]);
   const [resources, setResources] = useState<SystemResources | null>(null);
   const [aiStatus, setAiStatus] = useState<SystemAiStatus | null>(null);
+  const [streamStatus, setStreamStatus] = useState<SystemStreamStatus | null>(null);
+  const [cameraNetwork, setCameraNetwork] = useState<SystemCameraNetwork | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -96,6 +128,14 @@ export default function DashboardPage() {
 
     api.get<SystemAiStatus>('/api/system/ai-status', token).then((res) => {
       if (!cancelled) setAiStatus(res);
+    });
+
+    api.get<SystemStreamStatus>('/api/system/stream-status', token).then((res) => {
+      if (!cancelled) setStreamStatus(res);
+    });
+
+    api.get<SystemCameraNetwork>('/api/system/camera-network', token).then((res) => {
+      if (!cancelled) setCameraNetwork(res);
     });
 
     return () => {
@@ -275,6 +315,91 @@ export default function DashboardPage() {
               </p>
               <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">
                 {aiStatus.gpu.recommendation}
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-6 text-slate-400">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="glass p-6">
+          <h3 className="mb-4 text-base font-bold text-slate-900 dark:text-slate-100">
+            Stream infratuzilma
+          </h3>
+          {streamStatus ? (
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-400">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400">
+                  {streamStatus.shardingEnabled ? `${streamStatus.shardCount} shard` : '1 node'}
+                </span>
+                <span className="rounded-full bg-white/60 px-2.5 py-1 font-semibold dark:bg-white/10">
+                  MediaMTX: {streamStatus.registeredStreams}/{streamStatus.faolCameras}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {streamStatus.shards.map((s) => (
+                  <div key={s.index} className="flex items-center justify-between rounded-lg bg-white/40 px-2.5 py-1.5 dark:bg-white/5">
+                    <span>Shard {s.index}</span>
+                    <span>
+                      {s.reachable ? 'OK' : 'DOWN'} · {s.pathCount} path · {s.assignedCameras} kamera
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">
+                {streamStatus.recommendation}
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-6 text-slate-400">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          )}
+        </section>
+
+        <section className="glass p-6">
+          <h3 className="mb-4 text-base font-bold text-slate-900 dark:text-slate-100">
+            Kamera tarmog'i
+          </h3>
+          {cameraNetwork ? (
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-400">
+              <div className="flex flex-wrap gap-2">
+                <span
+                  className={`rounded-full px-2.5 py-1 font-semibold ${
+                    cameraNetwork.reachableCameras > 0
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
+                      : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'
+                  }`}
+                >
+                  Online: {cameraNetwork.reachableCameras}/{cameraNetwork.faolCameras}
+                </span>
+                {cameraNetwork.linkLocalIpCount > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                    169.254.x: {cameraNetwork.linkLocalIpCount}
+                  </span>
+                )}
+                {cameraNetwork.recentOfflineAlerts24h > 0 && (
+                  <span className="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400">
+                    Ogohlantirish: {cameraNetwork.recentOfflineAlerts24h}
+                  </span>
+                )}
+              </div>
+              <p>
+                Oxirgi sweep: {cameraNetwork.lastSweep.reachable}/{cameraNetwork.lastSweep.faolChecked} —{' '}
+                {cameraNetwork.lastSweep.durationSeconds}s
+                {cameraNetwork.lastSweep.skippedOverlap ? ' (overlap skip)' : ''}
+              </p>
+              {cameraNetwork.chronicOfflineCount > 0 && (
+                <p className="text-red-600 dark:text-red-400">
+                  {cameraNetwork.chronicOfflineCount} ta kamera uzoq vaqt offline
+                </p>
+              )}
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">
+                {cameraNetwork.recommendation}
               </p>
             </div>
           ) : (

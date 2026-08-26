@@ -85,3 +85,28 @@ class TestCameraHealthSweep:
 
             await db_session.refresh(camera)
             assert camera.last_seen_at is None
+
+    async def test_offline_alert_writes_audit_log_with_valid_status(self, db_session, a_building, monkeypatch):
+        monkeypatch.setattr(settings, "camera_offline_alert_minutes", 0)
+        camera = Camera(
+            name="Alert kamera",
+            ip="192.0.2.66",
+            port=554,
+            building_id=a_building.id,
+            zone="Z",
+            resolution="1080p",
+            status="faol",
+        )
+        db_session.add(camera)
+        await db_session.commit()
+
+        await run_camera_health_sweep_once(db_session)
+
+        from app.models import AuditLog
+
+        result = await db_session.execute(
+            select(AuditLog).where(AuditLog.module == "Kameralar", AuditLog.action.like("%Alert kamera%"))
+        )
+        entry = result.scalars().first()
+        assert entry is not None
+        assert entry.status == "ogohlantirish"

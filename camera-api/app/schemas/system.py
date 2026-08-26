@@ -57,3 +57,52 @@ class SystemAiStatusOut(CamelModel):
     face_inference_gate: ConcurrencySlotOut
     stream_reader_count: int
     embedding_sweep_cache_ttl_seconds: int
+
+
+class MediaMTXShardOut(CamelModel):
+    index: int
+    api_url: str
+    hls_base_url: str
+    reachable: bool
+    path_count: int
+    assigned_cameras: int = 0
+    error: str | None = None
+
+
+class SystemStreamStatusOut(CamelModel):
+    sharding_enabled: bool
+    shard_count: int
+    faol_cameras: int
+    registered_streams: int
+    shards: list[MediaMTXShardOut]
+    distribution: list[int]
+    recommendation: str
+    hls_public_base: str
+
+
+class CameraHealthSweepOut(CamelModel):
+    finished_at: str | None
+    duration_seconds: float
+    faol_checked: int
+    reachable: int
+    skipped_overlap: bool
+
+
+class SystemCameraNetworkOut(CamelModel):
+    faol_cameras: int
+    reachable_cameras: int
+    offline_cameras: int
+    link_local_ip_count: int
+    chronic_offline_count: int
+    offline_alert_minutes: int
+    health_interval_seconds: int
+    health_freshness_seconds: int
+    health_concurrency: int
+    recent_offline_alerts_24h: int
+    last_sweep: CameraHealthSweepOut
+    recommendation: str
+
+
+class StreamResyncOut(CamelModel):
+    synced: int
+    failed: int

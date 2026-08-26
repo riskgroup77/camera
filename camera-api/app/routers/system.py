@@ -6,19 +6,29 @@ from typing import Annotated
 
 import psutil
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import CurrentUser, get_current_user
+from app.database import get_db
+from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.schemas.system import (
+    CameraHealthSweepOut,
     ConcurrencySlotOut,
     GpuStatusOut,
+    MediaMTXShardOut,
     ResourceAlertOut,
     SchedulerLastTickOut,
+    StreamResyncOut,
     SystemAiStatusOut,
+    SystemCameraNetworkOut,
     SystemResourcesOut,
+    SystemStreamStatusOut,
 )
 from app.services.ai_runtime_status import build_ai_runtime_status
+from app.services.camera_network_status import build_camera_network_status
 from app.services.stream_cache import active_stream_reader_count
+from app.services.stream_status import build_stream_status
+from app.services.stream_sync import sync_all_active_camera_streams
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -103,3 +113,52 @@ async def get_ai_status(_: Annotated[CurrentUser, Depends(get_current_user)]) ->
         stream_reader_count=int(raw["stream_reader_count"]),
         embedding_sweep_cache_ttl_seconds=int(raw["embedding_sweep_cache_ttl_seconds"]),
     )
+
+
+@router.get("/stream-status", response_model=SystemStreamStatusOut)
+async def get_stream_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(get_current_user)],
+) -> SystemStreamStatusOut:
+    raw = await build_stream_status(db)
+    return SystemStreamStatusOut(
+        sharding_enabled=bool(raw["sharding_enabled"]),
+        shard_count=int(raw["shard_count"]),
+        faol_cameras=int(raw["faol_cameras"]),
+        registered_streams=int(raw["registered_streams"]),
+        shards=[MediaMTXShardOut(**shard) for shard in raw["shards"]],
+        distribution=list(raw["distribution"]),
+        recommendation=str(raw["recommendation"]),
+        hls_public_base=str(raw["hls_public_base"]),
+    )
+
+
+@router.get("/camera-network", response_model=SystemCameraNetworkOut)
+async def get_camera_network(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(get_current_user)],
+) -> SystemCameraNetworkOut:
+    raw = await build_camera_network_status(db)
+    return SystemCameraNetworkOut(
+        faol_cameras=int(raw["faol_cameras"]),
+        reachable_cameras=int(raw["reachable_cameras"]),
+        offline_cameras=int(raw["offline_cameras"]),
+        link_local_ip_count=int(raw["link_local_ip_count"]),
+        chronic_offline_count=int(raw["chronic_offline_count"]),
+        offline_alert_minutes=int(raw["offline_alert_minutes"]),
+        health_interval_seconds=int(raw["health_interval_seconds"]),
+        health_freshness_seconds=int(raw["health_freshness_seconds"]),
+        health_concurrency=int(raw["health_concurrency"]),
+        recent_offline_alerts_24h=int(raw["recent_offline_alerts_24h"]),
+        last_sweep=CameraHealthSweepOut(**raw["last_sweep"]),
+        recommendation=str(raw["recommendation"]),
+    )
+
+
+@router.post("/resync-streams", response_model=StreamResyncOut)
+async def resync_streams(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("systemSettings"))],
+) -> StreamResyncOut:
+    synced, failed = await sync_all_active_camera_streams(db)
+    return StreamResyncOut(synced=synced, failed=failed)
