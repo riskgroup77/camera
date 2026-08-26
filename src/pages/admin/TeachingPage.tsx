@@ -17,7 +17,7 @@ import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ScheduleLessonModal from '../../components/admin/ScheduleLessonModal';
 import LessonImportModal from '../../components/admin/LessonImportModal';
-import { api } from '../../lib/apiClient';
+import { api, fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { formatLessonScheduleTime, isLessonScheduleComplete } from '../../lib/lessonSchedule';
 import type { LessonSession } from '../../types';
@@ -44,11 +44,10 @@ export default function TeachingPage() {
     if (!token) return;
     let cancelled = false;
     setLoading(true);
-    api
-      .get<{ items: LessonSession[] }>('/api/lesson-sessions?pageSize=200', token)
-      .then((res) => {
+    fetchAllPages<LessonSession>('/api/lesson-sessions', token)
+      .then((items) => {
         if (!cancelled) {
-          setSessions(res.items);
+          setSessions(items);
           setError(null);
         }
       })

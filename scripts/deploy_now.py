@@ -70,6 +70,14 @@ sleep 5
 curl -sf http://127.0.0.1:18080/health
 echo
 "${COMPOSE[@]}" ps
+
+echo "=== Backup timer ==="
+if [ -f /opt/camera/deploy/enable-backup-timer.sh ]; then
+  bash /opt/camera/deploy/enable-backup-timer.sh || echo "WARN: backup timer setup skipped"
+fi
+
+echo "=== Pytest (changed modules) ==="
+"${COMPOSE[@]}" exec -T api pytest tests/test_face_matching.py tests/test_pagination.py tests/test_system.py tests/test_fight_ai.py tests/test_coat_detection.py tests/test_disorder_ai.py -q --tb=line 2>/dev/null || echo "WARN: pytest skipped"
 """
 
 

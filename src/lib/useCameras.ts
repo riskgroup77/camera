@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from './apiClient';
+import { api, fetchAllPages } from './apiClient';
 import { useAuth } from './auth';
 import type { CameraConfig } from '../types';
 
@@ -16,10 +16,9 @@ export function useCameras() {
     if (!token) return;
     let cancelled = false;
     setLoading(true);
-    api
-      .get<{ items: CameraConfig[] }>('/api/cameras?status=faol&pageSize=200', token)
-      .then((res) => {
-        if (!cancelled) setCameras(res.items);
+    fetchAllPages<CameraConfig>('/api/cameras', token, { status: 'faol' })
+      .then((items) => {
+        if (!cancelled) setCameras(items);
       })
       .catch(() => {
         /* ulanish muvaffaqiyatsiz — bo'sh ro'yxat bilan davom etamiz */

@@ -218,3 +218,8 @@ async def stream_cache_reaper_loop() -> None:
         except Exception:
             logger.exception("stream cache reaper failed")
         await asyncio.sleep(60)
+
+
+def active_stream_reader_count() -> int:
+    """Active ffmpeg-backed readers held by the in-process stream cache."""
+    return len(_cache._readers)

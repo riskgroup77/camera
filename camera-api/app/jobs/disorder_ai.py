@@ -80,16 +80,24 @@ def _mean_flow_magnitude(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
     return float(np.mean(magnitude))
 
 
-def _is_motion_spike(camera_id: str, magnitude: float) -> bool:
+def _is_motion_spike(
+    camera_id: str,
+    magnitude: float,
+    *,
+    spike_multiplier: float | None = None,
+    min_absolute_magnitude: float | None = None,
+) -> bool:
     """Same update-then-decide contract as app/jobs/crowd_density_ai.py's
     _is_spike — updates camera_id's rolling history as a side effect
     regardless of the outcome, and judges against the history BEFORE this
     call."""
+    mult = spike_multiplier if spike_multiplier is not None else settings.disorder_spike_multiplier
+    min_abs = min_absolute_magnitude if min_absolute_magnitude is not None else settings.disorder_min_absolute_magnitude
     history = _motion_history[camera_id]
     is_spike = False
     if len(history) >= settings.disorder_baseline_min_samples:
         baseline = sum(history) / len(history)
-        threshold = max(settings.disorder_min_absolute_magnitude, baseline * settings.disorder_spike_multiplier)
+        threshold = max(min_abs, baseline * mult)
         is_spike = magnitude >= threshold
     history.append(magnitude)
     return is_spike

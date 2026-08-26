@@ -102,29 +102,52 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     return CandidateMatrix(ids=ids, matrix=matrix, person_types=person_types, _faiss_index=faiss_index)
 
 
-CANDIDATE_MATRIX_CACHE_TTL_SECONDS = 30
-
 _cache: CandidateMatrix | None = None
 _cache_loaded_at: datetime | None = None
+_sweep_cache: CandidateMatrix | None = None
+_sweep_cache_loaded_at: datetime | None = None
 
 
 async def load_candidate_matrix_cached(db: AsyncSession) -> CandidateMatrix:
     global _cache, _cache_loaded_at
     now = datetime.now(timezone.utc)
+    ttl = settings.candidate_matrix_cache_ttl_seconds
     if (
         _cache is None
         or _cache_loaded_at is None
-        or (now - _cache_loaded_at).total_seconds() > CANDIDATE_MATRIX_CACHE_TTL_SECONDS
+        or (now - _cache_loaded_at).total_seconds() > ttl
     ):
         _cache = await load_candidate_matrix(db)
         _cache_loaded_at = now
     return _cache
 
 
+async def load_candidate_matrix_for_sweep(db: AsyncSession) -> CandidateMatrix:
+    """Longer-TTL cache for AI sweep loops — one DB read per few minutes
+    instead of every camera tick across 10k+ enrolled embeddings."""
+    global _sweep_cache, _sweep_cache_loaded_at
+    now = datetime.now(timezone.utc)
+    ttl = settings.candidate_matrix_sweep_cache_ttl_seconds
+    if (
+        _sweep_cache is None
+        or _sweep_cache_loaded_at is None
+        or (now - _sweep_cache_loaded_at).total_seconds() > ttl
+    ):
+        _sweep_cache = await load_candidate_matrix(db)
+        _sweep_cache_loaded_at = now
+        logger.debug(
+            "sweep candidate matrix loaded",
+            extra={"candidates": len(_sweep_cache.ids), "ttl_seconds": ttl},
+        )
+    return _sweep_cache
+
+
 def invalidate_candidate_matrix_cache() -> None:
-    global _cache, _cache_loaded_at
+    global _cache, _cache_loaded_at, _sweep_cache, _sweep_cache_loaded_at
     _cache = None
     _cache_loaded_at = None
+    _sweep_cache = None
+    _sweep_cache_loaded_at = None
 
 
 def find_best_match(

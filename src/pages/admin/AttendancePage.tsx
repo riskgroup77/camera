@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, LogOut, Loader2, Trash2, UserCheck, UserX, C
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { api } from '../../lib/apiClient';
+import { api, fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { AttendanceDay, AttendanceDayStatus, StudentStaffRecord } from '../../types';
 
@@ -86,11 +86,10 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (!token) return;
-    api
-      .get<{ items: StudentStaffRecord[] }>('/api/students-staff?pageSize=200', token)
-      .then((res) => {
-        setPeople(res.items);
-        setPersonId((cur) => cur || res.items[0]?.id || '');
+    fetchAllPages<StudentStaffRecord>('/api/students-staff', token)
+      .then((items) => {
+        setPeople(items);
+        setPersonId((cur) => cur || items[0]?.id || '');
       })
       .catch(() => {
         /* ulanish muvaffaqiyatsiz — bo'sh ro'yxat bilan davom etamiz */

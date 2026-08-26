@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from './apiClient';
+import { api, fetchAllPages } from './apiClient';
 import { useAuth } from './auth';
 import type { StudentStaffRecord } from '../types';
 
@@ -15,10 +15,9 @@ export function useTeachers() {
     if (!token) return;
     let cancelled = false;
     setLoading(true);
-    api
-      .get<{ items: StudentStaffRecord[] }>('/api/students-staff?type=xodim&pageSize=200', token)
-      .then((res) => {
-        if (!cancelled) setTeachers(res.items);
+    fetchAllPages<StudentStaffRecord>('/api/students-staff', token, { type: 'xodim' })
+      .then((items) => {
+        if (!cancelled) setTeachers(items);
       })
       .catch(() => {
         /* ulanish muvaffaqiyatsiz — bo'sh ro'yxat bilan davom etamiz */

@@ -83,8 +83,17 @@ class TestPeopleInCloseProximity:
     def test_a_single_person_is_never_in_proximity(self):
         assert _people_in_close_proximity([_pose_centered_at(0.5, 0.5)]) is False
 
-    def test_no_people_is_never_in_proximity(self):
-        assert _people_in_close_proximity([]) is False
+    def test_two_people_at_proximity_boundary(self, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "fight_proximity_threshold", 0.12)
+        # Just inside threshold — centers 0.11 apart horizontally
+        poses = [_pose_centered_at(0.5, 0.5), _pose_centered_at(0.61, 0.5)]
+        assert _people_in_close_proximity(poses) is True
+
+        # Just outside threshold
+        poses_far = [_pose_centered_at(0.5, 0.5), _pose_centered_at(0.63, 0.5)]
+        assert _people_in_close_proximity(poses_far) is False
 
 
 @pytest.mark.usefixtures("seeded")

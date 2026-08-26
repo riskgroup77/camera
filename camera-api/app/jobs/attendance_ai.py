@@ -45,7 +45,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.models import AttendanceRecord, AuditLog, Camera, Event, StudentStaff
 from app.schemas.event import EventOut
-from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix
+from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame, grab_frame_burst
 from app.timezone import local_now, to_local
@@ -264,7 +264,7 @@ async def process_camera_frame(
         return []
 
     if candidates is None:
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
     if candidates.is_empty:
         return []
 
@@ -335,7 +335,7 @@ async def run_attendance_ai_sweep_once(
             )
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
 
     if not cameras or candidates.is_empty:
         return 0

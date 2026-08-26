@@ -53,7 +53,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
-from app.services.face_matching import CandidateMatrix, load_candidate_matrix
+from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_burst
 from app.services.sleep_detection import is_asleep
@@ -165,7 +165,7 @@ async def process_camera_frame_for_sleep(
         return 0
 
     if candidates is None:
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
 
     if frames_faces is None:
         frames_faces = [await detect_faces(frame) for frame in frames]
@@ -245,7 +245,7 @@ async def run_vision_ai_sweep_once(
             select(Camera).where(Camera.status == "faol").where(camera_allows_module(SLEEP_MODULE_CODE))
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
 
     if not cameras:
         return 0

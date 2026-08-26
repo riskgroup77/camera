@@ -67,7 +67,7 @@ from app.jobs.module_status import any_module_active, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.phone_ai import PHONE_CLASS_ID
 from app.models import LessonSession
-from app.services.face_matching import CandidateMatrix, load_candidate_matrix
+from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair
 from app.services.object_detection import detect_objects
@@ -285,7 +285,7 @@ async def run_lesson_quality_ai_sweep_once(
         if not attention_module_active and not teacher_activity_module_active:
             return 0
         sessions = await _active_sessions(db)
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
 
     if not sessions:
         return 0

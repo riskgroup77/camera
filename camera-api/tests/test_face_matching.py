@@ -13,7 +13,9 @@ from app.services.face_matching import (
     invalidate_candidate_matrix_cache,
     load_candidate_matrix,
     load_candidate_matrix_cached,
+    load_candidate_matrix_for_sweep,
 )
+from app.config import settings
 
 THRESHOLD = 0.55
 
@@ -163,7 +165,7 @@ class TestLoadCandidateMatrixCached:
 
         # Simulate the TTL having elapsed without needing a real sleep.
         face_matching._cache_loaded_at = datetime.now(timezone.utc) - timedelta(
-            seconds=face_matching.CANDIDATE_MATRIX_CACHE_TTL_SECONDS + 1
+            seconds=settings.candidate_matrix_cache_ttl_seconds + 1
         )
 
         second = await self._enroll_one(db_session, faculty, name="Ikkinchi")
@@ -180,3 +182,56 @@ class TestLoadCandidateMatrixCached:
 
         candidates = await load_candidate_matrix_cached(db_session)
         assert str(second.id) in candidates.ids
+
+
+@pytest.mark.usefixtures("seeded")
+class TestLoadCandidateMatrixForSweep:
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        invalidate_candidate_matrix_cache()
+        yield
+        invalidate_candidate_matrix_cache()
+
+    async def _enroll_one(self, db_session, faculty, name="Birinchi"):
+        person = StudentStaff(
+            full_name=name, type="talaba", faculty_id=faculty.id, group_or_position="1",
+            biometric_embedding=json.dumps([1.0, 0.0]),
+        )
+        db_session.add(person)
+        await db_session.commit()
+        return person
+
+    async def test_sweep_cache_reuses_matrix_within_long_ttl(self, db_session, monkeypatch):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        await self._enroll_one(db_session, faculty)
+        await load_candidate_matrix_for_sweep(db_session)
+
+        calls = {"n": 0}
+        real_load = face_matching.load_candidate_matrix
+
+        async def counting_load(db):
+            calls["n"] += 1
+            return await real_load(db)
+
+        monkeypatch.setattr(face_matching, "load_candidate_matrix", counting_load)
+        await self._enroll_one(db_session, faculty, name="Ikkinchi")
+
+        candidates = await load_candidate_matrix_for_sweep(db_session)
+        assert calls["n"] == 0
+        assert len(candidates.ids) == 1
+
+    async def test_invalidate_clears_sweep_cache(self, db_session):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        await self._enroll_one(db_session, faculty)
+        await load_candidate_matrix_for_sweep(db_session)
+        second = await self._enroll_one(db_session, faculty, name="Ikkinchi")
+        invalidate_candidate_matrix_cache()
+        candidates = await load_candidate_matrix_for_sweep(db_session)
+        assert str(second.id) in candidates.ids
+
+    async def test_live_and_sweep_caches_are_independent(self, db_session):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        person = await self._enroll_one(db_session, faculty)
+        sweep = await load_candidate_matrix_for_sweep(db_session)
+        live = await load_candidate_matrix_cached(db_session)
+        assert sweep.ids == live.ids == [str(person.id)]

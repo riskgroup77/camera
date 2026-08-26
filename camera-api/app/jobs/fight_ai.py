@@ -117,7 +117,12 @@ async def process_camera_frame_pair_for_fight(frame_a: bytes, frame_b: bytes, db
     # app/jobs/disorder_ai.py's own per-camera "normal motion" baseline
     # for kriteriya 17 — the two criteria may reasonably want different
     # sensitivity even on the same camera.
-    if not _is_motion_spike(f"{camera.id}:fight", magnitude):
+    if not _is_motion_spike(
+        f"{camera.id}:fight",
+        magnitude,
+        spike_multiplier=settings.fight_spike_multiplier,
+        min_absolute_magnitude=settings.fight_min_absolute_magnitude,
+    ):
         return False
 
     if await _recently_flagged(db, camera.id):

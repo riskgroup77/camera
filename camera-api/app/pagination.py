@@ -19,7 +19,7 @@ class PageParams:
     def __init__(
         self,
         page: int = Query(1, ge=1),
-        page_size: int = Query(20, ge=1, le=200, alias="pageSize"),
+        page_size: int = Query(20, ge=1, le=500, alias="pageSize"),
     ) -> None:
         self.page = page
         self.page_size = page_size

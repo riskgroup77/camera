@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Building2 } from 'lucide-react';
-import { api } from '../../lib/apiClient';
+import { api, fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useBuildings } from '../../lib/useBuildings';
 import CameraConfigDetailModal from './CameraConfigDetailModal';
@@ -27,10 +27,9 @@ export default function CampusMap() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    api
-      .get<{ items: CameraConfig[] }>('/api/cameras?pageSize=200', token)
-      .then((res) => {
-        if (!cancelled) setCameraConfigs(res.items);
+    fetchAllPages<CameraConfig>('/api/cameras', token)
+      .then((items) => {
+        if (!cancelled) setCameraConfigs(items);
       })
       .catch(() => {
         /* ulanish muvaffaqiyatsiz — bo'sh ro'yxat bilan davom etamiz */

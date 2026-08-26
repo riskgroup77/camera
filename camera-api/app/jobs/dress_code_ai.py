@@ -43,7 +43,7 @@ from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.coat_detection import is_wearing_white_coat
-from app.services.face_matching import CandidateMatrix, load_candidate_matrix
+from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair
 from app.services.head_covering_detection import is_wearing_head_covering
@@ -183,7 +183,7 @@ async def process_camera_frame_pair_for_dress_code(
 ) -> tuple[bool, bool]:
     """Returns (coat_event_raised, head_covering_event_raised)."""
     if candidates is None:
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
     if staff_ids is None:
         staff_ids = await _load_staff_ids(db)
 
@@ -227,7 +227,7 @@ async def run_dress_code_ai_sweep_once(
             .where(or_(camera_allows_module(COAT_MODULE_CODE), camera_allows_module(HEAD_COVERING_MODULE_CODE)))
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
         staff_ids = await _load_staff_ids(db)
 
     if not cameras or not staff_ids:

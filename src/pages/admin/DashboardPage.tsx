@@ -7,10 +7,19 @@ import { api, buildQuery, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { AIModule, StudentStaffRecord } from '../../types';
 
+interface ResourceAlert {
+  metric: string;
+  level: 'warning' | 'critical';
+  message: string;
+}
+
 interface SystemResources {
   cpu: number;
   ram: number;
   disk: number;
+  ffmpegProcessCount: number;
+  streamReaderCount: number;
+  alerts: ResourceAlert[];
 }
 
 function ResourceBar({ label, value }: { label: string; value: number }) {
@@ -178,6 +187,26 @@ export default function DashboardPage() {
               <ResourceBar label="CPU" value={resources.cpu} />
               <ResourceBar label="RAM" value={resources.ram} />
               <ResourceBar label="Disk" value={resources.disk} />
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>ffmpeg: {resources.ffmpegProcessCount}</span>
+                <span>Stream o'quvchilar: {resources.streamReaderCount}</span>
+              </div>
+              {resources.alerts.length > 0 && (
+                <ul className="space-y-1.5">
+                  {resources.alerts.map((a) => (
+                    <li
+                      key={`${a.metric}-${a.message}`}
+                      className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
+                        a.level === 'critical'
+                          ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+                      }`}
+                    >
+                      {a.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-center py-6 text-slate-400">

@@ -68,4 +68,10 @@ sleep 10
 curl -sf http://127.0.0.1:18080/health
 echo
 "${COMPOSE[@]}" ps
+
+echo "=== Backup timer ==="
+if [ -f "${APP_DIR}/deploy/enable-backup-timer.sh" ]; then
+  bash "${APP_DIR}/deploy/enable-backup-timer.sh" || echo "WARN: backup timer setup failed — run deploy/enable-backup-timer.sh manually"
+fi
+
 echo "=== Done ==="

@@ -17,7 +17,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
-from app.services.face_matching import CandidateMatrix, load_candidate_matrix
+from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
@@ -143,7 +143,7 @@ async def run_student_dress_code_ai_sweep_once(
             select(Camera).where(Camera.status == "faol").where(camera_allows_module(STUDENT_DRESS_MODULE_CODE))
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
-        candidates = await load_candidate_matrix(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
         student_ids = await _load_student_ids(db)
 
     if not cameras or not student_ids:

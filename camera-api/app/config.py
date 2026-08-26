@@ -244,7 +244,7 @@ class Settings(BaseSettings):
     coat_torso_extension_factor: float = 0.6
     coat_white_saturation_max: int = 60
     coat_white_value_min: int = 170
-    coat_white_fraction_threshold: float = 0.55
+    coat_white_fraction_threshold: float = 0.60
 
     # TT kriteriya 11 ("Bosh kiyim (kalpakcha) borligi") —
     # app/jobs/dress_code_ai.py / app/services/head_covering_detection.py.
@@ -286,7 +286,9 @@ class Settings(BaseSettings):
     fight_ai_interval_seconds: int = 30
     fight_dedup_minutes: int = 5
     fight_min_landmark_visibility: float = 0.5
-    fight_proximity_threshold: float = 0.15
+    fight_proximity_threshold: float = 0.12
+    fight_spike_multiplier: float = 4.0
+    fight_min_absolute_magnitude: float = 2.0
 
     # How many cameras each AI sweep loop (attendance_ai/vision_ai/fire_ai)
     # processes concurrently, instead of one at a time. A dev machine with
@@ -359,6 +361,16 @@ class Settings(BaseSettings):
 
     # FAISS exact IP search when enrolled count >= this threshold (requires faiss-cpu).
     face_match_faiss_min_size: int = 10_000
+    # Live detection (public.py) reloads embeddings from DB after this TTL.
+    candidate_matrix_cache_ttl_seconds: int = 30
+    # AI sweep loops share one matrix per TTL — avoids 10k+ row reads every tick.
+    candidate_matrix_sweep_cache_ttl_seconds: int = 300
+
+    # Admin dashboard resource alerts (app/routers/system.py).
+    resource_alert_cpu_percent: int = 85
+    resource_alert_ram_percent: int = 85
+    resource_alert_disk_percent: int = 90
+    resource_alert_ffmpeg_count: int = 280
 
     # MediaMTX horizontal sharding — comma-separated URLs, equal length pairs.
     # Empty = single MEDIAMTX_API_URL / MEDIAMTX_HLS_BASE_URL.

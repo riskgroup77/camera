@@ -68,3 +68,23 @@ export function buildQuery(params: Record<string, string | number | undefined | 
   const qs = usp.toString();
   return qs ? `?${qs}` : '';
 }
+
+/** Walk every page of a paginated list endpoint (max pageSize 500 on API). */
+export async function fetchAllPages<T>(
+  path: string,
+  token: string | null | undefined,
+  params: Record<string, string | number | undefined | null> = {},
+  pageSize = 500,
+): Promise<T[]> {
+  const all: T[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const qs = buildQuery({ ...params, page, pageSize });
+    const res = await api.get<Page<T>>(`${path}${qs}`, token);
+    all.push(...res.items);
+    totalPages = res.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+  return all;
+}

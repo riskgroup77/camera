@@ -65,3 +65,24 @@ class TestIsWearingWhiteCoat:
         points = _make_points(visibility=0.1)
         frame = _white_frame()
         assert is_wearing_white_coat(frame, points) is False
+
+    def test_borderline_white_fraction_respects_threshold(self, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "coat_white_fraction_threshold", 0.60)
+        points = _make_points()
+        frame = _white_frame()
+        # Mix white torso with red surround — crop only the torso bbox region
+        bbox = torso_bbox(points, 200, 200)
+        assert bbox is not None
+        mixed = _colored_frame()
+        x1, y1, x2, y2 = bbox
+        mixed[y1:y2, x1:x2] = _white_frame()[y1:y2, x1:x2]
+        # Mostly white torso should pass at 0.60
+        assert is_wearing_white_coat(mixed, points) is True
+
+        # Narrow white stripe in torso — should fail stricter threshold
+        narrow = _colored_frame()
+        cx = (x1 + x2) // 2
+        narrow[y1:y2, cx - 5 : cx + 5] = 250
+        assert is_wearing_white_coat(narrow, points) is False

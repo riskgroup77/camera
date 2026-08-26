@@ -79,10 +79,7 @@ export default function SystemLogPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      // /api/audit-log caps pageSize at 200 (shared PageParams limit across
-      // every list endpoint) — export walks every page rather than
-      // requesting an oversized pageSize, so large logs still export in full.
-      const EXPORT_PAGE_SIZE = 200;
+      const EXPORT_PAGE_SIZE = 500;
       const all: AuditLogEntry[] = [];
       let currentPage = 1;
       let totalPages = 1;

@@ -51,3 +51,9 @@ class TestPaginationCount:
         rows, total = await paginate(db_session, stmt, PageParams(page=1, page_size=20))
         assert total == 0
         assert rows == []
+
+    async def test_page_size_up_to_500_is_accepted(self, db_session, ten_faculties):
+        stmt = select(Faculty).order_by(Faculty.name)
+        rows, total = await paginate(db_session, stmt, PageParams(page=1, page_size=500))
+        assert total == 10
+        assert len(rows) == 10
