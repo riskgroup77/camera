@@ -15,6 +15,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
@@ -29,7 +30,6 @@ logger = logging.getLogger("app.student_dress_code_ai")
 STUDENT_DRESS_MODULE_CODE = 18
 STUDENT_DRESS_MODULE_NAME = "Kiyim-bosh (dress code) umumiy"
 
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("student_dress_code_ai")
 
 
@@ -150,7 +150,7 @@ async def run_student_dress_code_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> bool:
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             frames = await grab_frame_pair(camera.stream_url)
             if frames is None:
                 return False

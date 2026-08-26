@@ -29,6 +29,7 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.crowd_density_ai import CROWD_MODULE_CODE, process_camera_frame_for_crowd
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.unauthorized_person_ai import UNAUTHORIZED_MODULE_CODE, process_camera_frame_pair_for_unauthorized
 from app.jobs.vision_ai import SLEEP_MODULE_CODE, process_camera_frame_for_sleep
 from app.models import Camera
@@ -38,7 +39,6 @@ from app.services.frame_grabber import grab_frame, grab_frame_burst, grab_frame_
 
 logger = logging.getLogger("app.unified_face_sweep")
 
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("unified_face_sweep")
 
 
@@ -83,7 +83,7 @@ async def _process_camera(
     if not any((needs_attendance, needs_crowd, needs_unauthorized, needs_sleep)):
         return counts
 
-    async with _camera_semaphore:
+    async with camera_sweep_slot():
         primary_frame: bytes | None = None
         pair: tuple[bytes, bytes] | None = None
         sleep_frames: list[bytes] = []

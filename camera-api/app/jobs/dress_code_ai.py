@@ -40,6 +40,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.coat_detection import is_wearing_white_coat
@@ -58,7 +59,6 @@ HEAD_COVERING_MODULE_CODE = 11
 HEAD_COVERING_MODULE_NAME = "Bosh kiyim (kalpakcha) borligi"
 
 # See app/jobs/attendance_ai.py's _camera_semaphore docstring.
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("dress_code_ai")
 
 
@@ -234,7 +234,7 @@ async def run_dress_code_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> tuple[bool, bool]:
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             frames = await grab_frame_pair(camera.stream_url)
             if frames is None:
                 return False, False
@@ -271,4 +271,4 @@ async def dress_code_ai_loop() -> None:
                 logger.info("dress code AI sweep raised events", extra={"events": count})
         except Exception:
             logger.exception("dress code AI sweep failed")
-        await asyncio.sleep(settings.coat_ai_interval_seconds)
+        await asyncio.sleep(settings.dress_code_ai_interval_seconds)

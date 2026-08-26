@@ -59,6 +59,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.face_recognition import detect_faces
@@ -73,7 +74,6 @@ ABANDONED_MODULE_NAME = "Egasiz qoldirilgan buyum"
 # See app/jobs/attendance_ai.py's _camera_semaphore docstring — same
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("abandoned_object_ai")
 
 BBox = tuple[int, int, int, int]  # x, y, w, h
@@ -257,7 +257,7 @@ async def run_abandoned_object_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> bool:
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             frame = await grab_frame(camera.stream_url)
             if frame is None:
                 return False

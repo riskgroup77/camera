@@ -43,6 +43,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import AttendanceRecord, AuditLog, Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
@@ -65,18 +66,8 @@ OFF_HOURS_MODULE_NAME = "Notekis/kechki vaqtda kirish"
 STAFF_ATTENDANCE_MODULE_CODE = 6
 STUDENT_ATTENDANCE_MODULE_CODE = 7
 
-# Caps how many cameras this sweep processes concurrently (grab + detect +
-# match + DB write, per camera) instead of the old one-camera-at-a-time
-# loop, which meant a full sweep across N cameras took N times as long as
-# one camera — at 400 cameras that's minutes per sweep against a 30s
-# target interval. Deliberately separate from
-# face_recognition._inference_semaphore, which caps concurrent InsightFace
-# calls specifically (the actual CPU/GPU-bound step) — this one bounds
-# how many camera pipelines are in flight at all, including the
-# ffmpeg-frame-grab and DB-write portions around that call. Raise
-# ai_sweep_camera_concurrency in .env on the production server; the
-# in-process default here is conservative for a dev machine.
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
+# Concurrent camera pipelines share app/jobs/sweep_concurrency.global_camera_semaphore
+# (ai_global_sweep_concurrency in .env) — separate from face_recognition inference cap.
 _sweep_guard = SweepGuard("attendance_ai")
 
 
@@ -341,7 +332,7 @@ async def run_attendance_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> int:
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             if camera.is_entrance:
                 frames = await grab_frame_burst(
                     camera.stream_url,

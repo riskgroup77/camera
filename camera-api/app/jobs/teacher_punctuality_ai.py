@@ -50,6 +50,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Event, LessonSession
 from app.schemas.event import EventOut
 from app.services.face_matching import find_best_match
@@ -66,7 +67,6 @@ PUNCTUALITY_MODULE_NAME = "O'qituvchining darsga aniq kelishi"
 # See app/jobs/attendance_ai.py's _camera_semaphore docstring — same
 # rationale, own semaphore so this job can't starve (or be starved by)
 # the other AI sweep loops' camera slots.
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("teacher_punctuality_ai")
 
 
@@ -108,7 +108,7 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
     seen = False
 
     if camera and camera.stream_url and is_reachable(camera.last_seen_at) and teacher and teacher.biometric_embedding:
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             frame = await grab_frame(camera.stream_url)
         if frame is not None:
             faces = await detect_faces(frame)

@@ -77,8 +77,7 @@ if [ -f /opt/camera/deploy/enable-backup-timer.sh ]; then
 fi
 
 echo "=== Pytest (changed modules) ==="
-"${COMPOSE[@]}" exec -T api pytest tests/test_face_matching.py tests/test_pagination.py tests/test_system.py tests/test_fight_ai.py tests/test_coat_detection.py tests/test_disorder_ai.py -q --tb=line 2>/dev/null || \
-"${COMPOSE[@]}" exec -T api python -m pytest tests/test_face_matching.py tests/test_pagination.py tests/test_system.py tests/test_fight_ai.py tests/test_coat_detection.py tests/test_disorder_ai.py -q --tb=line 2>&1 | tail -8 || echo "WARN: pytest skipped"
+"${COMPOSE[@]}" exec -T api python -m pytest tests/test_ai_scheduler.py tests/test_sweep_concurrency.py tests/test_face_matching.py tests/test_pagination.py tests/test_system.py tests/test_fight_ai.py tests/test_coat_detection.py tests/test_disorder_ai.py -q --tb=line 2>&1 | tail -12 || echo "WARN: pytest skipped"
 """
 
 
@@ -105,9 +104,10 @@ def main() -> int:
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     code = stdout.channel.recv_exit_status()
-    print(out)
+    sys.stdout.buffer.write(out.encode("utf-8", errors="replace"))
     if err.strip():
-        print("STDERR:", err)
+        sys.stdout.buffer.write(b"\nSTDERR:\n")
+        sys.stdout.buffer.write(err.encode("utf-8", errors="replace"))
     client.close()
     print(f"Deploy finished on {connected_host} with exit code {code}")
     return code

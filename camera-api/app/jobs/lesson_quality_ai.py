@@ -65,6 +65,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import any_module_active, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.phone_ai import PHONE_CLASS_ID
 from app.models import LessonSession
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
@@ -80,7 +81,6 @@ logger = logging.getLogger("app.lesson_quality_ai")
 ATTENTION_MODULE_CODE = 19
 TEACHER_ACTIVITY_MODULE_CODE = 21
 
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("lesson_quality_ai")
 
 # {lesson_session_id: sample_count} — see module docstring's "kept in
@@ -294,7 +294,7 @@ async def run_lesson_quality_ai_sweep_once(
         camera = session_row.camera
         if camera is None or not camera.stream_url or not is_reachable(camera.last_seen_at):
             return False
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             frames = await grab_frame_pair(camera.stream_url)
         if frames is None:
             return False

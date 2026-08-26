@@ -51,6 +51,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
+from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
 from app.schemas.event import EventOut
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
@@ -67,7 +68,6 @@ SLEEP_MODULE_NAME = "Talabaning uxlab qolishi"
 # See app/jobs/attendance_ai.py's _camera_semaphore docstring — same
 # rationale, own semaphore so a slow/backed-up vision_ai sweep can't starve
 # attendance_ai's camera slots or vice versa.
-_camera_semaphore = asyncio.Semaphore(settings.ai_sweep_camera_concurrency)
 _sweep_guard = SweepGuard("vision_ai")
 
 
@@ -251,7 +251,7 @@ async def run_vision_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> int:
-        async with _camera_semaphore:
+        async with camera_sweep_slot():
             frames = await grab_frame_burst(
                 camera.stream_url,
                 count=settings.sleep_confirmation_frame_count,

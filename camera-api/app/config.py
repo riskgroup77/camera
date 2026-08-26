@@ -239,6 +239,7 @@ class Settings(BaseSettings):
     # trained classifier — see that module's docstring for the honest
     # scope limits. S/V thresholds are OpenCV's 0-255 HSV ranges.
     coat_ai_interval_seconds: int = 45
+    dress_code_ai_interval_seconds: int = 45
     coat_dedup_minutes: int = 30
     coat_min_landmark_visibility: float = 0.5
     coat_torso_extension_factor: float = 0.6
@@ -290,14 +291,13 @@ class Settings(BaseSettings):
     fight_spike_multiplier: float = 4.0
     fight_min_absolute_magnitude: float = 2.0
 
-    # How many cameras each AI sweep loop (attendance_ai/vision_ai/fire_ai)
-    # processes concurrently, instead of one at a time. A dev machine with
-    # a handful of cameras is fine at the default; a production server
-    # with hundreds of cameras should raise this substantially (the real
-    # ceiling is the server's CPU/GPU and network capacity for concurrent
-    # ffmpeg reads + inference, not this number itself — see
-    # face_recognition_inference_concurrency for the inference-specific
-    # cap that composes with this one).
+    # Max cameras processed concurrently ACROSS ALL AI sweep modules.
+    # app/jobs/sweep_concurrency.py — every module shares this one cap so
+    # parallel scheduler ticks can't spawn (module_count × N) pipelines.
+    ai_global_sweep_concurrency: int = 48
+
+    # Deprecated alias kept for older .env files — prefer
+    # AI_GLOBAL_SWEEP_CONCURRENCY on production servers.
     ai_sweep_camera_concurrency: int = 8
 
     # Seconds between each AI sweep loop's FIRST tick at startup (see
