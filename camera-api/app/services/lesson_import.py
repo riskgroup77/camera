@@ -3,18 +3,28 @@
 import csv
 import io
 import logging
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Camera, Faculty, LessonSession, StudentStaff
-from app.routers.lesson_sessions import _parse_scheduled_start_time
 from app.schemas.lesson_session import LessonSessionImportErrorOut, LessonSessionImportResultOut
+from app.timezone import INSTITUTE_TZ
 
 logger = logging.getLogger("app.lesson_import")
 
 _REQUIRED = {"date", "group", "faculty", "subject"}
+
+
+def parse_scheduled_start_time(value: str | None) -> datetime | None:
+    """ISO 8601 schedule time — naive values use institute-local TZ."""
+    if value is None:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=INSTITUTE_TZ)
+    return parsed
 
 
 def _normalize_header(name: str) -> str:
@@ -111,7 +121,7 @@ async def import_lesson_sessions_csv(db: AsyncSession, raw: bytes) -> LessonSess
             skipped += 1
             continue
 
-        scheduled_start = _parse_scheduled_start_time(scheduled_raw) if scheduled_raw else None
+        scheduled_start = parse_scheduled_start_time(scheduled_raw) if scheduled_raw else None
 
         db.add(
             LessonSession(

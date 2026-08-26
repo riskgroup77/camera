@@ -25,8 +25,7 @@ from app.schemas.lesson_session import (
     LessonSessionOut,
     LessonSessionScheduleIn,
 )
-from app.services.lesson_import import import_lesson_sessions_csv
-from app.timezone import INSTITUTE_TZ
+from app.services.lesson_import import import_lesson_sessions_csv, parse_scheduled_start_time
 
 router = APIRouter(prefix="/api/lesson-sessions", tags=["lesson-sessions"])
 
@@ -73,17 +72,7 @@ async def _resolve_camera(db: AsyncSession, camera_id: str | None) -> Camera | N
 
 
 def _parse_scheduled_start_time(value: str | None) -> datetime | None:
-    """Accepts an ISO 8601 string — naive (e.g. from an HTML
-    datetime-local input, "2026-08-13T09:00") is interpreted as
-    institute-local time (see app/timezone.py), matching every other
-    human-facing time setting in this system (attendance cutoffs etc.).
-    Already-aware strings are kept as given."""
-    if value is None:
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=INSTITUTE_TZ)
-    return parsed
+    return parse_scheduled_start_time(value)
 
 
 @router.get("", response_model=Page[LessonSessionOut])
