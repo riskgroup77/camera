@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Building2 } from 'lucide-react';
-import { api, fetchAllPages } from '../../lib/apiClient';
+import { fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useBuildings } from '../../lib/useBuildings';
 import CameraConfigDetailModal from './CameraConfigDetailModal';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, fetchAllPages } from './apiClient';
+import { fetchAllPages } from './apiClient';
 import { useAuth } from './auth';
 import type { StudentStaffRecord } from '../types';
 
