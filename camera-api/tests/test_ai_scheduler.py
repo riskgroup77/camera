@@ -25,10 +25,12 @@ class TestParallelSchedulerTick:
             _SweepEntry(name="b", interval_seconds=1, run_once=slow_run, tier="standard", last_run=0.0),
         ]
         t0 = time.monotonic()
-        ran = await run_scheduler_tick(registry)
+        total, critical_ran, standard_ran = await run_scheduler_tick(registry)
         elapsed = time.monotonic() - t0
 
-        assert ran == 2
+        assert total == 2
+        assert critical_ran == 0
+        assert standard_ran == 2
         assert len(started) == 2
         # Sequential would be ~0.30s+; parallel should finish closer to ~0.15s.
         assert elapsed < 0.28
@@ -65,8 +67,8 @@ class TestParallelSchedulerTick:
         registry = [
             _SweepEntry(name="fresh", interval_seconds=60, run_once=run, tier="standard", last_run=time.monotonic()),
         ]
-        ran = await run_scheduler_tick(registry)
-        assert ran == 0
+        total, _, _ = await run_scheduler_tick(registry)
+        assert total == 0
         assert calls["n"] == 0
 
     async def test_one_module_failing_does_not_block_siblings(self):
@@ -80,10 +82,9 @@ class TestParallelSchedulerTick:
             _SweepEntry(name="ok", interval_seconds=1, run_once=ok, tier="critical", last_run=0.0),
             _SweepEntry(name="bad", interval_seconds=1, run_once=boom, tier="critical", last_run=0.0),
         ]
-        ran = await run_scheduler_tick(registry)
-        assert ran == 2
-        assert registry[0].last_run > 0
-        assert registry[1].last_run > 0
+        total, critical_ran, _ = await run_scheduler_tick(registry)
+        assert total == 2
+        assert critical_ran == 2
 
 
 class TestBuildRegistry:

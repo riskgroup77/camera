@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 from app.config import settings
 
 _global_camera_semaphore: asyncio.Semaphore | None = None
+_active_camera_slots = 0
+_slots_lock = asyncio.Lock()
 
 
 def global_camera_semaphore() -> asyncio.Semaphore:
@@ -24,11 +26,26 @@ def global_camera_semaphore() -> asyncio.Semaphore:
 
 @asynccontextmanager
 async def camera_sweep_slot():
+    global _active_camera_slots
     async with global_camera_semaphore():
-        yield
+        async with _slots_lock:
+            _active_camera_slots += 1
+        try:
+            yield
+        finally:
+            async with _slots_lock:
+                _active_camera_slots -= 1
+
+
+def sweep_concurrency_snapshot() -> dict[str, int]:
+    return {
+        "max": settings.ai_global_sweep_concurrency,
+        "in_use": _active_camera_slots,
+    }
 
 
 def reset_global_camera_semaphore_for_tests() -> None:
     """Tests only — next acquire rebuilds the semaphore from current settings."""
-    global _global_camera_semaphore
+    global _global_camera_semaphore, _active_camera_slots
     _global_camera_semaphore = None
+    _active_camera_slots = 0

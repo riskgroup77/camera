@@ -52,5 +52,12 @@ class PriorityInferenceGate:
                 self._in_use -= 1
                 self._grant_next()
 
+    def snapshot(self) -> dict[str, int]:
+        return {
+            "max": self._max,
+            "in_use": self._in_use,
+            "waiting": len(self._waiters),
+        }
+
 
 face_inference_gate = PriorityInferenceGate(settings.face_recognition_inference_concurrency)

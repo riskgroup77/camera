@@ -40,6 +40,7 @@ from app.jobs.phone_ai import run_phone_ai_sweep_once
 from app.jobs.ppe_ai import run_ppe_ai_sweep_once
 from app.jobs.smoking_ai import run_smoking_ai_sweep_once
 from app.jobs.student_dress_code_ai import run_student_dress_code_ai_sweep_once
+from app.jobs.scheduler_metrics import record_scheduler_skip, record_scheduler_tick
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
@@ -150,17 +151,17 @@ async def _run_tier_parallel(entries: list[_SweepEntry]) -> int:
     return len(entries)
 
 
-async def run_scheduler_tick(registry: list[_SweepEntry]) -> int:
-    """Run due sweeps: critical tier in parallel, then standard tier in parallel."""
+async def run_scheduler_tick(registry: list[_SweepEntry]) -> tuple[int, int, int]:
+    """Run due sweeps: critical tier in parallel, then standard tier in parallel.
+    Returns (total_modules_ran, critical_ran, standard_ran)."""
     now = time.monotonic()
     critical, standard = _due_entries(registry, now)
     if not critical and not standard:
-        return 0
+        return 0, 0, 0
 
-    ran = 0
-    ran += await _run_tier_parallel(critical)
-    ran += await _run_tier_parallel(standard)
-    return ran
+    critical_ran = await _run_tier_parallel(critical)
+    standard_ran = await _run_tier_parallel(standard)
+    return critical_ran + standard_ran, critical_ran, standard_ran
 
 
 async def ai_scheduler_loop() -> None:
@@ -178,9 +179,18 @@ async def ai_scheduler_loop() -> None:
         try:
 
             async def tick() -> None:
-                await run_scheduler_tick(registry)
+                started = time.monotonic()
+                total, critical_ran, standard_ran = await run_scheduler_tick(registry)
+                record_scheduler_tick(
+                    duration_seconds=time.monotonic() - started,
+                    modules_ran=total,
+                    critical_ran=critical_ran,
+                    standard_ran=standard_ran,
+                )
 
-            await _guard.run(tick)
+            result = await _guard.run(tick)
+            if result is None:
+                record_scheduler_skip()
         except Exception:
             logger.exception("AI scheduler tick failed")
         await asyncio.sleep(settings.ai_scheduler_poll_seconds)

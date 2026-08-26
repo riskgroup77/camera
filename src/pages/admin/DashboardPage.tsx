@@ -22,6 +22,27 @@ interface SystemResources {
   alerts: ResourceAlert[];
 }
 
+interface SystemAiStatus {
+  schedulerEnabled: boolean;
+  globalSweepConcurrency: number;
+  gpu: {
+    cudaAvailable: boolean;
+    faceGpuActive: boolean;
+    objectGpuActive: boolean;
+    recommendation: string;
+  };
+  lastTick: {
+    durationSeconds: number;
+    modulesRan: number;
+    criticalRan: number;
+    standardRan: number;
+    skippedOverlap: boolean;
+  };
+  sweepSlots: { max: number; inUse: number };
+  faceInferenceGate: { max: number; inUse: number; waiting: number };
+  embeddingSweepCacheTtlSeconds: number;
+}
+
 function ResourceBar({ label, value }: { label: string; value: number }) {
   const tone = value > 80 ? 'bg-red-500' : value > 60 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
@@ -44,6 +65,7 @@ export default function DashboardPage() {
   );
   const [aiModules, setAiModules] = useState<AIModule[]>([]);
   const [resources, setResources] = useState<SystemResources | null>(null);
+  const [aiStatus, setAiStatus] = useState<SystemAiStatus | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -70,6 +92,10 @@ export default function DashboardPage() {
 
     api.get<SystemResources>('/api/system/resources', token).then((res) => {
       if (!cancelled) setResources(res);
+    });
+
+    api.get<SystemAiStatus>('/api/system/ai-status', token).then((res) => {
+      if (!cancelled) setAiStatus(res);
     });
 
     return () => {
@@ -207,6 +233,49 @@ export default function DashboardPage() {
                   ))}
                 </ul>
               )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-6 text-slate-400">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          )}
+        </section>
+
+        <section className="glass p-6">
+          <h3 className="mb-4 text-base font-bold text-slate-900 dark:text-slate-100">
+            AI infratuzilma
+          </h3>
+          {aiStatus ? (
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-400">
+              <div className="flex flex-wrap gap-2">
+                <span
+                  className={`rounded-full px-2.5 py-1 font-semibold ${
+                    aiStatus.gpu.faceGpuActive || aiStatus.gpu.objectGpuActive
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
+                      : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-400'
+                  }`}
+                >
+                  GPU: {aiStatus.gpu.cudaAvailable ? (aiStatus.gpu.faceGpuActive ? 'CUDA faol' : 'mavjud, CPU') : 'yo\'q'}
+                </span>
+                <span className="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400">
+                  Scheduler: {aiStatus.schedulerEnabled ? 'parallel' : 'loop'}
+                </span>
+                <span className="rounded-full bg-white/60 px-2.5 py-1 font-semibold dark:bg-white/10">
+                  Sweep cap: {aiStatus.sweepSlots.inUse}/{aiStatus.sweepSlots.max}
+                </span>
+              </div>
+              <p>
+                Oxirgi tick: {aiStatus.lastTick.modulesRan} modul ({aiStatus.lastTick.criticalRan} critical,{' '}
+                {aiStatus.lastTick.standardRan} standard) — {aiStatus.lastTick.durationSeconds}s
+                {aiStatus.lastTick.skippedOverlap ? ' (overlap skip)' : ''}
+              </p>
+              <p>
+                Inference: {aiStatus.faceInferenceGate.inUse}/{aiStatus.faceInferenceGate.max}
+                {aiStatus.faceInferenceGate.waiting > 0 ? ` (${aiStatus.faceInferenceGate.waiting} navbatda)` : ''}
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">
+                {aiStatus.gpu.recommendation}
+              </p>
             </div>
           ) : (
             <div className="flex items-center justify-center py-6 text-slate-400">

@@ -9,7 +9,15 @@ from fastapi import APIRouter, Depends
 
 from app.config import settings
 from app.dependencies import CurrentUser, get_current_user
-from app.schemas.system import ResourceAlertOut, SystemResourcesOut
+from app.schemas.system import (
+    ConcurrencySlotOut,
+    GpuStatusOut,
+    ResourceAlertOut,
+    SchedulerLastTickOut,
+    SystemAiStatusOut,
+    SystemResourcesOut,
+)
+from app.services.ai_runtime_status import build_ai_runtime_status
 from app.services.stream_cache import active_stream_reader_count
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -73,4 +81,25 @@ async def get_system_resources(_: Annotated[CurrentUser, Depends(get_current_use
         ffmpeg_process_count=ffmpeg_count,
         stream_reader_count=stream_readers,
         alerts=_build_alerts(cpu, ram, disk, ffmpeg_count),
+    )
+
+
+@router.get("/ai-status", response_model=SystemAiStatusOut)
+async def get_ai_status(_: Annotated[CurrentUser, Depends(get_current_user)]) -> SystemAiStatusOut:
+    raw = build_ai_runtime_status()
+    return SystemAiStatusOut(
+        scheduler_enabled=bool(raw["scheduler_enabled"]),
+        scheduler_poll_seconds=int(raw["scheduler_poll_seconds"]),
+        unified_face_sweep_enabled=bool(raw["unified_face_sweep_enabled"]),
+        global_sweep_concurrency=int(raw["global_sweep_concurrency"]),
+        face_inference_concurrency=int(raw["face_inference_concurrency"]),
+        object_inference_concurrency=int(raw["object_inference_concurrency"]),
+        critical_modules=list(raw["critical_modules"]),
+        standard_modules=list(raw["standard_modules"]),
+        last_tick=SchedulerLastTickOut(**raw["last_tick"]),
+        gpu=GpuStatusOut(**raw["gpu"]),
+        sweep_slots=ConcurrencySlotOut(**raw["sweep_slots"]),
+        face_inference_gate=ConcurrencySlotOut(**raw["face_inference_gate"]),
+        stream_reader_count=int(raw["stream_reader_count"]),
+        embedding_sweep_cache_ttl_seconds=int(raw["embedding_sweep_cache_ttl_seconds"]),
     )

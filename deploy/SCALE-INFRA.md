@@ -89,6 +89,17 @@ curl -s http://127.0.0.1:9999/v3/paths/list | head
 docker logs camera-api-api-1 2>&1 | grep -i gpu
 ```
 
+Admin panel → **Boshqaruv paneli** → **AI infratuzilma** (GPU, scheduler tick, sweep slots).
+
+API: `GET /api/system/ai-status` (auth kerak).
+
+### GPU o'rnatish (hostda driver yo'q bo'lsa)
+
+```bash
+sudo bash deploy/install-nvidia-toolkit.sh
+sudo bash deploy/setup-scale-infra.sh
+```
+
 API qayta ishga tushganda barcha kameralar yangi shard URL bilan qayta ro‘yxatdan o‘tadi (`stream_sync`).
 
 ## Portlar (host)

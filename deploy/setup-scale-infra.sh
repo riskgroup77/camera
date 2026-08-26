@@ -35,8 +35,15 @@ USE_GPU=0
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   USE_GPU=1
   echo "=== NVIDIA GPU detected — using Dockerfile.gpu ==="
+  if docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
+    echo "=== Docker GPU runtime OK ==="
+  else
+    echo "WARN: nvidia-smi works on host but Docker --gpus fails — run: sudo bash deploy/install-nvidia-toolkit.sh"
+    USE_GPU=0
+  fi
 else
   echo "=== No GPU — CPU Docker image ==="
+  echo "INFO: GPU tezlashtirish uchun: deploy/install-nvidia-toolkit.sh"
 fi
 
 if [ -d /etc/nginx/sites-available ] && sudo -n true 2>/dev/null; then
@@ -67,6 +74,8 @@ sleep 15
 sleep 10
 curl -sf http://127.0.0.1:18080/health
 echo
+echo "=== AI status (admin token kerak — brauzer orqali /admin/dashboard) ==="
+echo "GET /api/system/ai-status — GPU, scheduler tick, sweep slots"
 "${COMPOSE[@]}" ps
 
 echo "=== Backup timer ==="
