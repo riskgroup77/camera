@@ -1,0 +1,43 @@
+# Production GPU image — InsightFace/YOLO via CUDA (host needs nvidia-container-toolkit).
+# Build: docker compose -f docker-compose.yml ... -f deploy/docker-compose.gpu.yml build api
+# Falls back to CPU inside containers when GPU is unavailable (onnxruntime-gpu on CPU-only hosts
+# may fail import — use default Dockerfile instead if no GPU).
+
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# CUDA-enabled PyTorch before ultralytics (otherwise CPU torch is pulled).
+RUN pip install --no-cache-dir \
+    torch torchvision \
+    --index-url https://download.pytorch.org/whl/cu124
+
+COPY requirements-gpu.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN useradd --create-home appuser \
+    && mkdir -p /home/appuser/.insightface/models \
+    && chown -R appuser:appuser /app /home/appuser/.insightface
+USER appuser
+
+VOLUME /home/appuser/.insightface
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+
+ENV WEB_CONCURRENCY=1
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${WEB_CONCURRENCY}"]

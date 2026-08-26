@@ -42,16 +42,23 @@ done < "$SCALE_FILE"
 
 echo "=== Compose overrides ==="
 cp deploy/docker-compose.override.yml camera-api/docker-compose.override.yml
-cp deploy/docker-compose.mediamtx.yml camera-api/docker-compose.mediamtx.yml
+cp deploy/docker-compose.mediamtx-shard.yml camera-api/docker-compose.mediamtx-shard.yml
+cp deploy/docker-compose.gpu.yml camera-api/docker-compose.gpu.yml
 
 echo "=== Recreate API (pick up new env) ==="
 cd camera-api
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml up -d --build api
+USE_GPU=0
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then USE_GPU=1; fi
+COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx-shard.yml)
+if [ "$USE_GPU" -eq 1 ]; then COMPOSE+=(-f docker-compose.gpu.yml); fi
+docker stop camera-api-mediamtx-1 2>/dev/null || true
+docker rm camera-api-mediamtx-1 2>/dev/null || true
+"${COMPOSE[@]}" up -d --build api
 
 echo "=== Health ==="
 sleep 18
 curl -sf http://127.0.0.1:18080/health; echo
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx.yml ps api
+"${COMPOSE[@]}" ps api
 """
 
 

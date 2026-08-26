@@ -1,0 +1,13 @@
+# GPU API build + NVIDIA runtime (requires nvidia-container-toolkit on host).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

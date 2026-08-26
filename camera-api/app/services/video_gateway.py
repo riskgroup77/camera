@@ -67,6 +67,24 @@ def hls_url_for(camera_id: str) -> str:
     return f"{shard.hls_base_url}/{_path_name(camera_id)}/index.m3u8"
 
 
+def public_hls_to_internal(public_url: str) -> str:
+    """Rewrite a browser-facing shard HLS URL to the docker-internal base the API
+    container can reach (frame_grabber / stream_cache ffmpeg)."""
+    public_bases = _parse_csv(settings.mediamtx_shard_hls_base_urls)
+    internal_bases = _parse_csv(settings.mediamtx_shard_hls_internal_base_urls)
+    if public_bases and internal_bases and len(public_bases) == len(internal_bases):
+        for pub, internal in zip(public_bases, internal_bases, strict=True):
+            pub = pub.rstrip("/")
+            internal = internal.rstrip("/")
+            if public_url.startswith(pub + "/") or public_url == pub:
+                return internal + public_url[len(pub) :]
+    public_base = settings.mediamtx_hls_base_url.rstrip("/")
+    internal_base = (settings.mediamtx_hls_internal_base_url or settings.mediamtx_hls_base_url).rstrip("/")
+    if internal_base != public_base and public_url.startswith(public_base):
+        return internal_base + public_url[len(public_base) :]
+    return public_url
+
+
 async def register_camera_stream(camera_id: str, rtsp_url: str) -> str:
     shard = _shard_for(camera_id)
     name = _path_name(camera_id)

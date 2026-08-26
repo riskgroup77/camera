@@ -1,0 +1,63 @@
+# MediaMTX horizontal sharding — 3 nodes on one host (path-based nginx: /s0 /s1 /s2).
+# Disables the single-node mediamtx service (profile legacy-single).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f deploy/docker-compose.mediamtx-shard.yml up -d
+
+services:
+  mediamtx:
+    profiles: ["legacy-single"]
+
+  mediamtx-0:
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+    ports:
+      - "8554:8554"
+      - "8888:8888"
+      - "127.0.0.1:9997:9997"
+
+  mediamtx-1:
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+    ports:
+      - "8555:8554"
+      - "8889:8888"
+      - "127.0.0.1:9998:9997"
+
+  mediamtx-2:
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+    ports:
+      - "8556:8554"
+      - "8890:8888"
+      - "127.0.0.1:9999:9997"
+
+  api:
+    depends_on: !override
+      db:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mediamtx-0:
+        condition: service_started
+      mediamtx-1:
+        condition: service_started
+      mediamtx-2:
+        condition: service_started

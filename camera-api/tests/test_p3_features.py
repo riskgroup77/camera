@@ -28,3 +28,19 @@ class TestMediaMTXSharding:
         b = _shard_index("camera-uuid-1", 3)
         assert a == b
         assert 0 <= a < 3
+
+    def test_public_hls_to_internal_shard_paths(self, monkeypatch):
+        from app.services.video_gateway import public_hls_to_internal
+
+        monkeypatch.setattr(
+            "app.services.video_gateway.settings.mediamtx_shard_hls_base_urls",
+            "https://stream.example/s0,https://stream.example/s1",
+        )
+        monkeypatch.setattr(
+            "app.services.video_gateway.settings.mediamtx_shard_hls_internal_base_urls",
+            "http://mtx-0:8888,http://mtx-1:8888",
+        )
+        monkeypatch.setattr("app.services.video_gateway.settings.mediamtx_hls_base_url", "https://stream.example")
+        monkeypatch.setattr("app.services.video_gateway.settings.mediamtx_hls_internal_base_url", None)
+        public = "https://stream.example/s1/cam-abc/index.m3u8"
+        assert public_hls_to_internal(public) == "http://mtx-1:8888/cam-abc/index.m3u8"

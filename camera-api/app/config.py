@@ -364,6 +364,9 @@ class Settings(BaseSettings):
     # Empty = single MEDIAMTX_API_URL / MEDIAMTX_HLS_BASE_URL.
     mediamtx_shard_api_urls: str = ""
     mediamtx_shard_hls_base_urls: str = ""
+    # Parallel to mediamtx_shard_hls_base_urls — docker-internal HLS bases for ffmpeg
+    # (e.g. http://mediamtx-0:8888,http://mediamtx-1:8888,http://mediamtx-2:8888).
+    mediamtx_shard_hls_internal_base_urls: str = ""
 
     # TT kriteriya 12 — ID-badge evristikasi
     badge_ai_interval_seconds: int = 45
