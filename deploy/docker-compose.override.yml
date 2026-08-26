@@ -7,5 +7,7 @@ services:
       - "127.0.0.1:9101:9001"
 
   api:
+    env_file:
+      - .env
     ports: !override
       - "127.0.0.1:18080:8080"
