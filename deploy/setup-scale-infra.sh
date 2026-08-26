@@ -39,12 +39,14 @@ else
   echo "=== No GPU — CPU Docker image ==="
 fi
 
-echo "=== Nginx stream shard config ==="
-if [ -d /etc/nginx/sites-available ]; then
-  cp deploy/nginx/cam-fermi-stream.conf /etc/nginx/sites-available/stream.cam.fermi.uz.conf
-  ln -sf /etc/nginx/sites-available/stream.cam.fermi.uz.conf /etc/nginx/sites-enabled/stream.cam.fermi.uz.conf 2>/dev/null || true
-  nginx -t
-  systemctl reload nginx
+if [ -d /etc/nginx/sites-available ] && sudo -n true 2>/dev/null; then
+  sudo cp deploy/nginx/cam-fermi-stream.conf /etc/nginx/sites-available/stream.cam.fermi.uz.conf
+  sudo ln -sf /etc/nginx/sites-available/stream.cam.fermi.uz.conf /etc/nginx/sites-enabled/stream.cam.fermi.uz.conf 2>/dev/null || true
+  sudo nginx -t
+  sudo systemctl reload nginx
+  echo "=== Nginx reloaded ==="
+else
+  echo "WARN: skip nginx reload — copy deploy/nginx/cam-fermi-stream.conf manually if needed"
 fi
 
 echo "=== Stop legacy single mediamtx (if running) ==="

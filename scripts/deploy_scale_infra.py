@@ -7,11 +7,7 @@ HOSTS = [("87.192.230.208", 2222), ("192.168.0.101", 22)]
 USER = "admin_root"
 PASSWORD = "qazxsw123@!"
 
-REMOTE = r"""
-set -e
-APP_DIR=/opt/camera
-bash "$APP_DIR/deploy/setup-scale-infra.sh"
-"""
+REMOTE = "bash /opt/camera/deploy/setup-scale-infra.sh"
 
 
 def main() -> int:
@@ -29,10 +25,7 @@ def main() -> int:
         print("ERROR: Could not connect")
         return 1
 
-    stdin, stdout, stderr = client.exec_command(
-        f"sudo bash -s <<'EOF'\n{REMOTE}\nEOF",
-        timeout=1200,
-    )
+    stdin, stdout, stderr = client.exec_command(REMOTE, timeout=1200)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     code = stdout.channel.recv_exit_status()
