@@ -5,6 +5,7 @@ Zaxira: yuz pastki qismida teri-dan farq qiluvchi yuqori to'yinganlik
 (masalan ko'k niqob) — haqiqiy PPE modeli emas.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -60,3 +61,8 @@ def detect_ppe_sync(image: np.ndarray, face_bbox: tuple[float, float, float, flo
                 return True
         return False
     return _mask_heuristic(image, face_bbox)
+
+
+async def detect_ppe(image: np.ndarray, face_bbox: tuple[float, float, float, float]) -> bool:
+    """Run PPE inference off the event loop — YOLO/cv2 must not block asyncio."""
+    return await asyncio.to_thread(detect_ppe_sync, image, face_bbox)

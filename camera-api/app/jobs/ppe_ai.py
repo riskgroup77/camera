@@ -19,7 +19,7 @@ from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair
-from app.services.ppe_detection import detect_ppe_sync
+from app.services.ppe_detection import detect_ppe
 from app.ws import manager
 
 logger = logging.getLogger("app.ppe_ai")
@@ -55,7 +55,7 @@ async def _frame_missing_ppe(frame_bytes: bytes) -> bool:
         return False
     for face in faces:
         x1, y1, x2, y2 = face.bbox
-        if detect_ppe_sync(image, (float(x1), float(y1), float(x2), float(y2))):
+        if await detect_ppe(image, (float(x1), float(y1), float(x2), float(y2))):
             return False
     return True
 

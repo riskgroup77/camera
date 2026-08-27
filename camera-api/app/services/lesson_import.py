@@ -133,6 +133,10 @@ async def import_lesson_sessions_csv(db: AsyncSession, raw: bytes) -> LessonSess
                 teacher_id=teacher_uuid,
                 camera_id=camera_uuid,
                 scheduled_start_time=scheduled_start,
+                attention_score=50,
+                sleep_incidents=0,
+                teacher_activity_score=50,
+                teacher_on_time=True,
             )
         )
         imported += 1
