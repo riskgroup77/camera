@@ -66,7 +66,8 @@ class Settings(BaseSettings):
     # Parallel TCP checks during camera_health sweep (300 cameras @ 48 ≈ 19 waves × 3s)
     camera_health_concurrency: int = 32
     # How long a faol camera must stay unreachable before raising an admin
-    # alert (AuditLog entry + structured WARNING log). Zero disables alerts.
+    # alert (AuditLog entry + structured WARNING log).
+    # 0 = alert on the first failed health check; negative (e.g. -1) disables alerts.
     camera_offline_alert_minutes: int = 5
 
     # Parallel MediaMTX registrations on API startup (stream_sync.py).

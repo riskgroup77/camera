@@ -59,19 +59,22 @@ async def _check_one(camera: Camera) -> tuple[bool, float]:
 
 async def _maybe_raise_offline_alert(db: AsyncSession, camera: Camera, offline_since: datetime) -> None:
     alert_minutes = settings.camera_offline_alert_minutes
-    if alert_minutes <= 0:
+    if alert_minutes < 0:
         return
     camera_id = str(camera.id)
     if camera_id in _alerted:
         return
-    if datetime.now(timezone.utc) - offline_since < timedelta(minutes=alert_minutes):
+    if alert_minutes > 0 and datetime.now(timezone.utc) - offline_since < timedelta(minutes=alert_minutes):
         return
 
     _alerted.add(camera_id)
-    message = (
-        f"Kamera {alert_minutes} daqiqadan beri javob bermayapti: "
-        f"{camera.name} ({camera.ip}:{camera.port})"
-    )
+    if alert_minutes == 0:
+        message = f"Kamera javob bermayapti: {camera.name} ({camera.ip}:{camera.port})"
+    else:
+        message = (
+            f"Kamera {alert_minutes} daqiqadan beri javob bermayapti: "
+            f"{camera.name} ({camera.ip}:{camera.port})"
+        )
     logger.warning(
         "camera offline alert",
         extra={
@@ -105,6 +108,12 @@ def _mark_camera_online(camera: Camera) -> None:
     camera_id = str(camera.id)
     _offline_since.pop(camera_id, None)
     _alerted.discard(camera_id)
+
+
+def reset_camera_health_state_for_tests() -> None:
+    """Tests only — clears in-memory offline streak tracking between cases."""
+    _offline_since.clear()
+    _alerted.clear()
 
 
 async def run_camera_health_sweep_once(db: AsyncSession) -> int:

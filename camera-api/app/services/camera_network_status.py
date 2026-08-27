@@ -15,6 +15,17 @@ def _is_link_local_ip(ip: str) -> bool:
     return ip.startswith("169.254.") or ip.startswith("fe80:")
 
 
+def _chronic_offline_cutoff() -> datetime:
+    alert_minutes = settings.camera_offline_alert_minutes
+    if alert_minutes < 0:
+        minutes = max(1, settings.camera_health_freshness_seconds // 60)
+    elif alert_minutes == 0:
+        minutes = 0
+    else:
+        minutes = alert_minutes
+    return datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
+
 async def build_camera_network_status(db: AsyncSession) -> dict[str, object]:
     result = await db.execute(select(Camera).where(Camera.status == "faol"))
     cameras = result.scalars().all()
@@ -24,7 +35,7 @@ async def build_camera_network_status(db: AsyncSession) -> dict[str, object]:
     offline = faol - reachable
     link_local = sum(1 for c in cameras if _is_link_local_ip(c.ip))
 
-    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.camera_offline_alert_minutes)
+    stale_cutoff = _chronic_offline_cutoff()
     chronic_offline = sum(
         1
         for c in cameras

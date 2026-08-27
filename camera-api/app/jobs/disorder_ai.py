@@ -103,6 +103,11 @@ def _is_motion_spike(
     return is_spike
 
 
+def reset_motion_history_for_tests() -> None:
+    """Tests only — motion baselines must not leak between test cases."""
+    _motion_history.clear()
+
+
 async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.disorder_dedup_minutes)
     result = await db.execute(

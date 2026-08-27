@@ -134,7 +134,7 @@ class TestProcessCameraFramePairForFight:
             return [_pose_centered_at(0.5, 0.5), _pose_centered_at(0.52, 0.5)]
 
         monkeypatch.setattr(fight_ai, "detect_poses", fake_detect_poses)
-        monkeypatch.setattr(fight_ai, "_is_motion_spike", lambda camera_id, magnitude: False)
+        monkeypatch.setattr(fight_ai, "_is_motion_spike", lambda camera_id, magnitude, **kwargs: False)
         raised = await process_camera_frame_pair_for_fight(_blank_frame(), _blank_frame(), db_session, a_camera)
         assert raised is False
 
@@ -143,7 +143,7 @@ class TestProcessCameraFramePairForFight:
             return [_pose_centered_at(0.5, 0.5), _pose_centered_at(0.52, 0.5)]
 
         monkeypatch.setattr(fight_ai, "detect_poses", fake_detect_poses)
-        monkeypatch.setattr(fight_ai, "_is_motion_spike", lambda camera_id, magnitude: True)
+        monkeypatch.setattr(fight_ai, "_is_motion_spike", lambda camera_id, magnitude, **kwargs: True)
         raised = await process_camera_frame_pair_for_fight(_blank_frame(), _blank_frame(), db_session, a_camera)
         assert raised is True
 
@@ -158,7 +158,7 @@ class TestProcessCameraFramePairForFight:
             return [_pose_centered_at(0.5, 0.5), _pose_centered_at(0.52, 0.5)]
 
         monkeypatch.setattr(fight_ai, "detect_poses", fake_detect_poses)
-        monkeypatch.setattr(fight_ai, "_is_motion_spike", lambda camera_id, magnitude: True)
+        monkeypatch.setattr(fight_ai, "_is_motion_spike", lambda camera_id, magnitude, **kwargs: True)
         first = await process_camera_frame_pair_for_fight(_blank_frame(), _blank_frame(), db_session, a_camera)
         second = await process_camera_frame_pair_for_fight(_blank_frame(), _blank_frame(), db_session, a_camera)
         assert first is True
