@@ -29,8 +29,10 @@ class TestAISchedulerRegistry:
         registry[0].interval_seconds = 9999
         registry[0].last_run = 0.0
 
-        ran = await run_scheduler_tick(registry)
-        assert ran == 0
+        total, critical_ran, standard_ran = await run_scheduler_tick(registry)
+        assert total == 0
+        assert critical_ran == 0
+        assert standard_ran == 0
         assert calls == []
 
 

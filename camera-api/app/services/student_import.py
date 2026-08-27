@@ -26,6 +26,16 @@ def _normalize_header(name: str) -> str:
     return name.strip().lower().replace(" ", "_")
 
 
+async def _load_faculty_map(db: AsyncSession) -> dict[str, Faculty]:
+    result = await db.execute(select(Faculty))
+    return {faculty.name: faculty for faculty in result.scalars().all()}
+
+
+async def _load_existing_people_keys(db: AsyncSession) -> set[tuple[str, str]]:
+    result = await db.execute(select(StudentStaff.full_name, StudentStaff.type))
+    return {(name, person_type) for name, person_type in result.all()}
+
+
 async def import_students_staff_csv(db: AsyncSession, raw: bytes) -> StudentStaffImportResultOut:
     text = raw.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
@@ -46,7 +56,10 @@ async def import_students_staff_csv(db: AsyncSession, raw: bytes) -> StudentStaf
             ],
         )
 
-    faculty_cache: dict[str, Faculty] = {}
+    faculty_map = await _load_faculty_map(db)
+    existing_keys = await _load_existing_people_keys(db)
+    pending_keys: set[tuple[str, str]] = set()
+
     imported = 0
     skipped = 0
     errors: list[StudentStaffImportErrorOut] = []
@@ -70,22 +83,13 @@ async def import_students_staff_csv(db: AsyncSession, raw: bytes) -> StudentStaf
             errors.append(StudentStaffImportErrorOut(row=row_num, message="group_or_position bo'sh"))
             continue
 
-        if faculty_name not in faculty_cache:
-            result = await db.execute(select(Faculty).where(Faculty.name == faculty_name))
-            faculty = result.scalar_one_or_none()
-            if faculty is None:
-                errors.append(StudentStaffImportErrorOut(row=row_num, message=f"Fakultet topilmadi: {faculty_name}"))
-                continue
-            faculty_cache[faculty_name] = faculty
+        faculty = faculty_map.get(faculty_name)
+        if faculty is None:
+            errors.append(StudentStaffImportErrorOut(row=row_num, message=f"Fakultet topilmadi: {faculty_name}"))
+            continue
 
-        existing = (
-            await db.execute(
-                select(StudentStaff.id)
-                .where(StudentStaff.full_name == full_name)
-                .where(StudentStaff.type == person_type)
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
+        person_key = (full_name, person_type)
+        if person_key in existing_keys or person_key in pending_keys:
             skipped += 1
             continue
 
@@ -93,11 +97,12 @@ async def import_students_staff_csv(db: AsyncSession, raw: bytes) -> StudentStaf
             StudentStaff(
                 full_name=full_name,
                 type=person_type,
-                faculty_id=faculty_cache[faculty_name].id,
+                faculty_id=faculty.id,
                 group_or_position=group_or_position,
                 biometrics_status="yoq",
             )
         )
+        pending_keys.add(person_key)
         imported += 1
 
     return StudentStaffImportResultOut(imported=imported, skipped=skipped, errors=errors)

@@ -34,7 +34,11 @@ async def _clean_tables():
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
     limiter.reset()  # slowapi's in-memory bucket is a module-level singleton
+    from app.services.face_matching import invalidate_candidate_matrix_cache
+
+    invalidate_candidate_matrix_cache()
     yield
+    invalidate_candidate_matrix_cache()
 
 
 @pytest_asyncio.fixture

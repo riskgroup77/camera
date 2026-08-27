@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # alert (AuditLog entry + structured WARNING log). Zero disables alerts.
     camera_offline_alert_minutes: int = 5
 
+    # Parallel MediaMTX registrations on API startup (stream_sync.py).
+    stream_sync_concurrency: int = 24
+
     # Automatic attendance via face recognition (app/jobs/attendance_ai.py,
     # app/services/frame_grabber.py) — TT kriteriya 6/7/8, no external AI
     # API: everything runs locally through the same InsightFace model
