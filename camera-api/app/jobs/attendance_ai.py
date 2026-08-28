@@ -173,41 +173,20 @@ async def upsert_attendance_from_recognition(
         )
     )
 
-    event_out: EventOut | None = None
     if off_hours_module_active and camera is not None and is_first_sighting_today and _is_off_hours(occurred_time):
-        event = Event(
-            camera_id=camera.id,
-            camera_name=camera.name,
-            building=camera.building.name if camera.building else "",
+        await raise_event(
+            db,
+            camera=camera,
             module_code=OFF_HOURS_MODULE_CODE,
             module_name=OFF_HOURS_MODULE_NAME,
             group="A",
             confidence=100,  # this is a rule (a time comparison), not a model score
             severity="o'rta",
+            frame_bytes=frame_bytes,
             person_name=person.full_name if person else None,
-            status="yangi",
         )
-        db.add(event)
-        await db.flush()  # populate event.id/occurred_at before building EventOut
-        event_out = EventOut(
-            id=str(event.id),
-            timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-            camera_id=str(event.camera_id) if event.camera_id else "",
-            camera_name=event.camera_name,
-            building=event.building,
-            module_code=event.module_code,
-            module_name=event.module_name,
-            group=event.group,
-            confidence=event.confidence,
-            severity=event.severity,
-            status=event.status,
-            person_name=event.person_name,
-            reviewed_by=event.reviewed_by,
-        )
-
-    await db.commit()
-    if event_out is not None:
-        await manager.broadcast(event_out.model_dump(by_alias=True))
+    else:
+        await db.commit()
     return record
 
 
@@ -282,7 +261,7 @@ async def process_camera_frame(
         )
         records.append(
             await upsert_attendance_from_recognition(
-                db, student_staff_id, moment, camera, off_hours_module_active
+                db, student_staff_id, moment, camera, off_hours_module_active, frame_bytes
             )
         )
 
