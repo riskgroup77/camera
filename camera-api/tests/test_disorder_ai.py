@@ -84,11 +84,14 @@ class TestIsMotionSpike:
         assert _is_motion_spike(camera_id, 2.0) is False  # 2.0 < 1.0*3.0=3.0
 
     def test_custom_multiplier_overrides_default(self):
-        camera_id = "cam-motion-fight-1"
-        for m in [1.0, 1.0, 1.0, 1.0, 1.0]:
-            _is_motion_spike(camera_id, m, spike_multiplier=4.0, min_absolute_magnitude=2.0)
-        assert _is_motion_spike(camera_id, 3.5, spike_multiplier=4.0, min_absolute_magnitude=2.0) is False
-        assert _is_motion_spike(camera_id, 4.5, spike_multiplier=4.0, min_absolute_magnitude=2.0) is True
+        below_id = "cam-motion-fight-below"
+        above_id = "cam-motion-fight-above"
+        for camera_id in (below_id, above_id):
+            for m in [1.0, 1.0, 1.0, 1.0, 1.0]:
+                _is_motion_spike(camera_id, m, spike_multiplier=4.0, min_absolute_magnitude=2.0)
+        # Separate camera_ids — each _is_motion_spike call appends to history.
+        assert _is_motion_spike(below_id, 3.5, spike_multiplier=4.0, min_absolute_magnitude=2.0) is False
+        assert _is_motion_spike(above_id, 4.5, spike_multiplier=4.0, min_absolute_magnitude=2.0) is True
 
 
 @pytest.mark.usefixtures("seeded")
