@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Cpu, Eye, Loader2, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
+import { Cpu, Eye, FileUp, Loader2, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
 import AddCameraModal from '../../components/admin/AddCameraModal';
+import CameraImportModal from '../../components/admin/CameraImportModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
 import CameraModulesModal from '../../components/admin/CameraModulesModal';
 import CameraZoneModal from '../../components/admin/CameraZoneModal';
@@ -45,6 +46,7 @@ export default function CamerasZonesPage() {
   const [buildingFilter, setBuildingFilter] = useState<string | null>(null);
   const [zoneFilter, setZoneFilter] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
   const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
@@ -95,13 +97,19 @@ export default function CamerasZonesPage() {
         title="Kameralar va Zonalar"
         subtitle="RTSP kamera konfiguratsiyasi, zona va AI modul bog‘lanishi"
         action={
-          <button
-            onClick={() => setAddOpen(true)}
-            className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
-          >
-            <Plus size={14} />
-            Yangi kamera qo'shish
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setImportOpen(true)} className="btn-glass flex items-center gap-1.5">
+              <FileUp size={14} />
+              SADP'dan import
+            </button>
+            <button
+              onClick={() => setAddOpen(true)}
+              className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
+            >
+              <Plus size={14} />
+              Yangi kamera qo'shish
+            </button>
+          </div>
         }
       />
 
@@ -309,6 +317,7 @@ export default function CamerasZonesPage() {
         }}
       />
       <AddCameraModal open={!!editing} camera={editing} onClose={() => setEditing(null)} onSave={() => reload()} />
+      <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={() => reload()} />
       <CameraConfigDetailModal
         camera={viewing}
         onClose={() => setViewing(null)}

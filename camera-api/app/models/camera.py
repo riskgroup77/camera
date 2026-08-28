@@ -29,6 +29,11 @@ class Camera(Base):
         UUID(as_uuid=True), ForeignKey("buildings.id", ondelete="SET NULL"), nullable=True, index=True
     )
     zone: Mapped[str] = mapped_column(String, nullable=False)
+    # Populated by app/services/camera_import.py (SADP/onvif-style discovery
+    # export) — stable across DHCP/manual IP reassignment, so re-running an
+    # import dedupes by this instead of by `ip`. Null for cameras added by
+    # hand, since the admin UI has no reason to ask for it.
+    mac_address: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     resolution: Mapped[str] = mapped_column(String, nullable=False)
     fps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="nofaol")

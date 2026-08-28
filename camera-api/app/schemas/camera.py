@@ -46,6 +46,8 @@ class CameraOut(CamelModel):
     # app/jobs/attendance_ai.py grabs a multi-frame burst from this
     # camera instead of a single frame.
     is_entrance: bool = False
+    # Set only by app/services/camera_import.py — null for hand-added cameras.
+    mac_address: str | None = None
 
 
 class CameraCreateIn(CamelModel):

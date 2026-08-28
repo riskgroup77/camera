@@ -111,6 +111,10 @@ export interface CameraConfig {
    * bir necha kadr (burst) oladi — tez o'tib ketuvchi odamni ushlash
    * ehtimolini oshiradi. Faqat kirish/koridor kameralari uchun mo'ljallangan. */
   isEntrance?: boolean;
+  /** app/services/camera_import.py orqali SADP CSV'dan import qilingan
+   * kameralar uchun to'ldiriladi (qayta-import qilinganda IP emas, shu
+   * bo'yicha aniqlanadi) — qo'lda qo'shilgan kameralarda null. */
+  macAddress?: string | null;
 }
 
 export type AIModuleGroup = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';

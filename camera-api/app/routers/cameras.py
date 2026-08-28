@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,6 +27,8 @@ from app.schemas.camera import (
     ModuleCameraAssignmentsPatchIn,
     ModuleCameraAssignmentOut,
 )
+from app.schemas.camera_import import CameraImportResultOut
+from app.services.camera_import import import_cameras_csv
 from app.services.camera_module_mapping import camera_allows_module_code, set_camera_module_enabled
 from app.services.connectivity import test_camera_connection
 from app.services.stream_sync import sync_camera_stream
@@ -69,6 +71,7 @@ def _to_out(camera: Camera) -> CameraOut:
         restricted_zone_polygon=camera.restricted_zone_polygon,
         excluded_module_codes=camera.excluded_module_codes,
         is_entrance=camera.is_entrance,
+        mac_address=camera.mac_address,
     )
 
 
@@ -230,6 +233,32 @@ async def create_camera(
     await db.refresh(camera, attribute_names=["building"])
     await _sync_stream(db, camera)
     return _to_out(camera)
+
+
+@router.post("/import", response_model=CameraImportResultOut)
+async def import_cameras(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: PermDep,
+    file: Annotated[UploadFile, File(description="SADP export CSV: Device Type, Status, IPv4 Address, MAC Address, ...")],
+) -> CameraImportResultOut:
+    """Bulk-import cameras from a SADP device-discovery CSV export — see
+    app/services/camera_import.py's module docstring. Imported rows land
+    unassigned (no building/zone, status=nofaol) for an admin to review."""
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 5 MB dan oshmasligi kerak")
+    result = await import_cameras_csv(db, raw)
+    await log_action(
+        db,
+        request,
+        current_user.id,
+        f"SADP import: {result.imported} qo'shildi, {result.skipped} o'tkazib yuborildi, "
+        f"{result.skipped_recorders} recorder o'tkazib yuborildi, {len(result.errors)} xato",
+        "Kameralar",
+    )
+    await db.commit()
+    return result
 
 
 @router.patch("/{camera_id}", response_model=CameraOut)
