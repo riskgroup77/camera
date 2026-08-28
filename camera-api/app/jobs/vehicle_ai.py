@@ -34,10 +34,9 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
-from app.schemas.event import EventOut
+from app.services.event_bus import raise_event
 from app.services.frame_grabber import grab_frame_pair
 from app.services.object_detection import detect_objects
-from app.ws import manager
 
 logger = logging.getLogger("app.vehicle_ai")
 
@@ -82,36 +81,16 @@ async def process_camera_frame_pair_for_vehicle(
         max(d.confidence for d in detections_b),
     )
 
-    event = Event(
-        camera_id=camera.id,
-        camera_name=camera.name,
-        building=camera.building.name if camera.building else "",
+    await raise_event(
+        db,
+        camera=camera,
         module_code=VEHICLE_MODULE_CODE,
         module_name=VEHICLE_MODULE_NAME,
         group="F",
         confidence=round(best_confidence * 100),  # real YOLO detection confidence, scaled to 0-100
         severity="o'rta",
-        status="yangi",
+        frame_bytes=frame_b,
     )
-    db.add(event)
-    await db.flush()
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-    )
-    await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
     return True
 
 

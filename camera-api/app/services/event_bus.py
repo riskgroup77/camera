@@ -12,6 +12,7 @@ detection). A missing/failed upload degrades to no snapshot, not a
 failed sweep — see _save_snapshot.
 """
 
+import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,11 +25,16 @@ from app.ws import manager
 logger = logging.getLogger("app.event_bus")
 
 
-def _save_snapshot(frame_bytes: bytes | None) -> str | None:
+async def _save_snapshot(frame_bytes: bytes | None) -> str | None:
     if not frame_bytes:
         return None
     try:
-        _file_id, key = upload_file(frame_bytes, "snapshot.jpg", "image/jpeg", "events")
+        # upload_file() is a synchronous boto3 call (real network I/O) —
+        # off the event loop via to_thread, same reason every other
+        # blocking model/storage call in app/jobs/*.py is wrapped this
+        # way. Without it, one S3/MinIO round trip per event stalls every
+        # other concurrent camera task and the WS/HTTP server.
+        _file_id, key = await asyncio.to_thread(upload_file, frame_bytes, "snapshot.jpg", "image/jpeg", "events")
         return key
     except Exception:
         logger.exception("event snapshot upload failed")
@@ -51,6 +57,7 @@ async def raise_event(
     `frame_bytes` if given. Caller is responsible for its own dedup check
     (e.g. _recently_flagged) before calling this — this function always
     raises."""
+    snapshot_key = await _save_snapshot(frame_bytes)
     event = Event(
         camera_id=camera.id,
         camera_name=camera.name,
@@ -62,7 +69,7 @@ async def raise_event(
         severity=severity,
         status="yangi",
         person_name=person_name,
-        snapshot_key=_save_snapshot(frame_bytes),
+        snapshot_key=snapshot_key,
     )
     db.add(event)
     await db.flush()
