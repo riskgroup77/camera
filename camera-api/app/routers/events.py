@@ -22,6 +22,7 @@ from app.models import Camera, Event, User
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.event import EventCreateIn, EventOut, EventReviewIn
 from app.security import decode_access_token
+from app.storage import presigned_url
 from app.timezone import local_now
 from app.ws import manager
 
@@ -43,6 +44,7 @@ def _to_out(event: Event) -> EventOut:
         status=event.status,
         person_name=event.person_name,
         reviewed_by=event.reviewed_by,
+        snapshot_url=presigned_url(event.snapshot_key) if event.snapshot_key else None,
     )
 
 

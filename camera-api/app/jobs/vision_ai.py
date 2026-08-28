@@ -53,12 +53,11 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
-from app.schemas.event import EventOut
+from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_burst
 from app.services.sleep_detection import is_asleep
-from app.ws import manager
 
 logger = logging.getLogger("app.vision_ai")
 
@@ -193,37 +192,17 @@ async def process_camera_frame_for_sleep(
         # reads as more tentative than every sampled frame agreeing.
         confidence = min(95, round(60 + ratio * 35))
 
-        event = Event(
-            camera_id=camera.id,
-            camera_name=camera.name,
-            building=camera.building.name if camera.building else "",
+        await raise_event(
+            db,
+            camera=camera,
             module_code=SLEEP_MODULE_CODE,
             module_name=SLEEP_MODULE_NAME,
             group="E",
             confidence=confidence,
             severity="past",  # low: sleeping isn't dangerous, even when confirmed across a multi-frame burst
+            frame_bytes=frames[-1],
             person_name=person_name,
-            status="yangi",
         )
-        db.add(event)
-        await db.flush()  # populate event.id/occurred_at before building EventOut
-        event_out = EventOut(
-            id=str(event.id),
-            timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-            camera_id=str(event.camera_id) if event.camera_id else "",
-            camera_name=event.camera_name,
-            building=event.building,
-            module_code=event.module_code,
-            module_name=event.module_name,
-            group=event.group,
-            confidence=event.confidence,
-            severity=event.severity,
-            status=event.status,
-            person_name=event.person_name,
-            reviewed_by=event.reviewed_by,
-        )
-        await db.commit()
-        await manager.broadcast(event_out.model_dump(by_alias=True))
         raised += 1
 
     return raised

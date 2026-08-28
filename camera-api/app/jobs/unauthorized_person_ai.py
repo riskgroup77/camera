@@ -48,11 +48,10 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
-from app.schemas.event import EventOut
+from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair
-from app.ws import manager
 
 logger = logging.getLogger("app.unauthorized_person_ai")
 
@@ -119,36 +118,16 @@ async def process_camera_frame_pair_for_unauthorized(
     if await _recently_flagged(db, camera.id):
         return False
 
-    event = Event(
-        camera_id=camera.id,
-        camera_name=camera.name,
-        building=camera.building.name if camera.building else "",
+    await raise_event(
+        db,
+        camera=camera,
         module_code=UNAUTHORIZED_MODULE_CODE,
         module_name=UNAUTHORIZED_MODULE_NAME,
         group="A",
         confidence=70,  # two independent frames agreed — still a real false-positive risk, see module docstring
         severity="yuqori",
-        status="yangi",
+        frame_bytes=frame_b,
     )
-    db.add(event)
-    await db.flush()
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-    )
-    await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
     return True
 
 

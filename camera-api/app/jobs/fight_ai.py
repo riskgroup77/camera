@@ -51,10 +51,9 @@ from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _mean_flow_magnitude
 from app.models import Camera, Event
-from app.schemas.event import EventOut
+from app.services.event_bus import raise_event
 from app.services.frame_grabber import grab_frame_pair
 from app.services.pose_detection import LEFT_HIP, NOSE, RIGHT_HIP, detect_poses
-from app.ws import manager
 
 logger = logging.getLogger("app.fight_ai")
 
@@ -128,36 +127,16 @@ async def process_camera_frame_pair_for_fight(frame_a: bytes, frame_b: bytes, db
     if await _recently_flagged(db, camera.id):
         return False
 
-    event = Event(
-        camera_id=camera.id,
-        camera_name=camera.name,
-        building=camera.building.name if camera.building else "",
+    await raise_event(
+        db,
+        camera=camera,
         module_code=FIGHT_MODULE_CODE,
         module_name=FIGHT_MODULE_NAME,
         group="D",
         confidence=35,  # deliberately the lowest confidence this system raises — see module docstring
         severity="yuqori",  # still worth a human look despite the low confidence — a missed real fight is worse than a false alarm
-        status="yangi",
+        frame_bytes=frame_b,
     )
-    db.add(event)
-    await db.flush()
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-    )
-    await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
     return True
 
 

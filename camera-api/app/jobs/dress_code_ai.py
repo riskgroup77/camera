@@ -42,14 +42,13 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
-from app.schemas.event import EventOut
 from app.services.coat_detection import is_wearing_white_coat
+from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair
 from app.services.head_covering_detection import is_wearing_head_covering
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
-from app.ws import manager
 
 logger = logging.getLogger("app.dress_code_ai")
 
@@ -138,39 +137,6 @@ async def _staff_missing_compliance(
     return coat_missing, head_missing
 
 
-async def _raise_event(db: AsyncSession, camera: Camera, module_code: int, module_name: str) -> None:
-    event = Event(
-        camera_id=camera.id,
-        camera_name=camera.name,
-        building=camera.building.name if camera.building else "",
-        module_code=module_code,
-        module_name=module_name,
-        group="C",
-        confidence=40,  # klassik rang evristikasi, haqiqiy kamera bilan hali kalibrlanmagan — bilib turib past
-        severity="past",  # xavfsizlik-kritik emas, intizom/qoida masalasi
-        status="yangi",
-    )
-    db.add(event)
-    await db.flush()
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-    )
-    await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
-
-
 async def process_camera_frame_pair_for_dress_code(
     frame_a: bytes,
     frame_b: bytes,
@@ -197,14 +163,32 @@ async def process_camera_frame_pair_for_dress_code(
 
     coat_raised = False
     if coat_confirmed and coat_module_active and not await _recently_flagged(db, camera.id, COAT_MODULE_CODE):
-        await _raise_event(db, camera, COAT_MODULE_CODE, COAT_MODULE_NAME)
+        await raise_event(
+            db,
+            camera=camera,
+            module_code=COAT_MODULE_CODE,
+            module_name=COAT_MODULE_NAME,
+            group="C",
+            confidence=40,  # klassik rang evristikasi, haqiqiy kamera bilan hali kalibrlanmagan — bilib turib past
+            severity="past",  # xavfsizlik-kritik emas, intizom/qoida masalasi
+            frame_bytes=frame_b,
+        )
         coat_raised = True
 
     head_raised = False
     if head_confirmed and head_covering_module_active and not await _recently_flagged(
         db, camera.id, HEAD_COVERING_MODULE_CODE
     ):
-        await _raise_event(db, camera, HEAD_COVERING_MODULE_CODE, HEAD_COVERING_MODULE_NAME)
+        await raise_event(
+            db,
+            camera=camera,
+            module_code=HEAD_COVERING_MODULE_CODE,
+            module_name=HEAD_COVERING_MODULE_NAME,
+            group="C",
+            confidence=40,  # klassik rang evristikasi, haqiqiy kamera bilan hali kalibrlanmagan — bilib turib past
+            severity="past",  # xavfsizlik-kritik emas, intizom/qoida masalasi
+            frame_bytes=frame_b,
+        )
         head_raised = True
 
     return coat_raised, head_raised

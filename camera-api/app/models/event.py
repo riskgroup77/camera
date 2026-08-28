@@ -37,3 +37,9 @@ class Event(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="yangi")
     person_name: Mapped[str | None] = mapped_column(String, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    # S3/MinIO object key for the frame that triggered this event (see
+    # app/services/event_bus.py) — null for events raised without a frame
+    # on hand (e.g. POST /api/events' generic path) or where the upload
+    # itself failed; a human reviewing "Hodisalar jurnali" should see what
+    # the AI actually saw, not a live feed of whatever's on camera now.
+    snapshot_key: Mapped[str | None] = mapped_column(String, nullable=True)

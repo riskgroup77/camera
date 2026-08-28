@@ -44,13 +44,12 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.models import AttendanceRecord, AuditLog, Camera, Event, StudentStaff
-from app.schemas.event import EventOut
+from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
+from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame, grab_frame_burst
 from app.timezone import local_now, to_local
-from app.ws import manager
 
 logger = logging.getLogger("app.attendance_ai")
 
@@ -96,6 +95,7 @@ async def upsert_attendance_from_recognition(
     occurred_at: datetime,
     camera: Camera | None = None,
     off_hours_module_active: bool = True,
+    frame_bytes: bytes | None = None,
 ) -> AttendanceRecord:
     """First sighting of the day inserts the row (sets check_in and the
     keldi/kech_keldi status); every later sighting the same day hits the

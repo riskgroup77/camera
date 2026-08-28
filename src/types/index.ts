@@ -211,6 +211,9 @@ export interface AIEvent {
   status: EventStatus;
   personName?: string;
   reviewedBy?: string;
+  /** Aniqlanish paytida olingan kadr — app/services/event_bus.py.
+   * Kadr saqlanmagan/yuklab bo'lmagan hodisalarda null. */
+  snapshotUrl?: string | null;
 }
 
 export type AttendanceDayStatus = 'keldi' | 'kelmadi' | 'kech_keldi' | 'dam_olish';

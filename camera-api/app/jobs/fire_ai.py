@@ -32,10 +32,9 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
-from app.schemas.event import EventOut
+from app.services.event_bus import raise_event
 from app.services.fire_detection import fire_pixel_fraction, is_likely_fire
 from app.services.frame_grabber import grab_frame_pair
-from app.ws import manager
 
 logger = logging.getLogger("app.fire_ai")
 
@@ -73,36 +72,16 @@ async def process_camera_frame_pair_for_fire(
         return False
 
     fraction = fire_pixel_fraction(frame_a, frame_b)
-    event = Event(
-        camera_id=camera.id,
-        camera_name=camera.name,
-        building=camera.building.name if camera.building else "",
+    await raise_event(
+        db,
+        camera=camera,
         module_code=FIRE_MODULE_CODE,
         module_name=FIRE_MODULE_NAME,
         group="F",
         confidence=min(100, round(fraction * 1000)),  # scaled, not a calibrated probability — see module docstring
         severity="yuqori",
-        status="yangi",
+        frame_bytes=frame_b,
     )
-    db.add(event)
-    await db.flush()  # populate event.id/occurred_at before building EventOut
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-    )
-    await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
     return True
 
 

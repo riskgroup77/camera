@@ -1,4 +1,4 @@
-import { Check, Circle, User, Video, X } from 'lucide-react';
+import { Check, ImageOff, User, X } from 'lucide-react';
 import Modal from '../Modal';
 import Badge from '../Badge';
 import type { AIEvent, EventStatus } from '../../types';
@@ -41,10 +41,20 @@ export default function EventDetailModal({
       {event && (
         <div className="space-y-5">
           <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl bg-slate-900">
-            <Video size={28} className="text-white/30" />
+            {event.snapshotUrl ? (
+              <img
+                src={event.snapshotUrl}
+                alt={`${event.moduleName} — ${event.cameraName}`}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-1.5 text-white/30">
+                <ImageOff size={28} />
+                <span className="text-xs">Kadr saqlanmagan</span>
+              </div>
+            )}
             <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-black/50 px-2.5 py-1 text-xs font-bold text-white">
-              <Circle size={6} className="fill-red-500 text-red-500" />
-              Hodisa klipi (mock)
+              AI aniqlagan kadr
             </span>
             <span className="absolute bottom-3 right-3 rounded bg-black/50 px-2 py-1 font-mono text-xs text-white">
               {event.timestamp}
@@ -89,7 +99,7 @@ export default function EventDetailModal({
 
           {event.status === 'yangi' && (
             <div className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
-              AI signal — bu "dalil" emas, "ko'rsatkich". Yakuniy qarorni videoni ko'rib chiqqan
+              AI signal — bu "dalil" emas, "ko'rsatkich". Yakuniy qarorni yuqoridagi kadrni ko'rib chiqqan
               holda inson qabul qiladi (human-in-the-loop).
             </div>
           )}

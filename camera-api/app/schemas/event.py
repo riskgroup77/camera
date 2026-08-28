@@ -19,6 +19,10 @@ class EventOut(CamelModel):
     status: Literal["yangi", "tasdiqlangan", "rad_etilgan"]
     person_name: str | None = None
     reviewed_by: str | None = None
+    # Presigned URL to the frame that triggered this event — see
+    # app/services/event_bus.py. Null when no frame was captured (or the
+    # upload failed) for this particular event.
+    snapshot_url: str | None = None
 
 
 class EventCreateIn(CamelModel):
