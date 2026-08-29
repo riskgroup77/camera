@@ -134,7 +134,7 @@ class TestSweepConcurrency:
                 raise RuntimeError("simulated grab failure")
             return FACE_IMAGE_PATH.read_bytes()
 
-        monkeypatch.setattr(crowd_density_ai, "grab_frame", flaky_grab_frame)
+        monkeypatch.setattr(crowd_density_ai, "grab_frame_for_camera", flaky_grab_frame)
 
         await run_crowd_density_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing

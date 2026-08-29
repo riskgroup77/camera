@@ -8,6 +8,7 @@ an earlier mock-data version pretended to.
 """
 
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Annotated
 
 import cv2
@@ -23,12 +24,15 @@ from app.jobs.camera_health import is_reachable
 from app.models import AttendanceRecord, Building, Camera, Event, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.rate_limit import limiter
-from app.schemas.public import DetectedFaceOut, LiveDetectionOut, PublicCameraOut, PublicStatsOut, PublicTopStudentOut
+from app.schemas.public import CameraAnalysisStatusOut, DetectedFaceOut, LiveDetectionOut, PublicCameraOut, PublicStatsOut, PublicTopStudentOut
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
-from app.services.frame_grabber import grab_frame
+from app.services.frame_grabber import grab_frame_for_camera
 from app.services.sleep_detection import is_asleep
+from app.services.sweep_result_cache import get_camera_sweep
+
+logger = logging.getLogger("app.public")
 from app.timezone import local_now
 
 router = APIRouter(prefix="/api/public", tags=["public"])
@@ -203,33 +207,62 @@ async def get_live_detection(
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
-    if not camera.stream_url:
-        return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
 
-    frame_bytes = await grab_frame(camera.stream_url)
-    if frame_bytes is None:
-        return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
+    try:
+        frame_bytes = await grab_frame_for_camera(camera, wait_seconds=12.0)
+        if frame_bytes is None:
+            return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
 
-    arr = np.frombuffer(frame_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    frame_height, frame_width = (img.shape[0], img.shape[1]) if img is not None else (0, 0)
+        arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        frame_height, frame_width = (img.shape[0], img.shape[1]) if img is not None else (0, 0)
 
-    faces = await detect_faces(frame_bytes, priority=PRIORITY_LIVE)
-    candidates = await load_candidate_matrix_cached(db)
+        faces = await detect_faces(frame_bytes, priority=PRIORITY_LIVE)
+        candidates = await load_candidate_matrix_cached(db)
 
-    faces_out = []
-    for face in faces:
-        match = candidates.best_match(face.embedding, settings.attendance_ai_match_threshold)
-        person_name = None
-        if match is not None:
-            person = await db.get(StudentStaff, match[0])
-            person_name = person.full_name if person else None
-        faces_out.append(
-            DetectedFaceOut(
-                bbox=[float(x) for x in face.bbox],
-                person_name=person_name,
-                asleep=is_asleep(face.landmarks_68),
+        faces_out = []
+        for face in faces:
+            match = candidates.best_match(face.embedding, settings.attendance_ai_match_threshold)
+            person_name = None
+            if match is not None:
+                person = await db.get(StudentStaff, match[0])
+                person_name = person.full_name if person else None
+            faces_out.append(
+                DetectedFaceOut(
+                    bbox=[float(x) for x in face.bbox],
+                    person_name=person_name,
+                    asleep=is_asleep(face.landmarks_68),
+                )
             )
-        )
 
-    return LiveDetectionOut(frame_width=frame_width, frame_height=frame_height, faces=faces_out)
+        return LiveDetectionOut(frame_width=frame_width, frame_height=frame_height, faces=faces_out)
+    except Exception:
+        logger.exception("live-detection failed", extra={"camera_id": camera_id})
+        return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
+
+
+@router.get("/cameras/{camera_id}/analysis-status", response_model=CameraAnalysisStatusOut)
+@limiter.limit("60/minute")
+async def get_camera_analysis_status(
+    request: Request,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CameraAnalysisStatusOut:
+    """Oxirgi fon AI sweep vaqti va natijasi — monitoring modal badge."""
+    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+
+    snap = await get_camera_sweep(camera_id)
+    if snap is None:
+        return CameraAnalysisStatusOut()
+
+    now = datetime.now(timezone.utc)
+    seconds_ago = max(0, int((now - snap.swept_at).total_seconds()))
+    return CameraAnalysisStatusOut(
+        last_sweep_at=snap.swept_at.isoformat(),
+        seconds_ago=seconds_ago,
+        face_count=snap.face_count,
+        modules=list(snap.modules),
+        events_raised=snap.events_raised,
+    )

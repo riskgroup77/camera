@@ -47,3 +47,13 @@ class LiveDetectionOut(CamelModel):
     frame_width: int
     frame_height: int
     faces: list[DetectedFaceOut]
+
+
+class CameraAnalysisStatusOut(CamelModel):
+    """Oxirgi fon AI sweep natijasi — monitoring modal badge uchun."""
+
+    last_sweep_at: str | None = None
+    seconds_ago: int | None = None
+    face_count: int = 0
+    modules: list[str] = []
+    events_raised: int = 0

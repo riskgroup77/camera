@@ -48,7 +48,7 @@ from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame, grab_frame_burst
+from app.services.frame_grabber import grab_frame_for_camera, grab_frame_burst_for_camera
 from app.timezone import local_now, to_local
 
 logger = logging.getLogger("app.attendance_ai")
@@ -313,13 +313,13 @@ async def run_attendance_ai_sweep_once(
     async def _process_one(camera: Camera) -> int:
         async with camera_sweep_slot():
             if camera.is_entrance:
-                frames = await grab_frame_burst(
-                    camera.stream_url,
+                frames = await grab_frame_burst_for_camera(
+                    camera,
                     settings.attendance_entrance_burst_frame_count,
                     settings.attendance_entrance_burst_gap_seconds,
                 )
             else:
-                frame = await grab_frame(camera.stream_url)
+                frame = await grab_frame_for_camera(camera)
                 frames = [frame] if frame is not None else []
             if not frames:
                 return 0

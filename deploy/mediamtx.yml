@@ -1,8 +1,19 @@
-# MediaMTX config — API enabled for camera-api video gateway (internal Docker network)
+# MediaMTX — production (3-shard). LL-HLS for low browser latency.
 api: yes
 apiAddress: :9997
 
+hls: yes
 hlsAddress: :8888
+# fmp4 — barqaror; lowLatency ba'zi kameralarda "muxer instance not available" beradi
+hlsVariant: fmp4
+# Ko'proq segment — brauzer eski .mp4 so'raganda 404 kamayadi
+hlsSegmentCount: 12
+hlsSegmentDuration: 2s
+hlsMuxerCloseAfter: 120s
+hlsAllowOrigins: ["*"]
+# Nginx Bearer bilan session o'chiriladi — 401/404 kamayadi
+hlsCDNSecret: fermi-hls-cdn-secret-2026
+
 rtspAddress: :8554
 
 authMethod: internal

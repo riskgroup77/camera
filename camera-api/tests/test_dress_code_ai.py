@@ -186,7 +186,7 @@ class TestSweepConcurrency:
         async def fake_missing(frame_bytes, candidates, staff_ids):
             return False, False
 
-        monkeypatch.setattr(dress_code_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(dress_code_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
         monkeypatch.setattr(dress_code_ai, "_staff_missing_compliance", fake_missing)
 
         await run_dress_code_ai_sweep_once(session_factory=TestSessionLocal)
@@ -213,7 +213,7 @@ class TestSweepConcurrency:
             frame = _blank_frame()
             return frame, frame
 
-        monkeypatch.setattr(dress_code_ai, "grab_frame_pair", counting_grab_frame_pair)
+        monkeypatch.setattr(dress_code_ai, "grab_frame_pair_for_camera", counting_grab_frame_pair)
 
         count = await run_dress_code_ai_sweep_once(session_factory=TestSessionLocal)
         assert count == 0
@@ -242,7 +242,7 @@ class TestSweepConcurrency:
         async def fake_missing(frame_bytes, candidates, staff_ids):
             return False, False
 
-        monkeypatch.setattr(dress_code_ai, "grab_frame_pair", counting_grab_frame_pair)
+        monkeypatch.setattr(dress_code_ai, "grab_frame_pair_for_camera", counting_grab_frame_pair)
         monkeypatch.setattr(dress_code_ai, "_staff_missing_compliance", fake_missing)
 
         await run_dress_code_ai_sweep_once(session_factory=TestSessionLocal)

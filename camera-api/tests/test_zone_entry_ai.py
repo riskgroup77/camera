@@ -156,7 +156,7 @@ class TestSweepConcurrency:
         async def fake_detect_poses(frame_bytes):
             return []
 
-        monkeypatch.setattr(zone_entry_ai, "grab_frame_pair", counting_grab_frame_pair)
+        monkeypatch.setattr(zone_entry_ai, "grab_frame_pair_for_camera", counting_grab_frame_pair)
         monkeypatch.setattr(zone_entry_ai, "detect_poses", fake_detect_poses)
 
         await run_zone_entry_ai_sweep_once(session_factory=TestSessionLocal)
@@ -188,7 +188,7 @@ class TestSweepConcurrency:
         async def fake_detect_poses(frame_bytes):
             return []
 
-        monkeypatch.setattr(zone_entry_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(zone_entry_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
         monkeypatch.setattr(zone_entry_ai, "detect_poses", fake_detect_poses)
 
         await run_zone_entry_ai_sweep_once(session_factory=TestSessionLocal)

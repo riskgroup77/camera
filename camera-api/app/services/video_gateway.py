@@ -5,6 +5,7 @@ sharding via MEDIAMTX_SHARD_API_URLS + MEDIAMTX_SHARD_HLS_BASE_URLS
 
 import hashlib
 import logging
+import shlex
 from dataclasses import dataclass
 
 import httpx
@@ -93,6 +94,45 @@ def _path_name(camera_id: str) -> str:
     return f"cam-{camera_id}"
 
 
+def _path_config(rtsp_url: str) -> dict:
+    """MediaMTX path registration — on-demand RTSP relay or H264 transcode."""
+    if settings.mediamtx_relay_h264_substream or not settings.mediamtx_transcode_h264:
+        return {
+            "source": rtsp_url,
+            "sourceOnDemand": True,
+            "sourceOnDemandStartTimeout": "45s",
+            "sourceOnDemandCloseAfter": "300s",
+        }
+
+    height = settings.mediamtx_transcode_height
+    quoted_url = shlex.quote(rtsp_url)
+    cmd = (
+        f"/ffmpeg -hide_banner -loglevel error "
+        f"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 "
+        f"-rtsp_transport tcp -i {quoted_url} "
+        f"-c:v libx264 -preset ultrafast -tune zerolatency "
+        f"-profile:v baseline -level 3.1 -pix_fmt yuv420p "
+        f"-vf scale=-2:{height} -an "
+        f"-f rtsp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"
+    )
+    return {
+        "runOnDemand": cmd,
+        "runOnDemandRestart": True,
+        "runOnDemandStartTimeout": "20s",
+        "runOnDemandCloseAfter": "45s",
+    }
+
+
+async def _upsert_path(client: httpx.AsyncClient, api_url: str, name: str, payload: dict) -> None:
+    resp = await client.post(f"{api_url}/v3/config/paths/add/{name}", json=payload)
+    if resp.status_code == 400:
+        resp = await client.patch(f"{api_url}/v3/config/paths/patch/{name}", json=payload)
+    if resp.status_code == 400:
+        await client.delete(f"{api_url}/v3/config/paths/delete/{name}")
+        resp = await client.post(f"{api_url}/v3/config/paths/add/{name}", json=payload)
+    resp.raise_for_status()
+
+
 async def check_reachable() -> None:
     """Raises if any configured MediaMTX shard control API is unreachable."""
     async with httpx.AsyncClient(timeout=3.0) as client:
@@ -119,7 +159,10 @@ def public_hls_to_internal(public_url: str) -> str:
                 return internal + public_url[len(pub) :]
     public_base = settings.mediamtx_hls_base_url.rstrip("/")
     internal_base = (settings.mediamtx_hls_internal_base_url or settings.mediamtx_hls_base_url).rstrip("/")
-    if internal_base != public_base and public_url.startswith(public_base):
+    if public_base.startswith("/"):
+        if public_url.startswith(public_base + "/") or public_url == public_base:
+            return internal_base + public_url[len(public_base) :]
+    elif internal_base != public_base and public_url.startswith(public_base):
         return internal_base + public_url[len(public_base) :]
     return public_url
 
@@ -127,18 +170,10 @@ def public_hls_to_internal(public_url: str) -> str:
 async def register_camera_stream(camera_id: str, rtsp_url: str) -> str:
     shard = _shard_for(camera_id)
     name = _path_name(camera_id)
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    payload = _path_config(rtsp_url)
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.post(
-                f"{shard.api_url}/v3/config/paths/add/{name}",
-                json={"source": rtsp_url},
-            )
-            if resp.status_code == 400:
-                resp = await client.patch(
-                    f"{shard.api_url}/v3/config/paths/patch/{name}",
-                    json={"source": rtsp_url},
-                )
-            resp.raise_for_status()
+            await _upsert_path(client, shard.api_url, name, payload)
         except httpx.HTTPError as exc:
             logger.error(
                 "video gateway registration failed",

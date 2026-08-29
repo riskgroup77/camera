@@ -56,7 +56,7 @@ from app.models import Camera, Event, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame_burst
+from app.services.frame_grabber import grab_frame_burst_for_camera
 from app.services.sleep_detection import is_asleep
 
 logger = logging.getLogger("app.vision_ai")
@@ -231,8 +231,8 @@ async def run_vision_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> int:
         async with camera_sweep_slot():
-            frames = await grab_frame_burst(
-                camera.stream_url,
+            frames = await grab_frame_burst_for_camera(
+                camera,
                 count=settings.sleep_confirmation_frame_count,
                 gap_seconds=settings.sleep_confirmation_gap_seconds,
             )

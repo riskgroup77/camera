@@ -41,7 +41,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame
+from app.services.frame_grabber import grab_frame_for_camera
 
 logger = logging.getLogger("app.crowd_density_ai")
 
@@ -135,7 +135,7 @@ async def run_crowd_density_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> bool:
         async with camera_sweep_slot():
-            frame = await grab_frame(camera.stream_url)
+            frame = await grab_frame_for_camera(camera)
             if frame is None:
                 return False
             async with session_factory() as camera_db:

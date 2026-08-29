@@ -20,7 +20,7 @@ from app.models import Camera, Event, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
 from app.services.student_uniform_detection import is_uniform_compliant
 
@@ -130,7 +130,7 @@ async def run_student_dress_code_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> bool:
         async with camera_sweep_slot():
-            frames = await grab_frame_pair(camera.stream_url)
+            frames = await grab_frame_pair_for_camera(camera)
             if frames is None:
                 return False
             async with session_factory() as camera_db:

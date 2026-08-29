@@ -15,7 +15,7 @@ from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.pose_detection import detect_poses
 from app.services.smoking_detection import is_smoking_posture
 
@@ -79,7 +79,7 @@ async def run_smoking_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> bool:
         async with camera_sweep_slot():
-            frames = await grab_frame_pair(camera.stream_url)
+            frames = await grab_frame_pair_for_camera(camera)
             if frames is None:
                 return False
             async with session_factory() as camera_db:

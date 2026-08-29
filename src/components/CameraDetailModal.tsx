@@ -1,8 +1,27 @@
 import { useEffect, useState } from 'react';
-import { Building2, Circle, Expand, Eye, EyeOff, MapPin, Minimize2 } from 'lucide-react';
+import { Building2, Circle, Expand, MapPin, Minimize2, Sparkles } from 'lucide-react';
 import Modal from './Modal';
 import LiveVideoPlayer from './LiveVideoPlayer';
+import { useCameraAnalysisStatus } from '../lib/useCameraAnalysisStatus';
 import type { CameraFeed } from '../types';
+
+function formatSecondsAgo(seconds: number | null | undefined): string {
+  if (seconds == null) return 'hali tahlil yo\'q';
+  if (seconds < 60) return `${seconds} soniya oldin`;
+  const mins = Math.floor(seconds / 60);
+  return `${mins} daqiqa oldin`;
+}
+
+function formatModules(modules: string[]): string {
+  if (!modules.length) return 'modul yo\'q';
+  const labels: Record<string, string> = {
+    attendance: 'davomat',
+    crowd: 'olomon',
+    unauthorized: 'begona',
+    sleep: 'uxlab qolish',
+  };
+  return modules.map((m) => labels[m] ?? m).join(', ');
+}
 
 export default function CameraDetailModal({
   camera,
@@ -12,11 +31,11 @@ export default function CameraDetailModal({
   onClose: () => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
-  const [showDetections, setShowDetections] = useState(false);
   const isLive = camera?.status === 'live';
+  const analysis = useCameraAnalysisStatus(camera?.id, !!camera && isLive);
 
   useEffect(() => {
-    setShowDetections(false);
+    setFullscreen(false);
   }, [camera?.id]);
 
   return (
@@ -32,16 +51,17 @@ export default function CameraDetailModal({
               <LiveVideoPlayer
                 streamUrl={camera.streamUrl}
                 cameraId={camera.id}
-                showDetections={showDetections}
+                showDetections
+                priority
               />
             )}
             {isLive ? (
               <>
-                <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-bold text-white">
+                <span className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-bold text-white">
                   <Circle size={7} className="fill-white" />
                   JONLI
                 </span>
-                <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-bold text-white">
+                <span className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-bold text-white">
                   REC
                 </span>
               </>
@@ -50,16 +70,20 @@ export default function CameraDetailModal({
                 OFLAYN
               </span>
             )}
-            <button
-              onClick={() => setShowDetections((v) => !v)}
-              className="absolute bottom-3 left-3 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-black/70"
-            >
-              {showDetections ? <EyeOff size={13} /> : <Eye size={13} />}
-              {showDetections ? 'AI o\'chirish' : 'AI ko\'rsatkich'}
-            </button>
+            {isLive && analysis && (
+              <div className="absolute bottom-12 left-3 right-3 z-10 flex items-start gap-1.5 rounded-lg bg-black/65 px-2.5 py-1.5 text-[11px] font-medium text-white">
+                <Sparkles size={12} className="mt-0.5 shrink-0 text-amber-300" />
+                <span>
+                  Fon AI: {formatSecondsAgo(analysis.secondsAgo)}
+                  {analysis.faceCount > 0 ? ` · ${analysis.faceCount} yuz` : ''}
+                  {analysis.modules.length ? ` · ${formatModules(analysis.modules)}` : ''}
+                  {analysis.eventsRaised > 0 ? ` · ${analysis.eventsRaised} hodisa` : ''}
+                </span>
+              </div>
+            )}
             <button
               onClick={() => setFullscreen((v) => !v)}
-              className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-black/70"
+              className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-black/70"
             >
               {fullscreen ? <Minimize2 size={13} /> : <Expand size={13} />}
               {fullscreen ? "Yig'ish" : "To'liq ekran"}

@@ -364,7 +364,7 @@ class TestSweepConcurrency:
         async def fake_detect_faces(frame_bytes):
             return []
 
-        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
 
         await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
@@ -381,7 +381,7 @@ class TestSweepConcurrency:
             calls["n"] += 1
             return _blank_frame(), _blank_frame()
 
-        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair", counting_grab_frame_pair)
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair_for_camera", counting_grab_frame_pair)
 
         count = await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
         assert count == 0
@@ -399,7 +399,7 @@ class TestSweepConcurrency:
         async def fake_detect_faces(frame_bytes):
             return []
 
-        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair", fake_grab_frame_pair)
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair_for_camera", fake_grab_frame_pair)
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
 
         # Not asserting a specific count here (depends on pose detection

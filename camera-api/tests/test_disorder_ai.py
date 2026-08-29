@@ -158,7 +158,7 @@ class TestSweepConcurrency:
             frame = _encode_jpeg_gray(_textured_frame())
             return frame, frame
 
-        monkeypatch.setattr(disorder_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(disorder_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
 
         await run_disorder_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing

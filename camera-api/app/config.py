@@ -300,7 +300,7 @@ class Settings(BaseSettings):
     # Max cameras processed concurrently ACROSS ALL AI sweep modules.
     # app/jobs/sweep_concurrency.py — every module shares this one cap so
     # parallel scheduler ticks can't spawn (module_count × N) pipelines.
-    ai_global_sweep_concurrency: int = 48
+    ai_global_sweep_concurrency: int = 18
 
     # Deprecated alias kept for older .env files — prefer
     # AI_GLOBAL_SWEEP_CONCURRENCY on production servers.
@@ -378,6 +378,11 @@ class Settings(BaseSettings):
     resource_alert_disk_percent: int = 90
     resource_alert_ffmpeg_count: int = 280
 
+    # AI frame_grabber reads RTSP substream directly (bypasses MediaMTX/HLS).
+    ai_use_direct_rtsp: bool = True
+    # Hikvision substream — lower bandwidth than /Streaming/Channels/101.
+    rtsp_substream_path: str = "/Streaming/Channels/102"
+
     # MediaMTX horizontal sharding — comma-separated URLs, equal length pairs.
     # Empty = single MEDIAMTX_API_URL / MEDIAMTX_HLS_BASE_URL.
     mediamtx_shard_api_urls: str = ""
@@ -385,6 +390,13 @@ class Settings(BaseSettings):
     # Parallel to mediamtx_shard_hls_base_urls — docker-internal HLS bases for ffmpeg
     # (e.g. http://mediamtx-0:8888,http://mediamtx-1:8888,http://mediamtx-2:8888).
     mediamtx_shard_hls_internal_base_urls: str = ""
+
+    # Browser HLS: substream (102) is usually H.264 — relay without ffmpeg transcode
+    # cuts latency from ~30s to ~3-5s. Set false to force H.264 transcode/scale.
+    mediamtx_relay_h264_substream: bool = True
+    # Browser HLS needs H.264 — when relay is off, on-demand ffmpeg transcodes.
+    mediamtx_transcode_h264: bool = False
+    mediamtx_transcode_height: int = 720
 
     # TT kriteriya 12 — ID-badge evristikasi
     badge_ai_interval_seconds: int = 45

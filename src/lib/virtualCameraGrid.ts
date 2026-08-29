@@ -1,38 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CameraFeed } from '../types';
 
-/** Max concurrent HLS players — viewport'dagi kameralardan faqat shunchasi
- * jonli oqim ochadi; qolganlari placeholder ko'rsatadi (P2 virtual grid). */
-export const MAX_ACTIVE_STREAMS = 8;
-
 /**
- * IntersectionObserver orqali ko'rinadigan kamera ID'larini kuzatadi va
- * faqat birinchi MAX_ACTIVE_STREAMS tasiga stream ruxsat beradi.
+ * IntersectionObserver orqali viewport'dagi kamera ID'larini kuzatadi.
+ * Navbat cheklovi yo'q — ekranda ko'rinadigan barcha kameralar oqim ochadi.
  */
 export function useStreamVisibility(_cameraIds: string[]) {
-  const [visibleOrder, setVisibleOrder] = useState<string[]>([]);
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(() => new Set());
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        setVisibleOrder((prev) => {
-          const next = [...prev];
+        setVisibleIds((prev) => {
+          const next = new Set(prev);
           for (const entry of entries) {
             const id = entry.target.getAttribute('data-camera-id');
             if (!id) continue;
-            const idx = next.indexOf(id);
-            if (entry.isIntersecting) {
-              if (idx >= 0) next.splice(idx, 1);
-              next.push(id);
-            } else if (idx >= 0) {
-              next.splice(idx, 1);
-            }
+            if (entry.isIntersecting) next.add(id);
+            else next.delete(id);
           }
           return next;
         });
       },
-      { rootMargin: '120px', threshold: 0.15 },
+      { rootMargin: '80px', threshold: 0.08 },
     );
     return () => observerRef.current?.disconnect();
   }, []);
@@ -51,12 +42,7 @@ export function useStreamVisibility(_cameraIds: string[]) {
     }
   };
 
-  const activeStreamIds = useMemo(
-    () => new Set(visibleOrder.slice(0, MAX_ACTIVE_STREAMS)),
-    [visibleOrder],
-  );
-
-  return { setRef, activeStreamIds };
+  return { setRef, visibleIds };
 }
 
 export type GridLayoutMode = 'scroll' | 'wall-4' | 'wall-9' | 'wall-16';
@@ -90,4 +76,15 @@ export function gridColsClass(mode: GridLayoutMode): string {
 export function camerasForLayout(cameras: CameraFeed[], mode: GridLayoutMode): CameraFeed[] {
   const limit = wallLimit(mode);
   return limit ? cameras.slice(0, limit) : cameras;
+}
+
+/** Devor rejimida yoki scroll'da ko'rinadigan kamera uchun oqim yoqilsinmi. */
+export function shouldPlayStream(
+  camera: CameraFeed,
+  wall: number | null,
+  visibleIds: Set<string>,
+): boolean {
+  if (camera.status !== 'live') return false;
+  if (wall !== null) return true;
+  return visibleIds.has(camera.id);
 }

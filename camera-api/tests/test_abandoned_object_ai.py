@@ -219,7 +219,7 @@ class TestSweepConcurrency:
                 raise RuntimeError("simulated grab failure")
             return _encode_jpeg(_background_frame())
 
-        monkeypatch.setattr(abandoned_object_ai, "grab_frame", flaky_grab_frame)
+        monkeypatch.setattr(abandoned_object_ai, "grab_frame_for_camera", flaky_grab_frame)
 
         await run_abandoned_object_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing

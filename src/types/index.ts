@@ -30,6 +30,15 @@ export interface LiveDetectionResult {
   faces: DetectedFace[];
 }
 
+/** GET /api/public/cameras/{id}/analysis-status — oxirgi fon AI sweep. */
+export interface CameraAnalysisStatus {
+  lastSweepAt?: string | null;
+  secondsAgo?: number | null;
+  faceCount: number;
+  modules: string[];
+  eventsRaised: number;
+}
+
 export interface AttendanceStats {
   totalStudents: number;
   present: number;
@@ -111,6 +120,8 @@ export interface CameraConfig {
    * bir necha kadr (burst) oladi — tez o'tib ketuvchi odamni ushlash
    * ehtimolini oshiradi. Faqat kirish/koridor kameralari uchun mo'ljallangan. */
   isEntrance?: boolean;
+  /** Hovli, bino oldi, avtoturargoh — begona moduli va transport AI uchun. */
+  isPerimeter?: boolean;
   /** app/services/camera_import.py orqali SADP CSV'dan import qilingan
    * kameralar uchun to'ldiriladi (qayta-import qilinganda IP emas, shu
    * bo'yicha aniqlanadi) — qo'lda qo'shilgan kameralarda null. */

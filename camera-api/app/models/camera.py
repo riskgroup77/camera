@@ -80,4 +80,8 @@ class Camera(Base):
     # camera where people linger, e.g. a classroom).
     is_entrance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Hovli, bino oldi, avtoturargoh — begona moduli va transport AI uchun.
+    # is_entrance (piyoda kirish) bilan birga yoki alohida belgilanadi.
+    is_perimeter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     building: Mapped[Building | None] = relationship("Building", lazy="joined")

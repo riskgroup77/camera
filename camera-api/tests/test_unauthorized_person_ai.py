@@ -117,7 +117,7 @@ class TestSweepConcurrency:
             camera = Camera(
                 name=f"Kamera {i}", ip=f"10.0.9.{i + 10}", stream_url=f"rtsp://fake/{i}",
                 building_id=building.id, zone="Z", resolution="1080p", status="faol",
-                last_seen_at=datetime.now(timezone.utc),
+                last_seen_at=datetime.now(timezone.utc), is_entrance=True,
             )
             db_session.add(camera)
             cameras.append(camera)
@@ -132,7 +132,7 @@ class TestSweepConcurrency:
             frame = FACE_IMAGE_PATH.read_bytes()
             return frame, frame
 
-        monkeypatch.setattr(unauthorized_person_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(unauthorized_person_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
 
         await run_unauthorized_person_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing

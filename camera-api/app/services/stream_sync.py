@@ -17,11 +17,13 @@ from app.services.video_gateway import register_camera_stream, unregister_camera
 logger = logging.getLogger("app.stream_sync")
 
 
-def _rtsp_url_for(camera: Camera) -> str:
+def _rtsp_url_for(camera: Camera, *, substream: bool = True) -> str:
+    """MediaMTX registration uses substream (102) — lighter H.264 transcode for browser."""
+    path = settings.rtsp_substream_path if substream else camera.rtsp_path
     return build_rtsp_url(
         camera.ip,
         camera.port,
-        camera.rtsp_path,
+        path,
         decrypt(camera.rtsp_username) if camera.rtsp_username else None,
         decrypt(camera.rtsp_password) if camera.rtsp_password else None,
     )

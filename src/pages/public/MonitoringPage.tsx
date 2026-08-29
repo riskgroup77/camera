@@ -227,8 +227,8 @@ export default function MonitoringPage() {
               Video Monitoring Markazi
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {pageInfo.total} ta kamera topildi · {visible.length} ta ko'rsatilmoqda
-              (kamerani bosing — batafsil ma'lumot · bir vaqtda max 8 ta jonli oqim)
+              {pageInfo.total} ta kamera topildi · {visible.length} ta ko&apos;rsatilmoqda
+              (kamerani bosing — batafsil ma&apos;lumot)
             </p>
           </div>
 

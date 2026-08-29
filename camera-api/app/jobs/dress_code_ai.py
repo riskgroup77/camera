@@ -46,7 +46,7 @@ from app.services.coat_detection import is_wearing_white_coat
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.head_covering_detection import is_wearing_head_covering
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
 
@@ -219,7 +219,7 @@ async def run_dress_code_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> tuple[bool, bool]:
         async with camera_sweep_slot():
-            frames = await grab_frame_pair(camera.stream_url)
+            frames = await grab_frame_pair_for_camera(camera)
             if frames is None:
                 return False, False
             frame_a, frame_b = frames

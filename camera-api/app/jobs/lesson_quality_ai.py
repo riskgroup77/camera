@@ -70,7 +70,7 @@ from app.jobs.phone_ai import PHONE_CLASS_ID
 from app.models import LessonSession
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.object_detection import detect_objects
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
 from app.services.sleep_detection import is_plausible_frontal
@@ -295,7 +295,7 @@ async def run_lesson_quality_ai_sweep_once(
         if camera is None or not camera.stream_url or not is_reachable(camera.last_seen_at):
             return False
         async with camera_sweep_slot():
-            frames = await grab_frame_pair(camera.stream_url)
+            frames = await grab_frame_pair_for_camera(camera)
         if frames is None:
             return False
         frame_a, frame_b = frames

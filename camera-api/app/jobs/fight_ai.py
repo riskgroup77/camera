@@ -52,7 +52,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _mean_flow_magnitude
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.pose_detection import LEFT_HIP, NOSE, RIGHT_HIP, detect_poses
 
 logger = logging.getLogger("app.fight_ai")
@@ -161,7 +161,7 @@ async def run_fight_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> bool:
         async with camera_sweep_slot():
-            frames = await grab_frame_pair(camera.stream_url)
+            frames = await grab_frame_pair_for_camera(camera)
             if frames is None:
                 return False
             frame_a, frame_b = frames

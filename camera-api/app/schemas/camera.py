@@ -46,6 +46,9 @@ class CameraOut(CamelModel):
     # app/jobs/attendance_ai.py grabs a multi-frame burst from this
     # camera instead of a single frame.
     is_entrance: bool = False
+    # Hovli, bino oldi, avtoturargoh — begona shaxs va transport AI uchun.
+    # is_entrance (piyoda kirish) bilan birga yoki alohida belgilanadi.
+    is_perimeter: bool = False
     # Set only by app/services/camera_import.py — null for hand-added cameras.
     mac_address: str | None = None
 
@@ -63,6 +66,7 @@ class CameraCreateIn(CamelModel):
     fps: int | None = None
     status: Literal["faol", "nofaol", "tamirda"] = "nofaol"
     is_entrance: bool = False
+    is_perimeter: bool = False
 
 
 class CameraUpdateIn(CameraCreateIn):

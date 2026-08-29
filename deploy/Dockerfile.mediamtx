@@ -1,0 +1,10 @@
+# MediaMTX + static ffmpeg for on-demand H264 browser transcoding (runOnDemand).
+FROM bluenviron/mediamtx:latest AS mtx
+
+FROM mwader/static-ffmpeg:7.1 AS ffmpeg
+
+FROM scratch
+COPY --from=mtx /mediamtx /mediamtx
+COPY --from=ffmpeg /ffmpeg /ffmpeg
+
+ENTRYPOINT ["/mediamtx"]

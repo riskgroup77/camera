@@ -22,6 +22,7 @@ interface FormState {
   fps: string;
   status: CameraConfig['status'];
   isEntrance: boolean;
+  isPerimeter: boolean;
 }
 
 function toForm(c?: CameraConfig | null): FormState {
@@ -41,6 +42,7 @@ function toForm(c?: CameraConfig | null): FormState {
     fps: String(c?.fps ?? 25),
     status: c?.status ?? 'nofaol',
     isEntrance: c?.isEntrance ?? false,
+    isPerimeter: c?.isPerimeter ?? false,
   };
 }
 
@@ -150,6 +152,7 @@ export default function AddCameraModal({
         fps: Number(form.fps),
         status: form.status,
         isEntrance: form.isEntrance,
+        isPerimeter: form.isPerimeter,
       };
       const saved = isEdit
         ? await api.patch<CameraConfig>(`/api/cameras/${camera.id}`, payload, token)
@@ -306,6 +309,20 @@ export default function AddCameraModal({
             Kirish/koridor kamerasi
             <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
               (davomat uchun bir necha kadr tekshiriladi — tez o'tib ketuvchini ushlash ehtimolini oshiradi)
+            </span>
+          </span>
+        </label>
+        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm dark:bg-white/5">
+          <input
+            type="checkbox"
+            checked={form.isPerimeter}
+            onChange={(e) => set('isPerimeter', e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span className="text-slate-700 dark:text-slate-300">
+            Hovli / perimetr kamerasi
+            <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+              (begona moduli, transport — bino oldi, avtoturargoh)
             </span>
           </span>
         </label>

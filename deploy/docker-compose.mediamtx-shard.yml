@@ -9,7 +9,10 @@ services:
     profiles: ["legacy-single"]
 
   mediamtx-0:
-    image: bluenviron/mediamtx:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     restart: unless-stopped
@@ -22,7 +25,10 @@ services:
       - "127.0.0.1:9997:9997"
 
   mediamtx-1:
-    image: bluenviron/mediamtx:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     restart: unless-stopped
@@ -35,7 +41,10 @@ services:
       - "127.0.0.1:9998:9997"
 
   mediamtx-2:
-    image: bluenviron/mediamtx:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     restart: unless-stopped

@@ -125,7 +125,7 @@ class TestSweepConcurrency:
         async def fake_detect_objects(frame_bytes, class_ids, confidence=0.5):
             return []
 
-        monkeypatch.setattr(phone_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(phone_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
         monkeypatch.setattr(phone_ai, "detect_objects", fake_detect_objects)
 
         await run_phone_ai_sweep_once(session_factory=TestSessionLocal)

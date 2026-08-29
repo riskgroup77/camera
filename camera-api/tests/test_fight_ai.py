@@ -196,7 +196,7 @@ class TestSweepConcurrency:
         async def fake_detect_poses(frame_bytes):
             return []
 
-        monkeypatch.setattr(fight_ai, "grab_frame_pair", flaky_grab_frame_pair)
+        monkeypatch.setattr(fight_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
         monkeypatch.setattr(fight_ai, "detect_poses", fake_detect_poses)
 
         await run_fight_ai_sweep_once(session_factory=TestSessionLocal)

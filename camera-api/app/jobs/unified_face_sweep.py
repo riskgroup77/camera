@@ -35,7 +35,12 @@ from app.jobs.vision_ai import SLEEP_MODULE_CODE, process_camera_frame_for_sleep
 from app.models import Camera
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame, grab_frame_burst, grab_frame_pair
+from app.services.frame_grabber import (
+    grab_frame_burst_for_camera,
+    grab_frame_for_camera,
+    grab_frame_pair_for_camera,
+)
+from app.services.sweep_result_cache import record_camera_sweep
 
 logger = logging.getLogger("app.unified_face_sweep")
 
@@ -45,6 +50,11 @@ _sweep_guard = SweepGuard("unified_face_sweep")
 def _allows(camera: Camera, module_code: int) -> bool:
     excluded = camera.excluded_module_codes
     return excluded is None or module_code not in excluded
+
+
+def _is_security_camera(camera: Camera) -> bool:
+    """Piyoda kirish yoki hovli/perimetr — begona moduli shu kameralarda."""
+    return camera.is_entrance or camera.is_perimeter
 
 
 async def _load_module_flags(db: AsyncSession) -> dict[str, bool]:
@@ -77,7 +87,11 @@ async def _process_camera(
         flags["staff_attendance"] and _allows(camera, STAFF_ATTENDANCE_MODULE_CODE)
     ) or (flags["student_attendance"] and _allows(camera, STUDENT_ATTENDANCE_MODULE_CODE))
     needs_crowd = flags["crowd"] and _allows(camera, CROWD_MODULE_CODE)
-    needs_unauthorized = flags["unauthorized"] and _allows(camera, UNAUTHORIZED_MODULE_CODE)
+    needs_unauthorized = (
+        flags["unauthorized"]
+        and _allows(camera, UNAUTHORIZED_MODULE_CODE)
+        and _is_security_camera(camera)
+    )
     needs_sleep = flags["sleep"] and _allows(camera, SLEEP_MODULE_CODE)
 
     if not any((needs_attendance, needs_crowd, needs_unauthorized, needs_sleep)):
@@ -90,8 +104,8 @@ async def _process_camera(
         attendance_frames: list[bytes] = []
 
         if needs_sleep:
-            sleep_frames = await grab_frame_burst(
-                camera.stream_url,
+            sleep_frames = await grab_frame_burst_for_camera(
+                camera,
                 count=settings.sleep_confirmation_frame_count,
                 gap_seconds=settings.sleep_confirmation_gap_seconds,
             )
@@ -99,20 +113,20 @@ async def _process_camera(
                 primary_frame = sleep_frames[0]
 
         if needs_unauthorized:
-            pair = await grab_frame_pair(camera.stream_url)
+            pair = await grab_frame_pair_for_camera(camera)
             if pair and primary_frame is None:
                 primary_frame = pair[1]
 
         if needs_attendance and camera.is_entrance:
-            attendance_frames = await grab_frame_burst(
-                camera.stream_url,
+            attendance_frames = await grab_frame_burst_for_camera(
+                camera,
                 settings.attendance_entrance_burst_frame_count,
                 settings.attendance_entrance_burst_gap_seconds,
             )
             if attendance_frames and primary_frame is None:
                 primary_frame = attendance_frames[0]
         elif (needs_attendance or needs_crowd) and primary_frame is None:
-            primary_frame = await grab_frame(camera.stream_url)
+            primary_frame = await grab_frame_for_camera(camera)
 
         if primary_frame is None and not sleep_frames and pair is None:
             return counts
@@ -175,6 +189,23 @@ async def _process_camera(
                     candidates=candidates,
                     frames_faces=frames_faces,
                 )
+
+        modules_run: list[str] = []
+        if needs_attendance:
+            modules_run.append("attendance")
+        if needs_crowd:
+            modules_run.append("crowd")
+        if needs_unauthorized:
+            modules_run.append("unauthorized")
+        if needs_sleep:
+            modules_run.append("sleep")
+        events_raised = sum(counts.values())
+        await record_camera_sweep(
+            str(camera.id),
+            face_count=len(primary_faces),
+            modules=modules_run,
+            events_raised=events_raised,
+        )
 
     return counts
 

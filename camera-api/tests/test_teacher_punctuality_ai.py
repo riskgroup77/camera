@@ -125,7 +125,7 @@ class TestCheckLessonSession:
         async def fake_grab_frame(stream_url):
             return FACE_IMAGE_PATH.read_bytes()
 
-        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame", fake_grab_frame)
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_for_camera", fake_grab_frame)
         row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
 
         raised = await check_lesson_session(row, db_session)
@@ -150,7 +150,7 @@ class TestCheckLessonSession:
             blank.save(buf, format="JPEG")
             return buf.getvalue()
 
-        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame", fake_grab_frame)
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_for_camera", fake_grab_frame)
         row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
 
         raised = await check_lesson_session(row, db_session)
@@ -187,7 +187,7 @@ class TestSweepConcurrency:
                 raise RuntimeError("simulated grab failure")
             return FACE_IMAGE_PATH.read_bytes()
 
-        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame", flaky_grab_frame)
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_for_camera", flaky_grab_frame)
 
         await run_teacher_punctuality_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both sessions were attempted despite the first one failing

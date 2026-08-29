@@ -93,21 +93,22 @@ class _StreamReader:
             await self._start()
 
     async def _start(self) -> None:
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-loglevel",
-            "error",
-            "-i",
-            self.stream_url,
-            "-f",
-            "mjpeg",
-            "-q:v",
-            "5",
-            "-r",
-            str(settings.stream_cache_capture_fps),
-            "-",
-        ]
+        cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+        if self.stream_url.startswith("rtsp://"):
+            cmd.extend(["-rtsp_transport", "tcp"])
+        cmd.extend(
+            [
+                "-i",
+                self.stream_url,
+                "-f",
+                "mjpeg",
+                "-q:v",
+                "5",
+                "-r",
+                str(settings.stream_cache_capture_fps),
+                "-",
+            ]
+        )
         try:
             self._proc = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL

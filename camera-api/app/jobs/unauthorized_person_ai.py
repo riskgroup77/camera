@@ -4,15 +4,11 @@ the same InsightFace + app/services/face_matching.py pipeline as
 app/jobs/attendance_ai.py, just inverted: attendance_ai credits a MATCH,
 this raises an Event on the ABSENCE of one.
 
-Runs across the same camera pool as the other sweep loops (every
-faol+reachable camera) rather than restricting to "entrance" cameras
-specifically — Camera.zone is free text with no reliable "this is an
-entrance" signal to filter on, and the TT criterion itself (a stranger
-appears anywhere in the building) doesn't require entrance-only coverage
-to be useful. Per-camera scoping is a real admin config knob to add
-later, not something to fake with brittle zone-name string matching now.
+Runs on faol+reachable **entrance** cameras only (Camera.is_entrance) —
+begona moduli 107 ta kamerada emas, faqat kirish nuqtalarida ishlaydi.
+Per-camera opt-out via excluded_module_codes remains supported.
 
-Grabs a PAIR of frames (grab_frame_pair, ~1s apart — the same pattern
+Grabs a PAIR of frames (grab_frame_pair_for_camera, ~1s apart — the same pattern
 app/jobs/fire_ai.py uses) and only raises when a face reads as unmatched
 in BOTH. The real risk here isn't a blink, it's a single bad-angle or
 poor-lighting frame making an ACTUALLY-enrolled person's embedding miss
@@ -38,7 +34,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
@@ -51,7 +47,7 @@ from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame_pair
+from app.services.frame_grabber import grab_frame_pair_for_camera
 
 logger = logging.getLogger("app.unauthorized_person_ai")
 
@@ -144,9 +140,12 @@ async def run_unauthorized_person_ai_sweep_once(
         if not await is_module_active(db, UNAUTHORIZED_MODULE_CODE):
             return 0
         result = await db.execute(
-            select(Camera).where(Camera.status == "faol").where(camera_allows_module(UNAUTHORIZED_MODULE_CODE))
+            select(Camera)
+            .where(Camera.status == "faol")
+            .where(or_(Camera.is_entrance.is_(True), Camera.is_perimeter.is_(True)))
+            .where(camera_allows_module(UNAUTHORIZED_MODULE_CODE))
         )
-        cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
+        cameras = [c for c in result.scalars().all() if is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
 
     if not cameras:
@@ -154,7 +153,7 @@ async def run_unauthorized_person_ai_sweep_once(
 
     async def _process_one(camera: Camera) -> bool:
         async with camera_sweep_slot():
-            frames = await grab_frame_pair(camera.stream_url)
+            frames = await grab_frame_pair_for_camera(camera)
             if frames is None:
                 return False
             frame_a, frame_b = frames

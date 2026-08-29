@@ -55,7 +55,7 @@ from app.models import Event, LessonSession
 from app.schemas.event import EventOut
 from app.services.face_matching import find_best_match
 from app.services.face_recognition import detect_faces
-from app.services.frame_grabber import grab_frame
+from app.services.frame_grabber import grab_frame_for_camera
 from app.timezone import local_now
 from app.ws import manager
 
@@ -109,7 +109,7 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
 
     if camera and camera.stream_url and is_reachable(camera.last_seen_at) and teacher and teacher.biometric_embedding:
         async with camera_sweep_slot():
-            frame = await grab_frame(camera.stream_url)
+            frame = await grab_frame_for_camera(camera)
         if frame is not None:
             faces = await detect_faces(frame)
             ran_check = True
