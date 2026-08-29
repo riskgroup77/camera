@@ -39,6 +39,7 @@ from app.rate_limit import limiter
 from app.redis_bus import start_redis_listener, stop_redis_listener
 from app.services import video_gateway
 from app.ws import manager
+from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
 from app.storage import check_bucket
 from app.routers import (
@@ -168,6 +169,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
     if is_leader:
         await shutdown_stream_cache()
+        await shutdown_pose_detection_pool()
     await stop_redis_listener()
     await release_leadership()
     logger.info("shutting down", extra={"event": "shutdown"})
