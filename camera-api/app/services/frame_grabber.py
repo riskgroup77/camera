@@ -5,6 +5,9 @@ actually look at what it sees".
 When settings.ai_use_direct_rtsp is true, AI modules read the camera's
 RTSP substream directly (no MediaMTX/HLS hop). Browser playback still
 uses Camera.stream_url (HLS via MediaMTX).
+
+Entrance/perimeter cameras optionally use the main RTSP stream (101)
+for face AI — substream is too low-res for corridor-wide shots.
 """
 
 import asyncio
@@ -15,14 +18,25 @@ from app.config import settings
 from app.crypto import decrypt
 from app.models import Camera
 from app.rtsp import build_rtsp_url
-from app.services.stream_cache import get_cached_frame
+from app.services.stream_cache import get_cached_frame, is_stream_known_broken
 from app.services.video_gateway import public_hls_to_internal
 
 logger = logging.getLogger("app.frame_grabber")
 
 
+def _is_security_camera(camera: Camera) -> bool:
+    return camera.is_entrance or camera.is_perimeter
+
+
+def ai_prefers_substream(camera: Camera) -> bool:
+    """True → Channels/102; False → main stream (101 or camera.rtsp_path)."""
+    if settings.ai_entrance_use_main_stream and _is_security_camera(camera):
+        return False
+    return True
+
+
 def rtsp_url_for_camera(camera: Camera, *, substream: bool | None = None) -> str:
-    use_sub = settings.ai_use_direct_rtsp if substream is None else substream
+    use_sub = ai_prefers_substream(camera) if substream is None else substream
     path = settings.rtsp_substream_path if use_sub else (camera.rtsp_path or "/Streaming/Channels/101")
     return build_rtsp_url(
         camera.ip,
@@ -34,7 +48,7 @@ def rtsp_url_for_camera(camera: Camera, *, substream: bool | None = None) -> str
 
 
 def camera_video_source(camera: Camera) -> str:
-    """URL used by AI frame readers — RTSP substream or HLS fallback."""
+    """URL used by AI frame readers — RTSP substream/main or HLS fallback."""
     if settings.ai_use_direct_rtsp:
         return rtsp_url_for_camera(camera)
     if not camera.stream_url:
@@ -42,15 +56,23 @@ def camera_video_source(camera: Camera) -> str:
     return public_hls_to_internal(camera.stream_url)
 
 
-async def grab_frame_for_camera(camera: Camera, *, wait_seconds: float = 8.0) -> bytes | None:
+def frame_wait_seconds_for_camera(camera: Camera) -> float:
+    if settings.ai_entrance_use_main_stream and _is_security_camera(camera):
+        return settings.ai_entrance_frame_wait_seconds
+    return 8.0
+
+
+async def grab_frame_for_camera(camera: Camera, *, wait_seconds: float | None = None) -> bytes | None:
     source = camera_video_source(camera)
     if not source:
         return None
-    deadline = time.monotonic() + wait_seconds
+    deadline = time.monotonic() + (wait_seconds if wait_seconds is not None else frame_wait_seconds_for_camera(camera))
     while time.monotonic() < deadline:
         frame = await get_cached_frame(source)
         if frame is not None:
             return frame
+        if is_stream_known_broken(source):
+            return None  # reader had its grace period, decoded nothing — don't burn the rest of the slot
         await asyncio.sleep(0.5)
     return None
 

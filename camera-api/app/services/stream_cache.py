@@ -83,6 +83,7 @@ class _StreamReader:
         self._stderr_task: asyncio.Task | None = None
         self._stderr_tail: list[str] = []
         self._frames_decoded = 0
+        self._proc_started_at: float = 0.0
         self._latest_frame: bytes | None = None
         self._latest_frame_at: float = 0.0
         self._last_requested_at: float = time.monotonic()
@@ -101,6 +102,17 @@ class _StreamReader:
         if time.monotonic() - self._latest_frame_at > settings.stream_cache_max_age_seconds:
             return None  # stale — reader is running but hasn't decoded anything recent (stream stalled)
         return self._latest_frame
+
+    def is_known_broken(self) -> bool:
+        """True once this reader has had stream_broken_grace_seconds to
+        connect and decode at least one frame and still hasn't — lets a
+        caller stop polling instead of waiting out its full deadline on a
+        stream that was never going to produce anything. Recovers on its
+        own: the moment a frame lands, _frames_decoded > 0 and this flips
+        back to False for the reader's remaining lifetime."""
+        if self._proc is None or self._frames_decoded > 0:
+            return False
+        return time.monotonic() - self._proc_started_at > settings.stream_broken_grace_seconds
 
     async def ensure_started(self) -> None:
         async with self._lock:
@@ -134,6 +146,7 @@ class _StreamReader:
             return
         self._stderr_tail = []
         self._frames_decoded = 0
+        self._proc_started_at = time.monotonic()
         self._reader_task = asyncio.create_task(self._read_loop())
         self._stderr_task = asyncio.create_task(self._drain_stderr())
         logger.info("stream reader started", extra={"stream_url": self._log_url})
@@ -253,6 +266,14 @@ _cache = StreamCache()
 
 async def get_cached_frame(stream_url: str) -> bytes | None:
     return await _cache.get_frame(stream_url)
+
+
+def is_stream_known_broken(stream_url: str) -> bool:
+    """Cheap, non-blocking check callers can poll between grab attempts —
+    see _StreamReader.is_known_broken. Returns False for a URL with no
+    reader yet (nothing to judge broken)."""
+    reader = _cache._readers.get(stream_url)
+    return reader is not None and reader.is_known_broken()
 
 
 async def reap_idle_readers() -> None:

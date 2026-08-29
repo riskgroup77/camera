@@ -344,6 +344,14 @@ class Settings(BaseSettings):
     stream_cache_max_age_seconds: float = 15.0
     stream_cache_idle_timeout_seconds: float = 300.0
     stream_cache_capture_fps: float = 2.0
+    # How long a stream reader gets to decode its first frame before a
+    # caller's grab_frame_for_camera() poll gives up early instead of
+    # burning its full 8-18s wait budget. Once a reader has run this long
+    # with zero frames decoded, it's treated as broken until it proves
+    # otherwise (see stream_cache.is_stream_known_broken) — keeps one dead
+    # RTSP camera from holding a shared sweep slot for its full per-camera
+    # timeout, over and over, on every sweep.
+    stream_broken_grace_seconds: float = 5.0
 
     # Unified face sweep (app/jobs/unified_face_sweep.py) — one frame grab +
     # one face-detect pass per camera tick, feeding attendance/crowd/unauthorized/
@@ -382,6 +390,10 @@ class Settings(BaseSettings):
     ai_use_direct_rtsp: bool = True
     # Hikvision substream — lower bandwidth than /Streaming/Channels/101.
     rtsp_substream_path: str = "/Streaming/Channels/102"
+    # Kirish/perimetr kameralarda yuz kichik bo'ladi (768x432 substream) —
+    # AI uchun asosiy oqim (101, masalan 2560x1440) ishlatiladi.
+    ai_entrance_use_main_stream: bool = True
+    ai_entrance_frame_wait_seconds: float = 18.0
 
     # MediaMTX horizontal sharding — comma-separated URLs, equal length pairs.
     # Empty = single MEDIAMTX_API_URL / MEDIAMTX_HLS_BASE_URL.
