@@ -27,6 +27,7 @@ and reads as "no frame" until the next request restarts it.
 
 import asyncio
 import logging
+import re
 import time
 
 from app.config import settings
@@ -36,6 +37,17 @@ logger = logging.getLogger("app.stream_cache")
 _JPEG_SOI = b"\xff\xd8"
 _JPEG_EOI = b"\xff\xd9"
 _MAX_BUFFER_BYTES = 5_000_000  # guards against unbounded growth if a stream never emits a clean JPEG boundary
+_STDERR_TAIL_LINES = 20  # enough to see the actual RTSP failure reason without unbounded memory growth
+
+_CREDENTIALS_IN_URL = re.compile(r"(rtsp://)[^@/]+@")
+
+
+def _redact(text: str) -> str:
+    """Strips `user:pass@` from any rtsp:// URL in `text` — ffmpeg's own
+    stderr often echoes the input URL verbatim (e.g. in a 401/DESCRIBE
+    failure line), so logging its raw stderr would otherwise leak camera
+    RTSP credentials in plaintext the moment any camera has real ones set."""
+    return _CREDENTIALS_IN_URL.sub(r"\1***:***@", text)
 
 
 def extract_complete_jpeg_frames(buffer: bytes) -> tuple[list[bytes], bytes]:
@@ -65,8 +77,12 @@ class _StreamReader:
 
     def __init__(self, stream_url: str):
         self.stream_url = stream_url
+        self._log_url = _redact(stream_url)
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
+        self._stderr_task: asyncio.Task | None = None
+        self._stderr_tail: list[str] = []
+        self._frames_decoded = 0
         self._latest_frame: bytes | None = None
         self._latest_frame_at: float = 0.0
         self._last_requested_at: float = time.monotonic()
@@ -111,13 +127,36 @@ class _StreamReader:
         )
         try:
             self._proc = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
         except FileNotFoundError:
-            logger.error("ffmpeg not found; cannot start stream reader", extra={"stream_url": self.stream_url})
+            logger.error("ffmpeg not found; cannot start stream reader", extra={"stream_url": self._log_url})
             return
+        self._stderr_tail = []
+        self._frames_decoded = 0
         self._reader_task = asyncio.create_task(self._read_loop())
-        logger.info("stream reader started", extra={"stream_url": self.stream_url})
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
+        logger.info("stream reader started", extra={"stream_url": self._log_url})
+
+    async def _drain_stderr(self) -> None:
+        """ffmpeg's stderr must always be read, or the pipe fills and blocks
+        the process — this ALSO gives us the actual failure reason (RTSP
+        401/404/timeout/etc.) that used to be discarded entirely (was
+        stderr=DEVNULL), which was the reason a broken camera's frame grab
+        just silently returned None forever with zero trace anywhere."""
+        assert self._proc is not None and self._proc.stderr is not None
+        try:
+            while True:
+                line = await self._proc.stderr.readline()
+                if not line:
+                    break
+                self._stderr_tail.append(_redact(line.decode(errors="replace").rstrip()))
+                if len(self._stderr_tail) > _STDERR_TAIL_LINES:
+                    self._stderr_tail.pop(0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass  # best-effort diagnostics only — never let stderr draining itself break the reader
 
     async def _read_loop(self) -> None:
         assert self._proc is not None and self._proc.stdout is not None
@@ -132,21 +171,36 @@ class _StreamReader:
                 if frames:
                     self._latest_frame = frames[-1]  # only the most recent decoded frame is kept
                     self._latest_frame_at = time.monotonic()
+                    self._frames_decoded += len(frames)
                 if len(buffer) > _MAX_BUFFER_BYTES:
-                    logger.warning("stream reader buffer overflow, resetting", extra={"stream_url": self.stream_url})
+                    logger.warning("stream reader buffer overflow, resetting", extra={"stream_url": self._log_url})
                     buffer = b""
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("stream reader loop crashed", extra={"stream_url": self.stream_url})
+            logger.exception("stream reader loop crashed", extra={"stream_url": self._log_url})
         finally:
-            logger.info("stream reader stopped reading", extra={"stream_url": self.stream_url})
+            # A reader that produced zero frames before its process ended almost
+            # certainly failed to connect at all (wrong RTSP path/credentials/
+            # transport) — that's exactly the failure mode that used to be
+            # invisible. Surface ffmpeg's own stderr for it; a reader that had
+            # been decoding fine and just got torn down normally (idle-reap,
+            # shutdown) doesn't need its tail logged at all.
+            if self._frames_decoded == 0 and self._stderr_tail:
+                logger.warning(
+                    "stream reader never decoded a frame before exiting",
+                    extra={"stream_url": self._log_url, "ffmpeg_stderr": self._stderr_tail},
+                )
+            logger.info("stream reader stopped reading", extra={"stream_url": self._log_url})
 
     async def stop(self) -> None:
         async with self._lock:
             if self._reader_task is not None:
                 self._reader_task.cancel()
                 self._reader_task = None
+            if self._stderr_task is not None:
+                self._stderr_task.cancel()
+                self._stderr_task = None
             if self._proc is not None and self._proc.returncode is None:
                 try:
                     self._proc.kill()
