@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { cameraConfigs } from '../mock/admin';
 import { useAuth } from './auth';
 import { config, isBackendConfigured } from './config';
+import { toLocalDateString } from './date';
 import type { AIEvent } from '../types';
 
 export type LiveEventHandler = (event: AIEvent) => void;
@@ -26,7 +27,7 @@ function synthesizeEvent(): AIEvent {
   const template = SIM_TEMPLATES[counter % SIM_TEMPLATES.length];
   const camera = cameraConfigs[counter % cameraConfigs.length];
   const now = new Date();
-  const timestamp = `${now.toISOString().slice(0, 10)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const timestamp = `${toLocalDateString(now)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
   return {
     id: `ev-live-${Date.now()}-${counter}`,

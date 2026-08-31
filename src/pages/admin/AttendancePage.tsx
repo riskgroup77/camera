@@ -5,6 +5,7 @@ import StatCard from '../../components/StatCard';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { api, fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { toLocalDateString } from '../../lib/date';
 import type { AttendanceDay, AttendanceDayStatus, StudentStaffRecord } from '../../types';
 
 const MONTH_NAMES = [
@@ -56,7 +57,7 @@ function buildMonthGrid(records: AttendanceDay[], year: number, month: number): 
   const cells: CalendarCell[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(year, month, d);
-    const iso = date.toISOString().slice(0, 10);
+    const iso = toLocalDateString(date);
     const dow = date.getDay();
     const record = byDate.get(iso);
 

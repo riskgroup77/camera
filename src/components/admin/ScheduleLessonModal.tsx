@@ -8,6 +8,7 @@ import { useFaculties } from '../../lib/useFaculties';
 import { useGroups } from '../../lib/useGroups';
 import { useTeachers } from '../../lib/useTeachers';
 import { useCameras } from '../../lib/useCameras';
+import { toLocalDateString } from '../../lib/date';
 import type { LessonSession } from '../../types';
 
 interface FormState {
@@ -21,7 +22,7 @@ interface FormState {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalDateString(new Date());
 }
 
 function toForm(s?: LessonSession | null): FormState {
