@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, LogOut, Loader2, Trash2, UserCheck, UserX, Clock3, TrendingUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogOut, Loader2, LogIn, Trash2, UserCheck, UserX, Clock3, TrendingUp, CalendarDays } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
+import Modal from '../../components/Modal';
+import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { api, fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -20,6 +22,7 @@ interface CalendarCell {
   date: string;
   status: CellStatus;
   checkIn?: string;
+  checkOut?: string;
   earlyLeave?: boolean;
   isRecord: boolean;
 }
@@ -39,6 +42,24 @@ const STATUS_LABEL: Record<CellStatus, string> = {
   dam_olish: 'Dam olish',
   malumotYoq: "Ma'lumot yo'q",
 };
+
+const STATUS_BADGE_TONE: Record<CellStatus, 'green' | 'amber' | 'red' | 'slate'> = {
+  keldi: 'green',
+  kech_keldi: 'amber',
+  kelmadi: 'red',
+  dam_olish: 'slate',
+  malumotYoq: 'slate',
+};
+
+const WEEKDAY_FULL_NAMES = [
+  'Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba',
+];
+
+function formatFullDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return `${d}-${MONTH_NAMES[m - 1]} ${y}, ${WEEKDAY_FULL_NAMES[date.getDay()]}`;
+}
 
 function mondayIndex(date: Date) {
   return (date.getDay() + 6) % 7;
@@ -62,7 +83,14 @@ function buildMonthGrid(records: AttendanceDay[], year: number, month: number): 
     const record = byDate.get(iso);
 
     if (record) {
-      cells.push({ date: iso, status: record.status, checkIn: record.checkIn, earlyLeave: record.earlyLeave, isRecord: true });
+      cells.push({
+        date: iso,
+        status: record.status,
+        checkIn: record.checkIn,
+        checkOut: record.checkOut,
+        earlyLeave: record.earlyLeave,
+        isRecord: true,
+      });
     } else if (date > today || dow === 0 || dow === 6) {
       cells.push({ date: iso, status: 'dam_olish', isRecord: false });
     } else {
@@ -83,6 +111,7 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<AttendanceDay | null>(null);
+  const [selectedDay, setSelectedDay] = useState<CalendarCell | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -125,6 +154,7 @@ export default function AttendancePage() {
     if (!deleting || !personId) return;
     await api.del(`/api/attendance/${personId}/${deleting.date}`, token);
     setDeleting(null);
+    setSelectedDay((cur) => (cur && cur.date === deleting.date ? null : cur));
     setReloadKey((k) => k + 1);
   }
 
@@ -226,11 +256,13 @@ export default function AttendancePage() {
             ))}
             {days.map((day) => {
               const dayNum = Number(day.date.slice(-2));
+              const clickable = day.status !== 'dam_olish';
               return (
                 <div
                   key={day.date}
+                  onClick={clickable ? () => setSelectedDay(day) : undefined}
                   title={`${STATUS_LABEL[day.status]}${day.checkIn ? ` · ${day.checkIn}` : ''}${day.earlyLeave ? ' · Erta ketdi' : ''}`}
-                  className={`group relative flex aspect-square flex-col items-center justify-center rounded-lg text-xs font-semibold ${STATUS_STYLE[day.status]}`}
+                  className={`group relative flex aspect-square flex-col items-center justify-center rounded-lg text-xs font-semibold ${STATUS_STYLE[day.status]} ${clickable ? 'cursor-pointer transition-transform hover:scale-[1.04]' : ''}`}
                 >
                   {day.earlyLeave && (
                     <span className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
@@ -239,7 +271,10 @@ export default function AttendancePage() {
                   {day.checkIn && <span className="text-[9px] font-normal opacity-80">{day.checkIn}</span>}
                   {day.isRecord && (
                     <button
-                      onClick={() => setDeleting({ date: day.date, status: day.status as AttendanceDayStatus, checkIn: day.checkIn })}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleting({ date: day.date, status: day.status as AttendanceDayStatus, checkIn: day.checkIn });
+                      }}
                       title="Yozuvni o'chirish"
                       className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-slate-500 opacity-0 shadow-sm ring-1 ring-slate-200 transition-opacity hover:!opacity-100 hover:text-red-600 group-hover:opacity-100 dark:bg-slate-800 dark:text-slate-400 dark:ring-white/10 dark:hover:text-red-400"
                     >
@@ -269,6 +304,72 @@ export default function AttendancePage() {
         onCancel={() => setDeleting(null)}
         onConfirm={handleDelete}
       />
+
+      <Modal open={!!selectedDay} onClose={() => setSelectedDay(null)} title={person?.fullName} maxWidth="max-w-sm">
+        {selectedDay && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+              <CalendarDays size={15} />
+              {formatFullDate(selectedDay.date)}
+            </div>
+
+            <div>
+              <Badge tone={STATUS_BADGE_TONE[selectedDay.status]}>{STATUS_LABEL[selectedDay.status]}</Badge>
+            </div>
+
+            {selectedDay.isRecord ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white/60 p-3 dark:bg-white/5">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    <LogIn size={12} />
+                    Keldi
+                  </div>
+                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                    {selectedDay.checkIn ?? '—'}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/60 p-3 dark:bg-white/5">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    <LogOut size={12} />
+                    Ketdi
+                  </div>
+                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                    {selectedDay.checkOut ?? '—'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 dark:text-slate-500">
+                Bu kun uchun kamera orqali qayd etilgan davomat yozuvi yo'q.
+              </p>
+            )}
+
+            {selectedDay.earlyLeave && (
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                <LogOut size={13} />
+                Erta ketgan — belgilangan ish vaqtidan oldin chiqib ketgan
+              </p>
+            )}
+
+            {selectedDay.isRecord && (
+              <button
+                onClick={() => {
+                  setDeleting({
+                    date: selectedDay.date,
+                    status: selectedDay.status as AttendanceDayStatus,
+                    checkIn: selectedDay.checkIn,
+                  });
+                  setSelectedDay(null);
+                }}
+                className="glass-btn-danger flex items-center justify-center gap-1.5 self-start !py-2"
+              >
+                <Trash2 size={13} />
+                Yozuvni o'chirish
+              </button>
+            )}
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }
