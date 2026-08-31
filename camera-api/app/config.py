@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     # flagged early_leave in GET /api/attendance/{id} — see
     # app/routers/attendance.py's _to_out().
     attendance_early_leave_cutoff: str = "16:00"
+    # A check_out only minutes (even seconds) after check_in doesn't mean
+    # someone worked a while then left early — it usually means a camera
+    # (often just one entrance camera) caught them once, briefly, and never
+    # saw them again for the rest of the day (no continuous multi-camera
+    # tracking exists here — see attendance_ai.py's module docstring).
+    # Require at least this much of a gap before early_leave is trusted as
+    # a real "was present, then left" signal rather than a single sighting.
+    attendance_early_leave_min_presence_minutes: int = 15
     # TT kriteriya 3 ("Notekis/kechki vaqtda kirish") — also pure rule-based:
     # a face-recognized check-in outside [start, end) raises a real Event
     # (module_code=3), same as any other AI-detected incident.

@@ -135,6 +135,21 @@ class TestAttendance:
         )
         assert resp.json()["earlyLeave"] is False
 
+    async def test_check_out_minutes_after_check_in_is_not_early_leave(self, client: AsyncClient, a_student):
+        """A single brief camera sighting (check_out only a few minutes
+        after check_in) isn't evidence of a real "present, then left
+        early" day — see _is_early_leave's docstring."""
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.post(
+            "/api/attendance",
+            headers=headers,
+            json={
+                "studentStaffId": a_student["id"], "date": "2026-08-01", "status": "keldi",
+                "checkIn": "12:37", "checkOut": "12:42",  # 5 minutes apart, before the 16:00 cutoff
+            },
+        )
+        assert resp.json()["earlyLeave"] is False
+
 
 @pytest.mark.usefixtures("seeded")
 class TestLessonSessions:

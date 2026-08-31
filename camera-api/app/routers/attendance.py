@@ -10,6 +10,7 @@ which one produced it.
 """
 
 from datetime import date as date_type
+from datetime import datetime
 from datetime import time as time_type
 from typing import Annotated
 
@@ -42,11 +43,24 @@ def _is_early_leave(record: AttendanceRecord) -> bool:
     kech_keldi) with a recorded check_out earlier than the configured
     end-of-day cutoff. A day with no check_out at all (still "present",
     just never re-sighted after check-in) is deliberately NOT flagged —
-    that's an absence-of-data case, not evidence of leaving early."""
-    if record.status not in ("keldi", "kech_keldi") or record.check_out is None:
+    that's an absence-of-data case, not evidence of leaving early.
+
+    Also requires check_out to be at least attendance_early_leave_min_
+    presence_minutes after check_in — without continuous multi-camera
+    tracking (see attendance_ai.py's module docstring), a check_out just
+    seconds/minutes after check_in almost always means "one camera caught
+    them once, briefly, and never saw them again," not "present for a
+    while, then genuinely left early." A real early-leave implies they
+    were actually there for some stretch of the day first."""
+    if record.status not in ("keldi", "kech_keldi") or record.check_out is None or record.check_in is None:
         return False
     cutoff = time_type.fromisoformat(settings.attendance_early_leave_cutoff)
-    return record.check_out < cutoff
+    if record.check_out >= cutoff:
+        return False
+    presence_minutes = (
+        datetime.combine(date_type.min, record.check_out) - datetime.combine(date_type.min, record.check_in)
+    ).total_seconds() / 60
+    return presence_minutes >= settings.attendance_early_leave_min_presence_minutes
 
 
 def _to_out(record: AttendanceRecord) -> AttendanceDayOut:
