@@ -39,6 +39,16 @@ interface LiveVideoPlayerProps {
 
 const LOAD_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 6;
+// Yuklab bo'lmasa, doimiy "xato" holatiga tushib qolish o'rniga fon
+// rejimida qayta urinib turadi (backoff ortib boruvchi, 20s'da to'xtaydi)
+// — camera.status='live' bo'lgan kamera uchun bu deyarli har doim
+// navbat/server bandligi kabi vaqtinchalik holat, haqiqatan o'lik oqim
+// emas (aks holda backend uni "live" deb belgilamas edi). Faqat juda
+// ko'p urinishdan keyin (bir necha daqiqa) haqiqatan muammo borligini
+// ko'rsatamiz.
+const RETRY_BASE_MS = 6_000;
+const RETRY_MAX_MS = 20_000;
+const SHOW_ERROR_AFTER_ATTEMPTS = 10;
 
 export default function LiveVideoPlayer({
   streamUrl,
@@ -53,14 +63,18 @@ export default function LiveVideoPlayer({
 }: LiveVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [loading, setLoading] = useState(true);
-  const retriesRef = useRef(0);
+  const hlsRetriesRef = useRef(0); // HLS.js's own in-attempt network/media recovery count
+  const attemptRef = useRef(0); // how many whole attach cycles have been tried, for backoff + the error threshold
   const detection = useLiveDetection(cameraId, showDetections && !error);
 
   useEffect(() => {
     setError(false);
+    setRetrying(false);
     setLoading(true);
-    retriesRef.current = 0;
+    hlsRetriesRef.current = 0;
+    attemptRef.current = 0;
     const video = videoRef.current;
     if (!video || !streamUrl) return;
 
@@ -68,20 +82,68 @@ export default function LiveVideoPlayer({
     let hlsInstance: Hls | null = null;
     let loadTimer: ReturnType<typeof setTimeout> | null = null;
     let startTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let slotHeld = false;
+
+    function clearAllTimers() {
+      if (loadTimer) clearTimeout(loadTimer);
+      if (startTimer) clearTimeout(startTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      loadTimer = startTimer = retryTimer = null;
+    }
+
+    function teardownPlayback() {
+      hlsInstance?.destroy();
+      hlsInstance = null;
+      video!.removeAttribute('src');
+      video!.load();
+    }
+
+    function releaseIfHeld() {
+      if (slotHeld) {
+        slotHeld = false;
+        releaseStreamSlot(streamUrl!);
+      }
+    }
 
     function markReady() {
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setError(false);
+        setRetrying(false);
+        attemptRef.current = 0;
+      }
+    }
+
+    // Bir marta ishlab, doim "xato" holatiga qotib qolish o'rniga — fon
+    // rejimida qayta urinib turadi. camera.status='live' bo'lgani uchun
+    // bu deyarli har doim vaqtinchalik navbat/server bandligi, haqiqiy
+    // o'lik oqim emas (§ RETRY_BASE_MS izohiga qarang).
+    function scheduleRetry() {
+      if (cancelled) return;
+      if (loadTimer) {
+        clearTimeout(loadTimer);
+        loadTimer = null;
+      }
+      teardownPlayback();
+      releaseIfHeld();
+      attemptRef.current += 1;
+      setLoading(true);
+      setRetrying(true);
+      setError(attemptRef.current >= SHOW_ERROR_AFTER_ATTEMPTS);
+      const backoff = Math.min(RETRY_BASE_MS + attemptRef.current * 2000, RETRY_MAX_MS);
+      retryTimer = setTimeout(() => {
+        if (!cancelled) void start();
+      }, backoff);
     }
 
     function markFailed() {
-      if (!cancelled) {
-        setLoading(false);
-        setError(true);
-      }
+      scheduleRetry();
     }
 
     async function attach() {
       if (!video) return;
+      hlsRetriesRef.current = 0;
       const isHls = streamUrl!.endsWith('.m3u8');
 
       loadTimer = setTimeout(() => {
@@ -122,13 +184,13 @@ export default function LiveVideoPlayer({
             data.type === HlsLib.ErrorTypes.NETWORK_ERROR &&
             (code === 404 || code === 401 || code === 500 || code === 0);
           if (!data.fatal && !retryableNetwork) return;
-          if (retryableNetwork && retriesRef.current < MAX_RETRIES) {
-            retriesRef.current += 1;
+          if (retryableNetwork && hlsRetriesRef.current < MAX_RETRIES) {
+            hlsRetriesRef.current += 1;
             hlsInstance?.startLoad(-1);
             return;
           }
-          if (data.type === HlsLib.ErrorTypes.MEDIA_ERROR && retriesRef.current < MAX_RETRIES) {
-            retriesRef.current += 1;
+          if (data.type === HlsLib.ErrorTypes.MEDIA_ERROR && hlsRetriesRef.current < MAX_RETRIES) {
+            hlsRetriesRef.current += 1;
             hlsInstance?.recoverMediaError();
             return;
           }
@@ -154,19 +216,26 @@ export default function LiveVideoPlayer({
       }
     }
 
-    let slotHeld = false;
-
     async function start() {
+      if (cancelled) return;
       if (!priority) {
-        await acquireStreamSlot();
-        // If unmount/dep-change happened while we were queued, the effect's
-        // cleanup already ran (with slotHeld still false, so it couldn't
-        // release this slot) — release it here ourselves, or it leaks
-        // permanently. With MAX_CONCURRENT=4 in streamLoadQueue.ts, a
-        // handful of leaked slots is enough to wedge every video player on
-        // the page until a full reload.
+        // onRevoked: navbat (streamLoadQueue) adolatli aylanish uchun
+        // joyni boshqa ko'rinadigan kartaga bergan — bu XATO EMAS, faqat
+        // "hozircha to'xtat" signali, shuning uchun xato holatini
+        // ko'rsatmasdan, jim ravishda qayta navbatga turamiz.
+        await acquireStreamSlot(streamUrl!, () => {
+          slotHeld = false;
+          if (cancelled) return;
+          if (loadTimer) {
+            clearTimeout(loadTimer);
+            loadTimer = null;
+          }
+          teardownPlayback();
+          setLoading(true);
+          void start();
+        });
         if (cancelled) {
-          releaseStreamSlot();
+          releaseStreamSlot(streamUrl!);
           return;
         }
         slotHeld = true;
@@ -180,12 +249,9 @@ export default function LiveVideoPlayer({
 
     return () => {
       cancelled = true;
-      if (startTimer) clearTimeout(startTimer);
-      if (loadTimer) clearTimeout(loadTimer);
-      hlsInstance?.destroy();
-      video.removeAttribute('src');
-      video.load();
-      if (slotHeld) releaseStreamSlot();
+      clearAllTimers();
+      teardownPlayback();
+      releaseIfHeld();
     };
   }, [streamUrl, startDelayMs, priority]);
 
@@ -196,6 +262,7 @@ export default function LiveVideoPlayer({
       <div className={`absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white/60 ${className}`}>
         <VideoOff size={20} />
         <span className="text-[11px] font-medium">Video oqimini yuklab bo&apos;lmadi</span>
+        <span className="text-[10px] text-white/40">Qayta urinilmoqda...</span>
       </div>
     );
   }
@@ -203,8 +270,9 @@ export default function LiveVideoPlayer({
   return (
     <>
       {loading && (
-        <div className="absolute inset-0 z-[1] flex items-center justify-center bg-slate-900/80">
+        <div className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-slate-900/80">
           <Loader2 size={22} className="animate-spin text-slate-400" />
+          {retrying && <span className="text-[10px] font-medium text-slate-400">Navbatda...</span>}
         </div>
       )}
       <video
