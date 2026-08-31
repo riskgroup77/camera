@@ -30,8 +30,26 @@ _app: FaceAnalysis | None = None
 # biometrics if it specifies a target FAR/FRR).
 MATCH_THRESHOLD = 0.45
 
+# How similar every enrollment frame's embedding must be to the first
+# ("frontal") frame — guards the multi-angle enrollment flow
+# (extract_enrollment_embedding) against a bad capture session (camera
+# handed to someone else mid-scan, wrong face detected in one frame,
+# etc.). Deliberately looser than MATCH_THRESHOLD: these are the SAME
+# person's own frames from one session, just at different head angles,
+# which reduces ArcFace similarity more than two straight-on photos of
+# the same person would — but two genuinely different people's embeddings
+# still land far below this.
+ENROLLMENT_CONSISTENCY_THRESHOLD = 0.35
+
 
 class NoFaceDetectedError(Exception):
+    pass
+
+
+class InconsistentFacesError(Exception):
+    """Raised by extract_enrollment_embedding when the captured frames
+    don't look like the same person — see ENROLLMENT_CONSISTENCY_THRESHOLD."""
+
     pass
 
 
@@ -150,6 +168,47 @@ async def extract_embedding(image_bytes: bytes) -> list[float]:
     by face_inference_gate with live priority."""
     async with face_inference_gate.slot(priority=PRIORITY_LIVE):
         return await asyncio.to_thread(_extract_embedding_sync, image_bytes)
+
+
+def _extract_enrollment_embedding_sync(frames: list[bytes]) -> list[float]:
+    embeddings: list[np.ndarray] = []
+    for i, frame in enumerate(frames):
+        emb, count = _embed(frame)
+        if emb is None:
+            raise NoFaceDetectedError(f"{i + 1}-kadrda yuz aniqlanmadi ({count} ta yuz topildi)")
+        embeddings.append(emb)
+
+    reference = embeddings[0]
+    for i, emb in enumerate(embeddings[1:], start=2):
+        similarity = float(np.dot(reference, emb))  # both L2-normalized -> dot product is cosine similarity
+        if similarity < ENROLLMENT_CONSISTENCY_THRESHOLD:
+            raise InconsistentFacesError(
+                f"{i}-kadr birinchi kadrdagi yuzga mos kelmadi — bir xil odam ekanligiga ishonch hosil qiling"
+            )
+
+    # Average the per-angle embeddings into one "prototype" vector — a
+    # standard technique for multi-shot enrollment: it's more robust to any
+    # single frame's noise (motion blur, a harsh shadow at one angle) than
+    # picking just one frame, without needing to store N separate vectors
+    # per person. Re-normalized since the mean of unit vectors isn't itself
+    # unit length, and every consumer (face_matching.py) assumes normalized
+    # embeddings for its dot-product-as-cosine-similarity shortcut.
+    mean = np.mean(embeddings, axis=0)
+    norm = np.linalg.norm(mean)
+    prototype = mean / norm if norm > 0 else mean
+    return prototype.tolist()
+
+
+async def extract_enrollment_embedding(frames: list[bytes]) -> list[float]:
+    """Multi-angle enrollment (app/routers/enrollment.py's public
+    self-service flow): takes several frames of one capture session (e.g.
+    straight-on, turned left, turned right) and returns one averaged
+    embedding — see _extract_enrollment_embedding_sync for why averaging
+    beats picking a single frame, and why the frames are cross-checked for
+    consistency first. Gated by face_inference_gate with live priority,
+    same as extract_embedding()."""
+    async with face_inference_gate.slot(priority=PRIORITY_LIVE):
+        return await asyncio.to_thread(_extract_enrollment_embedding_sync, frames)
 
 
 @dataclass

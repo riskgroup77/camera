@@ -22,6 +22,15 @@ class StudentStaff(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[str] = mapped_column(String, nullable=False)
+    # Used only to self-identify for the public self-service face-enrollment
+    # flow (app/routers/enrollment.py) — an admin-imported record has no
+    # login/password, so passport series+number is the one piece of
+    # information the person themselves can supply to prove "this row is
+    # me". Uzbek passport format: 2-letter series (e.g. "AD") + 7-digit
+    # number. Nullable — existing/bulk-imported rows won't have this until
+    # the Excel import that populates it is run.
+    passport_series: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    passport_number: Mapped[str | None] = mapped_column(String(10), nullable=True)
     faculty_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("faculties.id", ondelete="SET NULL"), nullable=True, index=True
     )

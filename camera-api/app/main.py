@@ -48,6 +48,7 @@ from app.routers import (
     audit_log,
     auth,
     cameras,
+    enrollment,
     events,
     face,
     lesson_sessions,
@@ -203,6 +204,7 @@ app.include_router(lesson_sessions.router)
 app.include_router(reports.router)
 app.include_router(system.router)
 app.include_router(public.router)
+app.include_router(enrollment.router)
 
 
 @app.get("/health")

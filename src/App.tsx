@@ -4,6 +4,7 @@ import AdminLayout from './layouts/AdminLayout';
 import RequireAuth from './components/RequireAuth';
 import RequirePermission from './components/RequirePermission';
 import MonitoringPage from './pages/public/MonitoringPage';
+import EnrollmentPage from './pages/public/EnrollmentPage';
 import LoginPage from './pages/admin/LoginPage';
 import ResetPasswordPage from './pages/admin/ResetPasswordPage';
 import DashboardPage from './pages/admin/DashboardPage';
@@ -23,6 +24,7 @@ export default function App() {
     <Routes>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<MonitoringPage />} />
+        <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
       </Route>
 
       <Route path="/admin/login" element={<LoginPage />} />
