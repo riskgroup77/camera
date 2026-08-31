@@ -7,11 +7,15 @@ export default function CameraCard({
   onClick,
   playStream = true,
   streamStartDelayMs = 0,
+  priority = false,
 }: {
   camera: CameraFeed;
   onClick?: () => void;
   playStream?: boolean;
   streamStartDelayMs?: number;
+  /** Navbat (streamLoadQueue) cheklovisiz darhol ulanadi — bir nechta
+   * doim ko'rinadigan kamerani ko'rsatadigan devor rejimlari uchun. */
+  priority?: boolean;
 }) {
   const isLive = camera.status === 'live';
 
@@ -22,7 +26,11 @@ export default function CameraCard({
     >
       <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-slate-900">
         {isLive && playStream && (
-          <LiveVideoPlayer streamUrl={camera.streamUrl} startDelayMs={streamStartDelayMs} />
+          <LiveVideoPlayer
+            streamUrl={camera.streamUrl}
+            startDelayMs={streamStartDelayMs}
+            priority={priority}
+          />
         )}
         {isLive ? (
           <>

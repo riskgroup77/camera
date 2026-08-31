@@ -1,5 +1,14 @@
-/** HLS oqimlar navbati — bir vaqtda max 4 ta parallel ulanish. */
-const MAX_CONCURRENT = 4;
+/** HLS oqimlar navbati — bir vaqtda max 8 ta parallel ulanish. Faqat
+ * 'scroll' rejimidagi kartalar shu navbatdan foydalanadi (devor rejimlari
+ * — wall-4/9/16 — navbatni butunlay chetlab o'tadi, chunki foydalanuvchi
+ * aynan shu N ta kamerani bir vaqtda ko'rishni tanlagan va joy hech qachon
+ * bo'shamaydi: LiveVideoPlayer joy(slot)ni faqat komponent unmount
+ * bo'lganda (masalan scroll rejimida ekrandan chiqib ketganda) bo'shatadi
+ * — devor rejimida kartalar hech qachon unmount bo'lmaydi, shuning uchun
+ * MAX_CONCURRENT'dan oshgan kartalar abadiy "yuklanmoqda" holatida qolib
+ * ketardi.
+ */
+const MAX_CONCURRENT = 8;
 let active = 0;
 const waiters: Array<() => void> = [];
 
