@@ -378,12 +378,25 @@ class Settings(BaseSettings):
     # package (see requirements.txt) — installing the package alone does
     # nothing without also flipping this on.
     face_recognition_gpu_enabled: bool = False
-    # How many InsightFace calls run concurrently. 2 is a sane CPU default
-    # (matches _embed()'s real single-image cost on a dev machine); a GPU
-    # deployment should raise this a lot (GPUs are built for exactly this
-    # kind of batched/concurrent throughput) — tune against the actual
-    # production GPU's memory and measured latency, not blindly maxed out.
-    face_recognition_inference_concurrency: int = 2
+    # How many InsightFace calls run concurrently — this gate
+    # (app/services/inference_gate.py's face_inference_gate), not
+    # camera_sweep_slot, turned out to be the REAL bottleneck behind a
+    # measured production backlog: with 107 cameras and this at 2, median
+    # per-camera background-sweep gap was 100-175s against a configured
+    # 30s (worst case: one camera unswept for 42+ minutes). Measured the
+    # actual cost on this CPU-only production host before raising it: a
+    # single InsightFace call is ~1.4s, and running the gate's max (was 2)
+    # concurrently used only ~32% of this box's 32 cores — there was
+    # nowhere near enough concurrency to use the CPU headroom that was
+    # actually available. 8 is still conservative, not maxed out; if
+    # measured backlog persists, this can go higher — re-measure via the
+    # same method (app/services/sweep_result_cache.py timestamps) after
+    # any change, the same way this number was chosen, rather than
+    # guessing further. A real GPU deployment should raise this a lot
+    # more (GPUs are built for exactly this kind of concurrent batched
+    # throughput) — tune against the actual production GPU's memory and
+    # measured latency then, same discipline.
+    face_recognition_inference_concurrency: int = 8
 
     # Persistent per-camera frame cache (app/services/stream_cache.py) —
     # replaces spawning a fresh ffmpeg process on every single frame grab
