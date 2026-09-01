@@ -7,5 +7,22 @@ services:
       - "127.0.0.1:9101:9001"
 
   api:
+    env_file:
+      - .env
     ports: !override
       - "127.0.0.1:18080:8080"
+    # Measured before/after the stream_cache_keyframes_only fix (see
+    # app/services/stream_cache.py): camera-api's real ffmpeg CPU cost
+    # (ps aux, not docker stats — see commit message for why) dropped from
+    # ~884% to ~198% for 107 cameras. Limits below are generous headroom
+    # above that (not a tight cap) so the container can't runaway and
+    # starve the ~18 other projects sharing this host, without risking an
+    # OOM-kill from a limit set too close to real usage.
+    mem_limit: 70g
+    cpus: 8
+    pids_limit: 10000
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
