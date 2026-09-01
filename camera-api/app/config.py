@@ -115,6 +115,17 @@ class Settings(BaseSettings):
     # only briefly in frame, not filtering a noisy classification.
     attendance_entrance_burst_frame_count: int = 3
     attendance_entrance_burst_gap_seconds: float = 1.0
+    # unified_face_sweep only checks each camera once every
+    # unified_face_sweep_interval_seconds (30s default) - fine for a
+    # classroom where people linger, but an entrance/exit camera's whole
+    # point is someone passing through in a couple of seconds. If that
+    # brief window doesn't land inside one of the periodic ~2-3s bursts,
+    # they're missed entirely, not just poorly recognized. Entrance/exit
+    # cameras get their own much faster, narrowly-scoped check instead
+    # (see run_entrance_exit_attendance_sweep_once) - unified_face_sweep
+    # still handles crowd/unauthorized/sleep on these same cameras at its
+    # normal cadence, and still handles attendance for every other camera.
+    entrance_exit_attendance_interval_seconds: int = 6
 
     # TT kriteriya 20 ("Talabaning uxlab qolishi") — app/jobs/vision_ai.py.
     # Same camera pool as attendance_ai (faol + reachable), separate sweep

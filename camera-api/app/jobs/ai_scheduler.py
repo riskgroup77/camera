@@ -27,7 +27,7 @@ from typing import Any, Literal
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.abandoned_object_ai import run_abandoned_object_ai_sweep_once
-from app.jobs.attendance_ai import run_attendance_ai_sweep_once
+from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_sweep_once
 from app.jobs.badge_ai import run_badge_ai_sweep_once
 from app.jobs.crowd_density_ai import run_crowd_density_ai_sweep_once
 from app.jobs.disorder_ai import run_disorder_ai_sweep_once
@@ -72,6 +72,12 @@ def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]
                 "unified_face",
                 settings.unified_face_sweep_interval_seconds,
                 run_unified_face_sweep_once,
+                "critical",
+            ),
+            (
+                "entrance_exit_attendance",
+                settings.entrance_exit_attendance_interval_seconds,
+                run_entrance_exit_attendance_sweep_once,
                 "critical",
             ),
         ]

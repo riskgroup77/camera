@@ -52,11 +52,6 @@ def _allows(camera: Camera, module_code: int) -> bool:
     return excluded is None or module_code not in excluded
 
 
-def _is_security_camera(camera: Camera) -> bool:
-    """Piyoda kirish yoki hovli/perimetr — begona moduli shu kameralarda."""
-    return camera.is_entrance or camera.is_perimeter
-
-
 async def _load_module_flags(db: AsyncSession) -> dict[str, bool]:
     return {
         "staff_attendance": await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE),
@@ -83,15 +78,17 @@ async def _process_camera(
 ) -> dict[str, int]:
     counts = {"attendance": 0, "crowd": 0, "unauthorized": 0, "sleep": 0}
 
-    needs_attendance = (
-        flags["staff_attendance"] and _allows(camera, STAFF_ATTENDANCE_MODULE_CODE)
-    ) or (flags["student_attendance"] and _allows(camera, STUDENT_ATTENDANCE_MODULE_CODE))
-    needs_crowd = flags["crowd"] and _allows(camera, CROWD_MODULE_CODE)
-    needs_unauthorized = (
-        flags["unauthorized"]
-        and _allows(camera, UNAUTHORIZED_MODULE_CODE)
-        and _is_security_camera(camera)
+    # Entrance/exit cameras get attendance checked by their own much
+    # faster-cadence sweep instead (app/jobs/attendance_ai.py's
+    # run_entrance_exit_attendance_sweep_once, registered separately in
+    # ai_scheduler.py) — excluded here so the same camera isn't processed
+    # for attendance twice, once on each cadence.
+    needs_attendance = not (camera.is_entrance or camera.is_exit) and (
+        (flags["staff_attendance"] and _allows(camera, STAFF_ATTENDANCE_MODULE_CODE))
+        or (flags["student_attendance"] and _allows(camera, STUDENT_ATTENDANCE_MODULE_CODE))
     )
+    needs_crowd = flags["crowd"] and _allows(camera, CROWD_MODULE_CODE)
+    needs_unauthorized = flags["unauthorized"] and _allows(camera, UNAUTHORIZED_MODULE_CODE)
     needs_sleep = flags["sleep"] and _allows(camera, SLEEP_MODULE_CODE)
 
     if not any((needs_attendance, needs_crowd, needs_unauthorized, needs_sleep)):
@@ -101,7 +98,6 @@ async def _process_camera(
         primary_frame: bytes | None = None
         pair: tuple[bytes, bytes] | None = None
         sleep_frames: list[bytes] = []
-        attendance_frames: list[bytes] = []
 
         if needs_sleep:
             sleep_frames = await grab_frame_burst_for_camera(
@@ -117,15 +113,10 @@ async def _process_camera(
             if pair and primary_frame is None:
                 primary_frame = pair[1]
 
-        if needs_attendance and camera.is_entrance:
-            attendance_frames = await grab_frame_burst_for_camera(
-                camera,
-                settings.attendance_entrance_burst_frame_count,
-                settings.attendance_entrance_burst_gap_seconds,
-            )
-            if attendance_frames and primary_frame is None:
-                primary_frame = attendance_frames[0]
-        elif (needs_attendance or needs_crowd) and primary_frame is None:
+        # needs_attendance is never true for an is_entrance/is_exit camera
+        # (see above) — those get burst-grabbed by their own dedicated,
+        # faster sweep instead, so a single frame is always enough here.
+        if (needs_attendance or needs_crowd) and primary_frame is None:
             primary_frame = await grab_frame_for_camera(camera)
 
         if primary_frame is None and not sleep_frames and pair is None:
@@ -138,27 +129,18 @@ async def _process_camera(
                 if await process_camera_frame_for_crowd(primary_frame, db, camera, faces=primary_faces):
                     counts["crowd"] = 1
 
-            if needs_attendance:
-                frames_to_process = (
-                    attendance_frames
-                    if camera.is_entrance and attendance_frames
-                    else ([primary_frame] if primary_frame else [])
+            if needs_attendance and primary_frame is not None:
+                records = await process_camera_frame(
+                    primary_frame,
+                    db,
+                    camera,
+                    candidates=candidates,
+                    off_hours_module_active=flags["off_hours"],
+                    staff_module_active=flags["staff_attendance"],
+                    student_module_active=flags["student_attendance"],
+                    faces=primary_faces,
                 )
-                credited: set[str] = set()
-                for frame in frames_to_process:
-                    frame_faces = primary_faces if frame is primary_frame else None
-                    records = await process_camera_frame(
-                        frame,
-                        db,
-                        camera,
-                        candidates=candidates,
-                        off_hours_module_active=flags["off_hours"],
-                        staff_module_active=flags["staff_attendance"],
-                        student_module_active=flags["student_attendance"],
-                        faces=frame_faces,
-                    )
-                    credited.update(str(r.student_staff_id) for r in records)
-                counts["attendance"] = len(credited)
+                counts["attendance"] = len({str(r.student_staff_id) for r in records})
 
             if needs_unauthorized and pair is not None:
                 frame_a, frame_b = pair

@@ -393,6 +393,82 @@ async def run_attendance_ai_sweep_once(
     return match_count
 
 
+async def run_entrance_exit_attendance_sweep_once(
+    session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
+) -> int:
+    """Fast-cadence companion to unified_face_sweep.py's attendance check,
+    scoped to ONLY is_entrance/is_exit cameras — registered separately in
+    app/jobs/ai_scheduler.py with its own much shorter interval
+    (settings.entrance_exit_attendance_interval_seconds, see that
+    setting's docstring for why: a 30s-spaced sweep can miss someone who's
+    only in an entrance/exit camera's frame for a couple of seconds).
+
+    unified_face_sweep.py excludes is_entrance/is_exit cameras from its
+    OWN attendance check specifically to avoid this sweep and that one
+    redundantly processing the same camera twice — it still covers
+    crowd/unauthorized/sleep on these cameras at the normal cadence, and
+    still covers attendance for every other (non-entrance/exit) camera."""
+    async with session_factory() as db:
+        staff_module_active = await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE)
+        student_module_active = await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
+        if not staff_module_active and not student_module_active:
+            return 0
+        off_hours_module_active = await is_module_active(db, OFF_HOURS_MODULE_CODE)
+        result = await db.execute(
+            select(Camera)
+            .where(Camera.status == "faol")
+            .where(or_(Camera.is_entrance, Camera.is_exit))
+            .where(
+                or_(
+                    camera_allows_module(STAFF_ATTENDANCE_MODULE_CODE),
+                    camera_allows_module(STUDENT_ATTENDANCE_MODULE_CODE),
+                )
+            )
+        )
+        cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
+        candidates = await load_candidate_matrix_for_sweep(db)
+
+    if not cameras or candidates.is_empty:
+        return 0
+
+    async def _process_one(camera: Camera) -> int:
+        async with camera_sweep_slot():
+            frames = await grab_frame_burst_for_camera(
+                camera,
+                settings.attendance_entrance_burst_frame_count,
+                settings.attendance_entrance_burst_gap_seconds,
+            )
+            if not frames:
+                return 0
+
+            async with session_factory() as camera_db:
+                credited: set[str] = set()
+                for frame in frames:
+                    records = await process_camera_frame(
+                        frame,
+                        camera_db,
+                        camera,
+                        candidates=candidates,
+                        off_hours_module_active=off_hours_module_active,
+                        staff_module_active=staff_module_active,
+                        student_module_active=student_module_active,
+                    )
+                    credited.update(str(r.student_staff_id) for r in records)
+                return len(credited)
+
+    results = await asyncio.gather(*(_process_one(camera) for camera in cameras), return_exceptions=True)
+
+    match_count = 0
+    for camera, result in zip(cameras, results, strict=True):
+        if isinstance(result, BaseException):
+            logger.exception(
+                "entrance/exit attendance camera task failed", extra={"camera_id": str(camera.id)}, exc_info=result
+            )
+            continue
+        match_count += result
+    return match_count
+
+
 async def attendance_ai_loop() -> None:
     while True:
         try:
