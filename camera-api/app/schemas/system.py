@@ -54,6 +54,7 @@ class SystemAiStatusOut(CamelModel):
     last_tick: SchedulerLastTickOut
     gpu: GpuStatusOut
     sweep_slots: ConcurrencySlotOut
+    entrance_exit_sweep_slots: ConcurrencySlotOut
     face_inference_gate: ConcurrencySlotOut
     stream_reader_count: int
     embedding_sweep_cache_ttl_seconds: int

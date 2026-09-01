@@ -109,6 +109,7 @@ async def get_ai_status(_: Annotated[CurrentUser, Depends(get_current_user)]) ->
         last_tick=SchedulerLastTickOut(**raw["last_tick"]),
         gpu=GpuStatusOut(**raw["gpu"]),
         sweep_slots=ConcurrencySlotOut(**raw["sweep_slots"]),
+        entrance_exit_sweep_slots=ConcurrencySlotOut(**raw["entrance_exit_sweep_slots"]),
         face_inference_gate=ConcurrencySlotOut(**raw["face_inference_gate"]),
         stream_reader_count=int(raw["stream_reader_count"]),
         embedding_sweep_cache_ttl_seconds=int(raw["embedding_sweep_cache_ttl_seconds"]),

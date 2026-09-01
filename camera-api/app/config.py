@@ -136,6 +136,21 @@ class Settings(BaseSettings):
     # normal cadence, and still handles attendance for every other camera.
     entrance_exit_attendance_interval_seconds: int = 6
 
+    # Entrance/exit cameras get their OWN concurrency budget
+    # (app/jobs/sweep_concurrency.py's entrance_exit_sweep_slot), separate
+    # from the shared ai_global_sweep_concurrency pool every other sweep
+    # draws from. Found as a real, measured production bug: this sweep's
+    # 6s cadence + 3-frame burst-grab per camera (~2-4s slot-hold each)
+    # meant it was recurring 5x more often than the 30s unified_face_sweep
+    # and repeatedly grabbing a large share of the shared 18-slot pool,
+    # starving unified_face_sweep's ability to keep its own cadence for
+    # every other camera — measured median per-camera sweep gap of ~101s
+    # against a configured 30s, with one camera going 42 minutes unswept.
+    # A separate, small pool sized to this sweep's own (much smaller)
+    # camera count means it can run at full speed without taking capacity
+    # away from anything else.
+    entrance_exit_sweep_concurrency: int = 6
+
     # TT kriteriya 20 ("Talabaning uxlab qolishi") — app/jobs/vision_ai.py.
     # Same camera pool as attendance_ai (faol + reachable), separate sweep
     # since it checks EVERY face in frame (attendance only matches the

@@ -2,7 +2,7 @@
 
 from app.config import settings
 from app.jobs.scheduler_metrics import get_scheduler_tick_stats
-from app.jobs.sweep_concurrency import sweep_concurrency_snapshot
+from app.jobs.sweep_concurrency import entrance_exit_sweep_concurrency_snapshot, sweep_concurrency_snapshot
 from app.services.gpu_status import get_gpu_status
 from app.services.inference_gate import face_inference_gate
 from app.services.stream_cache import active_stream_reader_count
@@ -54,6 +54,7 @@ def build_ai_runtime_status() -> dict[str, object]:
         },
         "gpu": gpu,
         "sweep_slots": sweep,
+        "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),
         "face_inference_gate": face_inference_gate.snapshot(),
         "stream_reader_count": active_stream_reader_count(),
         "embedding_sweep_cache_ttl_seconds": settings.candidate_matrix_sweep_cache_ttl_seconds,

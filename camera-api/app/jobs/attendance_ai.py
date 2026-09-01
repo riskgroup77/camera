@@ -43,7 +43,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
-from app.jobs.sweep_concurrency import camera_sweep_slot
+from app.jobs.sweep_concurrency import camera_sweep_slot, entrance_exit_sweep_slot
 from app.models import AttendanceRecord, AuditLog, Camera, LessonSession, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
@@ -485,7 +485,7 @@ async def run_entrance_exit_attendance_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> int:
-        async with camera_sweep_slot():
+        async with entrance_exit_sweep_slot():
             frames = await grab_frame_burst_for_camera(
                 camera,
                 settings.attendance_entrance_burst_frame_count,
