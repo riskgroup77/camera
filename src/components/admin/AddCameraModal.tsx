@@ -23,6 +23,7 @@ interface FormState {
   status: CameraConfig['status'];
   isEntrance: boolean;
   isPerimeter: boolean;
+  isExit: boolean;
 }
 
 function toForm(c?: CameraConfig | null): FormState {
@@ -43,6 +44,7 @@ function toForm(c?: CameraConfig | null): FormState {
     status: c?.status ?? 'nofaol',
     isEntrance: c?.isEntrance ?? false,
     isPerimeter: c?.isPerimeter ?? false,
+    isExit: c?.isExit ?? false,
   };
 }
 
@@ -153,6 +155,7 @@ export default function AddCameraModal({
         status: form.status,
         isEntrance: form.isEntrance,
         isPerimeter: form.isPerimeter,
+        isExit: form.isExit,
       };
       const saved = isEdit
         ? await api.patch<CameraConfig>(`/api/cameras/${camera.id}`, payload, token)
@@ -323,6 +326,21 @@ export default function AddCameraModal({
             Hovli / perimetr kamerasi
             <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
               (begona moduli, transport — bino oldi, avtoturargoh)
+            </span>
+          </span>
+        </label>
+        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm dark:bg-white/5">
+          <input
+            type="checkbox"
+            checked={form.isExit}
+            onChange={(e) => set('isExit', e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span className="text-slate-700 dark:text-slate-300">
+            Chiqish kamerasi
+            <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+              (faqat shu kamerada ko'rinish "ketdi" deb belgilanadi — boshqa ichki kameralar davomatni
+              tasdiqlaydi, lekin ketishni belgilamaydi)
             </span>
           </span>
         </label>

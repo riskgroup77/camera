@@ -34,7 +34,7 @@ import logging
 from datetime import datetime, time as time_type
 
 import numpy as np
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -97,20 +97,21 @@ async def upsert_attendance_from_recognition(
     off_hours_module_active: bool = True,
     frame_bytes: bytes | None = None,
 ) -> AttendanceRecord:
-    """First sighting of the day inserts the row (sets check_in and the
-    keldi/kech_keldi status); every later sighting the same day hits the
-    ON CONFLICT branch, which only ever touches check_out — status and
-    check_in from the first sighting are left alone. That gives a real,
-    working "last seen" signal (check_out tracks the most recent sighting)
-    that falls naturally out of periodic re-sampling.
+    """First sighting of the day (on ANY camera the attendance module runs
+    on) inserts the row — sets check_in and the keldi/kech_keldi status.
+    A later sighting the same day only ever advances check_out, and ONLY
+    when it comes from a camera flagged Camera.is_exit — see that field's
+    docstring. Without this gate, check_out was really just "last seen by
+    ANY camera today," so being spotted once by an ordinary interior
+    camera (a classroom, a hallway) silently doubled as "left the
+    building." A later non-exit sighting still confirms the person is on
+    campus (harmless no-op here) without touching check_out; status and
+    check_in from the first sighting are always left alone either way.
 
     `camera` is optional only for callers (tests, mainly) that don't care
     about TT kriteriya 3 — passing it lets a genuine first-sighting-of-the-
     day check-in outside operating hours raise a real Event, exactly like
-    any other AI-detected incident. Needs its own "is this the first
-    sighting today" check (unlike the upsert above) so a person who
-    legitimately arrived off-hours doesn't get re-flagged every sweep tick
-    for the rest of the day as their check_out keeps advancing.
+    any other AI-detected incident.
 
     `off_hours_module_active` defaults to True so direct/test callers keep
     working unchanged — the real sweep loop (run_attendance_ai_sweep_once)
@@ -128,50 +129,82 @@ async def upsert_attendance_from_recognition(
     occurred_time = local_occurred_at.time().replace(microsecond=0)
     cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
     status = "kech_keldi" if occurred_time >= cutoff else "keldi"
+    is_exit_sighting = camera is not None and camera.is_exit
 
-    is_first_sighting_today = (
+    existing = (
         await db.execute(
-            select(AttendanceRecord.id)
+            select(AttendanceRecord)
             .where(AttendanceRecord.student_staff_id == student_staff_id)
             .where(AttendanceRecord.date == record_date)
         )
-    ).scalar_one_or_none() is None
+    ).scalar_one_or_none()
+    is_first_sighting_today = existing is None
+    wrote_something = False
 
-    stmt = (
-        insert(AttendanceRecord)
-        .values(
-            student_staff_id=student_staff_id,
-            date=record_date,
-            status=status,
-            check_in=occurred_time,
-            check_out=None,
+    if is_first_sighting_today:
+        # on_conflict_do_nothing (not do_update): a concurrent sighting on
+        # another camera may have inserted the row a moment ago — that
+        # insert already owns check_in/status for today, so this one backs
+        # off rather than overwriting it. The re-fetch below then behaves
+        # exactly like a normal "not first sighting" call.
+        stmt = (
+            insert(AttendanceRecord)
+            .values(
+                student_staff_id=student_staff_id,
+                date=record_date,
+                status=status,
+                check_in=occurred_time,
+                check_out=None,
+            )
+            .on_conflict_do_nothing(index_elements=[AttendanceRecord.student_staff_id, AttendanceRecord.date])
+            .returning(AttendanceRecord)
         )
-        .on_conflict_do_update(
-            index_elements=[AttendanceRecord.student_staff_id, AttendanceRecord.date],
-            set_={"check_out": occurred_time},
+        record = (await db.execute(stmt)).scalar_one_or_none()
+        if record is None:
+            existing = (
+                await db.execute(
+                    select(AttendanceRecord)
+                    .where(AttendanceRecord.student_staff_id == student_staff_id)
+                    .where(AttendanceRecord.date == record_date)
+                )
+            ).scalar_one()
+        else:
+            wrote_something = True
+    if not wrote_something and existing is not None and is_exit_sighting:
+        # populate_existing=True: without it, when this same day's row is
+        # already in the session's identity map, SQLAlchemy's ORM-enabled
+        # RETURNING silently keeps the stale cached object instead of
+        # applying the just-updated check_out.
+        stmt = (
+            update(AttendanceRecord)
+            .where(AttendanceRecord.id == existing.id)
+            .values(check_out=occurred_time)
+            .returning(AttendanceRecord)
         )
-        .returning(AttendanceRecord)
-    )
-    # populate_existing=True: without it, when this same day's row is
-    # already in the session's identity map (e.g. a prior sighting today),
-    # SQLAlchemy's ORM-enabled RETURNING silently keeps the stale cached
-    # object instead of applying the just-updated check_out — found by
-    # test_second_sighting_same_day_only_advances_check_out actually
-    # failing, not by inspection.
-    result = await db.execute(stmt.execution_options(populate_existing=True))
-    record = result.scalar_one()
+        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
+        wrote_something = True
+    elif not wrote_something:
+        record = existing
 
-    person = await db.get(StudentStaff, student_staff_id)
-    db.add(
-        AuditLog(
-            user_id=None,
-            user_name="AI davomat tizimi",
-            action=f"Yuzni tanish orqali davomat qayd etildi: {person.full_name if person else student_staff_id}",
-            module="Talabalar",
-            status="muvaffaqiyatli",
-            ip="internal",
-        )
+    # Skip the extra lookup entirely for the common no-op case (a mid-day
+    # sighting on an ordinary, non-exit camera writes nothing) — this
+    # function runs once per matched face per sweep tick, so an unneeded
+    # StudentStaff SELECT here isn't free at scale.
+    needs_person = wrote_something or (
+        is_first_sighting_today and off_hours_module_active and camera is not None and _is_off_hours(occurred_time)
     )
+    person = await db.get(StudentStaff, student_staff_id) if needs_person else None
+    if wrote_something:
+        db.add(
+            AuditLog(
+                user_id=None,
+                user_name="AI davomat tizimi",
+                action=f"Yuzni tanish orqali davomat qayd etildi: {person.full_name if person else student_staff_id}",
+                module="Talabalar",
+                status="muvaffaqiyatli",
+                ip="internal",
+            )
+        )
 
     if off_hours_module_active and camera is not None and is_first_sighting_today and _is_off_hours(occurred_time):
         await raise_event(

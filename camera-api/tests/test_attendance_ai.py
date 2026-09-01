@@ -38,6 +38,19 @@ async def a_camera(db_session, seeded):
     return camera
 
 
+@pytest.fixture
+async def an_exit_camera(db_session, seeded):
+    building = (await db_session.execute(select(Building))).scalars().first()
+    camera = Camera(
+        name="Chiqish kamerasi", ip="10.0.9.2", building_id=building.id, zone="Chiqish",
+        resolution="1080p", status="faol", is_exit=True,
+    )
+    db_session.add(camera)
+    await db_session.commit()
+    await db_session.refresh(camera, attribute_names=["building"])
+    return camera
+
+
 class TestFindBestMatch:
     def test_no_candidates_returns_none(self):
         assert find_best_match([1.0, 0.0], []) is None
@@ -86,22 +99,27 @@ class TestUpsertAttendanceFromRecognition:
         record = await upsert_attendance_from_recognition(db_session, str(student.id), occurred_at)
         assert record.status == "kech_keldi"
 
-    async def test_second_sighting_same_day_only_advances_check_out(self, db_session):
+    async def test_second_sighting_on_a_non_exit_camera_does_not_set_check_out(self, db_session, a_camera):
+        """Only a camera flagged is_exit may ever advance check_out — an
+        ordinary interior camera (classroom, hallway) confirms someone is
+        still on campus, not that they left. See Camera.is_exit's
+        docstring for why "last seen anywhere" used to be silently treated
+        as "check-out time"."""
         faculty = (await db_session.execute(select(Faculty))).scalars().first()
         student = StudentStaff(full_name="Ikki Marta Ko'ringan", type="talaba", faculty_id=faculty.id, group_or_position="1")
         db_session.add(student)
         await db_session.commit()
 
         morning = _local_time(8, 0)
-        first = await upsert_attendance_from_recognition(db_session, str(student.id), morning)
+        first = await upsert_attendance_from_recognition(db_session, str(student.id), morning, a_camera)
         assert first.status == "keldi"
         assert first.check_out is None
 
         afternoon = morning + timedelta(hours=6)
-        second = await upsert_attendance_from_recognition(db_session, str(student.id), afternoon)
+        second = await upsert_attendance_from_recognition(db_session, str(student.id), afternoon, a_camera)
         assert second.status == "keldi"  # unchanged from first sighting
         assert second.check_in.strftime("%H:%M") == "08:00"  # unchanged
-        assert second.check_out.strftime("%H:%M") == "14:00"
+        assert second.check_out is None  # a non-exit camera never sets check_out
 
         rows = (
             await db_session.execute(
@@ -109,6 +127,25 @@ class TestUpsertAttendanceFromRecognition:
             )
         ).scalars().all()
         assert len(rows) == 1  # still one row for the day, not two
+
+    async def test_sighting_on_an_exit_camera_sets_check_out(self, db_session, a_camera, an_exit_camera):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        student = StudentStaff(full_name="Chiqib Ketgan", type="talaba", faculty_id=faculty.id, group_or_position="1")
+        db_session.add(student)
+        await db_session.commit()
+
+        morning = _local_time(8, 0)
+        await upsert_attendance_from_recognition(db_session, str(student.id), morning, a_camera)
+
+        # Seen mid-day by an ordinary camera — must NOT touch check_out.
+        midday = morning + timedelta(hours=3)
+        mid = await upsert_attendance_from_recognition(db_session, str(student.id), midday, a_camera)
+        assert mid.check_out is None
+
+        evening = morning + timedelta(hours=8)
+        left = await upsert_attendance_from_recognition(db_session, str(student.id), evening, an_exit_camera)
+        assert left.check_in.strftime("%H:%M") == "08:00"  # unchanged
+        assert left.check_out.strftime("%H:%M") == "16:00"
 
     async def test_writes_an_audit_log_entry_attributed_to_the_ai(self, db_session):
         from app.models import AuditLog

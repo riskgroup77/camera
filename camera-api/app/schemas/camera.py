@@ -49,6 +49,9 @@ class CameraOut(CamelModel):
     # Hovli, bino oldi, avtoturargoh — begona shaxs va transport AI uchun.
     # is_entrance (piyoda kirish) bilan birga yoki alohida belgilanadi.
     is_perimeter: bool = False
+    # See app/models/camera.py's Camera.is_exit docstring — only a sighting
+    # on a camera flagged this way ever advances AttendanceRecord.check_out.
+    is_exit: bool = False
     # Set only by app/services/camera_import.py — null for hand-added cameras.
     mac_address: str | None = None
 
@@ -67,6 +70,7 @@ class CameraCreateIn(CamelModel):
     status: Literal["faol", "nofaol", "tamirda"] = "nofaol"
     is_entrance: bool = False
     is_perimeter: bool = False
+    is_exit: bool = False
 
 
 class CameraUpdateIn(CameraCreateIn):

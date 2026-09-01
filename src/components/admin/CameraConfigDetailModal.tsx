@@ -72,6 +72,9 @@ export default function CameraConfigDetailModal({
             {camera.isEntrance && (
               <Badge tone="indigo">Kirish kamerasi</Badge>
             )}
+            {camera.isExit && (
+              <Badge tone="amber">Chiqish kamerasi</Badge>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-sm">

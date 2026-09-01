@@ -122,6 +122,10 @@ export interface CameraConfig {
   isEntrance?: boolean;
   /** Hovli, bino oldi, avtoturargoh — begona moduli va transport AI uchun. */
   isPerimeter?: boolean;
+  /** true bo'lsa, app/jobs/attendance_ai.py faqat SHU kamerada ko'rinishni
+   * "ketdi" (check_out) deb hisoblaydi — oddiy ichki kameralarda (xona,
+   * dahliz) ko'rinish davomatni tasdiqlaydi, lekin "ketdi" deb belgilamaydi. */
+  isExit?: boolean;
   /** app/services/camera_import.py orqali SADP CSV'dan import qilingan
    * kameralar uchun to'ldiriladi (qayta-import qilinganda IP emas, shu
    * bo'yicha aniqlanadi) — qo'lda qo'shilgan kameralarda null. */

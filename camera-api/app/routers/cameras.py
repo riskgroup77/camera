@@ -72,6 +72,7 @@ def _to_out(camera: Camera) -> CameraOut:
         excluded_module_codes=camera.excluded_module_codes,
         is_entrance=camera.is_entrance,
         is_perimeter=camera.is_perimeter,
+        is_exit=camera.is_exit,
         mac_address=camera.mac_address,
     )
 
@@ -228,6 +229,7 @@ async def create_camera(
         status=body.status,
         is_entrance=body.is_entrance,
         is_perimeter=body.is_perimeter,
+        is_exit=body.is_exit,
     )
     db.add(camera)
     await log_action(db, request, current_user.id, f"Yangi kamera qo'shdi: {body.name}", "Kameralar")
@@ -292,6 +294,7 @@ async def update_camera(
     camera.status = body.status
     camera.is_entrance = body.is_entrance
     camera.is_perimeter = body.is_perimeter
+    camera.is_exit = body.is_exit
 
     await log_action(db, request, current_user.id, f"Kamerani tahrirladi: {body.name}", "Kameralar")
     await db.commit()

@@ -84,4 +84,15 @@ class Camera(Base):
     # is_entrance (piyoda kirish) bilan birga yoki alohida belgilanadi.
     is_perimeter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # TT kriteriya 6/7 (davomat) — app/jobs/attendance_ai.py only ever
+    # advances AttendanceRecord.check_out from a sighting on a camera
+    # flagged this way. Without this, "check_out" was really just "last
+    # seen by ANY camera today" — being spotted once by an ordinary
+    # interior camera (a classroom, a hallway) doesn't mean someone left
+    # the building, but it was silently treated as if it did. False by
+    # default — an admin marks the actual exit/main-gate camera(s); every
+    # other camera's sighting still confirms the person is present today
+    # (keldi/kech_keldi) but never touches check_out.
+    is_exit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
