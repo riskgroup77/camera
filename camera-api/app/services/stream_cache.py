@@ -122,12 +122,23 @@ class _StreamReader:
 
     async def _start(self) -> None:
         cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+        # See stream_cache_decode_threads/stream_cache_keyframes_only's
+        # docstrings in app/config.py — both target the same measured
+        # problem (one persistent reader per camera decoding far more
+        # than the ~1-2fps this cache actually samples) without changing
+        # anything callers see: same JPEG-frame contract, same cache
+        # behavior, just far less CPU spent producing it.
+        if settings.stream_cache_decode_threads > 0:
+            cmd.extend(["-threads", str(settings.stream_cache_decode_threads)])
+        if settings.stream_cache_keyframes_only:
+            cmd.extend(["-skip_frame", "nokey"])
         if self.stream_url.startswith("rtsp://"):
             cmd.extend(["-rtsp_transport", "tcp"])
         cmd.extend(
             [
                 "-i",
                 self.stream_url,
+                "-an",
                 "-f",
                 "mjpeg",
                 "-q:v",

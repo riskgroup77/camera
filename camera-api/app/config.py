@@ -372,6 +372,27 @@ class Settings(BaseSettings):
     stream_cache_max_age_seconds: float = 15.0
     stream_cache_idle_timeout_seconds: float = 300.0
     stream_cache_capture_fps: float = 2.0
+    # A camera's real stream runs at its native fps (e.g. 25) but
+    # stream_cache_capture_fps only needs ~1-2 of those per second —
+    # ffmpeg was still decoding EVERY incoming frame just to throw away
+    # all but the sampled ones (measured: ~96% of decode work discarded).
+    # -skip_frame nokey tells the decoder to skip non-keyframe (P/B)
+    # packets entirely, decoding only I-frames — which is exactly what a
+    # 1-2fps sample needs, PROVIDED the camera's keyframe interval (GOP)
+    # is short enough that a fresh I-frame always arrives within
+    # stream_cache_max_age_seconds. Verify with ffprobe before enabling
+    # fleet-wide (frame=key_frame over a short read_interval) — a camera
+    # with a long GOP would otherwise serve stale frames. Off by default
+    # since that verification is camera/fleet-specific, not something
+    # this code can confirm for itself.
+    stream_cache_keyframes_only: bool = False
+    # ffmpeg's default is one decode thread per CPU core - fine for a
+    # single process, but with one persistent reader PER CAMERA (see
+    # stream_cache.py's module docstring) that's core-count-times-camera-
+    # count threads all fighting over the same physical cores (measured:
+    # 100+ camera readers can add up to several thousand threads for a
+    # few dozen actual cores). 0 leaves ffmpeg's own default in place.
+    stream_cache_decode_threads: int = 0
     # How long a stream reader gets to decode its first frame before a
     # caller's grab_frame_for_camera() poll gives up early instead of
     # burning its full 8-18s wait budget. Once a reader has run this long
