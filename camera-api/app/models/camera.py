@@ -80,8 +80,20 @@ class Camera(Base):
     # camera where people linger, e.g. a classroom).
     is_entrance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # Hovli, bino oldi, avtoturargoh — begona moduli va transport AI uchun.
-    # is_entrance (piyoda kirish) bilan birga yoki alohida belgilanadi.
+    # Hovli, bino oldi, avtoturargoh. is_entrance (piyoda kirish) bilan
+    # birga yoki alohida belgilanadi.
+    #
+    # app/jobs/vehicle_ai.py ONLY runs on cameras flagged this way — a
+    # vehicle inside a classroom/hallway is nonsensical, so every other
+    # camera is excluded outright (not just module-deactivated).
+    #
+    # Deliberately NOT used to restrict TT kriteriya 1 (begona shaxs/
+    # unauthorized-person) coverage, despite this field's name: an
+    # unrecognized face is worth flagging anywhere in the building, not
+    # only at the perimeter — narrowing that module's coverage would be a
+    # real security regression, not a cleanup. See app/jobs/
+    # unified_face_sweep.py's needs_unauthorized for the actual (deliberately
+    # building-wide) gate.
     is_perimeter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # TT kriteriya 6/7 (davomat) — app/jobs/attendance_ai.py only ever

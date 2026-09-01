@@ -11,7 +11,7 @@ from app.jobs.attendance_ai import (
     process_camera_frame,
     upsert_attendance_from_recognition,
 )
-from app.models import AttendanceRecord, Building, Camera, Event, Faculty, StudentStaff
+from app.models import AttendanceRecord, Building, Camera, Event, Faculty, LessonSession, StudentStaff
 from app.services.face_recognition import detect_faces, extract_embedding
 from app.timezone import INSTITUTE_TZ
 
@@ -87,6 +87,112 @@ class TestUpsertAttendanceFromRecognition:
         record = await upsert_attendance_from_recognition(db_session, str(student.id), occurred_at)
         assert record.status == "keldi"
         assert record.check_in.strftime("%H:%M") == "08:30"
+
+    async def test_late_to_own_lesson_overrides_the_global_cutoff(self, db_session):
+        """A student sighted at 08:10 for a lesson that started at 08:00
+        must read as late — even though 08:10 is well before the flat
+        09:00 global fallback cutoff. See _relevant_lesson_start's
+        docstring for why a single clock time can't express this."""
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        student = StudentStaff(
+            full_name="Darsga Kech Kelgan", type="talaba", faculty_id=faculty.id, group_or_position="19-IQT"
+        )
+        db_session.add(student)
+        db_session.add(
+            LessonSession(
+                date=_local_time(8, 0).date(),
+                group_name="19-IQT",
+                faculty="Iqtisodiyot",
+                teacher="Test O'qituvchi",
+                subject="Matematika",
+                attention_score=0,
+                teacher_activity_score=0,
+                scheduled_start_time=_local_time(8, 0),
+            )
+        )
+        await db_session.commit()
+
+        record = await upsert_attendance_from_recognition(db_session, str(student.id), _local_time(8, 10))
+        assert record.status == "kech_keldi"
+
+    async def test_on_time_for_a_later_lesson_despite_being_after_the_global_cutoff(self, db_session):
+        """A student sighted at 10:02 for a lesson starting at 10:00 is on
+        time (within the grace window) — even though 10:02 is after the
+        flat 09:00 fallback cutoff, which would have wrongly marked them
+        late under the old, lesson-unaware rule."""
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        student = StudentStaff(
+            full_name="Ikkinchi Darsga Keldi", type="talaba", faculty_id=faculty.id, group_or_position="20-IQT"
+        )
+        db_session.add(student)
+        db_session.add(
+            LessonSession(
+                date=_local_time(10, 0).date(),
+                group_name="20-IQT",
+                faculty="Iqtisodiyot",
+                teacher="Test O'qituvchi",
+                subject="Fizika",
+                attention_score=0,
+                teacher_activity_score=0,
+                scheduled_start_time=_local_time(10, 0),
+            )
+        )
+        await db_session.commit()
+
+        record = await upsert_attendance_from_recognition(db_session, str(student.id), _local_time(10, 2))
+        assert record.status == "keldi"
+
+    async def test_teacher_late_to_their_own_lesson_is_matched_by_teacher_id(self, db_session):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        teacher = StudentStaff(
+            full_name="Kech Qolgan Domla", type="xodim", faculty_id=faculty.id, group_or_position="O'qituvchi"
+        )
+        db_session.add(teacher)
+        await db_session.flush()
+        db_session.add(
+            LessonSession(
+                date=_local_time(8, 0).date(),
+                group_name="21-IQT",
+                faculty="Iqtisodiyot",
+                teacher=teacher.full_name,
+                teacher_id=teacher.id,
+                subject="Kimyo",
+                attention_score=0,
+                teacher_activity_score=0,
+                scheduled_start_time=_local_time(8, 0),
+            )
+        )
+        await db_session.commit()
+
+        record = await upsert_attendance_from_recognition(db_session, str(teacher.id), _local_time(8, 12))
+        assert record.status == "kech_keldi"
+
+    async def test_no_relevant_lesson_falls_back_to_the_global_cutoff(self, db_session):
+        """Before a scheduled lesson's active window has even started, it
+        isn't "relevant" yet — falls back to the flat
+        attendance_ai_late_cutoff, exactly like a person with no lessons
+        scheduled at all."""
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        student = StudentStaff(
+            full_name="Darslar Orasida", type="talaba", faculty_id=faculty.id, group_or_position="22-IQT"
+        )
+        db_session.add(student)
+        db_session.add(
+            LessonSession(
+                date=_local_time(8, 0).date(),
+                group_name="22-IQT",
+                faculty="Iqtisodiyot",
+                teacher="Test O'qituvchi",
+                subject="Tarix",
+                attention_score=0,
+                teacher_activity_score=0,
+                scheduled_start_time=_local_time(8, 0),  # not relevant yet at 07:00 — hasn't started
+            )
+        )
+        await db_session.commit()
+
+        record = await upsert_attendance_from_recognition(db_session, str(student.id), _local_time(7, 0))
+        assert record.status == "keldi"  # 07:00 is before the 09:00 fallback cutoff
         assert record.check_out is None
 
     async def test_first_sighting_after_cutoff_is_kech_keldi(self, db_session):

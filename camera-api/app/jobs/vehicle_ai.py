@@ -97,8 +97,12 @@ async def process_camera_frame_pair_for_vehicle(
 async def run_vehicle_ai_sweep_once(
     session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
 ) -> int:
-    """Grabs a frame pair from every reachable 'faol' camera and checks
-    it for vehicles — cameras run concurrently (bounded by
+    """Grabs a frame pair from every reachable 'faol' camera flagged
+    Camera.is_perimeter (yard/building-front/parking-lot — see that
+    field's docstring) and checks it for vehicles. Restricted to perimeter
+    cameras since a vehicle inside a classroom/hallway is nonsensical —
+    every other camera used to run this pointlessly too before this
+    filter existed. Cameras run concurrently (bounded by
     _camera_semaphore). See app/jobs/attendance_ai.py's
     run_attendance_ai_sweep_once, which this mirrors. Returns how many
     vehicle-detection Events were raised."""
@@ -106,7 +110,10 @@ async def run_vehicle_ai_sweep_once(
         if not await is_module_active(db, VEHICLE_MODULE_CODE):
             return 0
         result = await db.execute(
-            select(Camera).where(Camera.status == "faol").where(camera_allows_module(VEHICLE_MODULE_CODE))
+            select(Camera)
+            .where(Camera.status == "faol")
+            .where(Camera.is_perimeter)
+            .where(camera_allows_module(VEHICLE_MODULE_CODE))
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
 

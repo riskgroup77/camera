@@ -108,7 +108,7 @@ class TestSweepConcurrency:
             camera = Camera(
                 name=f"Kamera {i}", ip=f"10.0.9.{i + 60}", stream_url=f"rtsp://fake/{i}",
                 building_id=building.id, zone="Z", resolution="1080p", status="faol",
-                last_seen_at=datetime.now(timezone.utc),
+                last_seen_at=datetime.now(timezone.utc), is_perimeter=True,
             )
             db_session.add(camera)
             cameras.append(camera)
@@ -130,3 +130,28 @@ class TestSweepConcurrency:
 
         await run_vehicle_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing
+
+    async def test_non_perimeter_camera_is_never_swept(self, db_session, seeded, monkeypatch):
+        """A vehicle can't appear inside a classroom/hallway — only
+        Camera.is_perimeter cameras (yard/building-front/parking-lot) are
+        eligible at all, regardless of module activation/exclusion."""
+        from datetime import datetime, timezone
+
+        building = (await db_session.execute(select(Building))).scalars().first()
+        camera = Camera(
+            name="Sinf xonasi", ip="10.0.9.99", stream_url="rtsp://fake/indoor",
+            building_id=building.id, zone="Sinf", resolution="1080p", status="faol",
+            last_seen_at=datetime.now(timezone.utc), is_perimeter=False,
+        )
+        db_session.add(camera)
+        await db_session.commit()
+
+        calls = {"n": 0}
+
+        async def counting_grab_frame_pair(stream_url, gap_seconds=1.0):
+            calls["n"] += 1
+            return b"a", b"b"
+
+        monkeypatch.setattr(vehicle_ai, "grab_frame_pair_for_camera", counting_grab_frame_pair)
+        await run_vehicle_ai_sweep_once(session_factory=TestSessionLocal)
+        assert calls["n"] == 0

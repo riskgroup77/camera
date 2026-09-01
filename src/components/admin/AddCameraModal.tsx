@@ -325,7 +325,7 @@ export default function AddCameraModal({
           <span className="text-slate-700 dark:text-slate-300">
             Hovli / perimetr kamerasi
             <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-              (begona moduli, transport — bino oldi, avtoturargoh)
+              (transport AI faqat shu kameralarda ishlaydi — bino oldi, avtoturargoh)
             </span>
           </span>
         </label>

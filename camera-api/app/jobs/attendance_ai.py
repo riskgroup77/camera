@@ -31,7 +31,7 @@ originally structured to allow either.
 
 import asyncio
 import logging
-from datetime import datetime, time as time_type
+from datetime import datetime, time as time_type, timedelta
 
 import numpy as np
 from sqlalchemy import or_, select, update
@@ -44,7 +44,7 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
+from app.models import AttendanceRecord, AuditLog, Camera, LessonSession, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
@@ -74,6 +74,42 @@ def _is_off_hours(occurred_time: time_type) -> bool:
     start = time_type.fromisoformat(settings.attendance_off_hours_start)
     end = time_type.fromisoformat(settings.attendance_off_hours_end)
     return occurred_time < start or occurred_time >= end
+
+
+async def _relevant_lesson_start(db: AsyncSession, person: StudentStaff, local_occurred_at: datetime) -> datetime | None:
+    """TT kriteriya 8 ("Darsga kechikish") should measure lateness against
+    the person's ACTUAL scheduled lesson, not one fixed clock time that
+    has nothing to do with anyone's real timetable — a student arriving
+    at 08:30 for a class that started at 08:00 is late; the same student
+    at 08:30 for a class starting at 10:00 isn't "late", they're just
+    early. A flat settings.attendance_ai_late_cutoff can't tell these
+    apart, and (before this) was the ONLY thing kriteriya 8 ever checked.
+
+    "Relevant" = a LessonSession scheduled to have started at or before
+    this moment and not yet over — the exact same active-window
+    definition app/jobs/lesson_quality_ai.py's _active_sessions() and
+    app/jobs/teacher_punctuality_ai.py already use (settings.
+    lesson_duration_minutes), so "on time for the lesson" means the same
+    thing everywhere in this codebase. Matched by group for a student,
+    by teacher_id for staff — returns the most recently-started matching
+    lesson if more than one somehow qualifies. None if no lesson is
+    currently relevant (a gap between classes, a weekend, staff with no
+    teaching duties right now) — callers should fall back to the flat
+    clock-cutoff rule in that case, since "late" is meaningless without a
+    lesson to be late for."""
+    stmt = select(LessonSession).where(LessonSession.scheduled_start_time.is_not(None))
+    if person.type == "talaba":
+        stmt = stmt.where(LessonSession.group_name == person.group_or_position)
+    else:
+        stmt = stmt.where(LessonSession.teacher_id == person.id)
+
+    best: datetime | None = None
+    for row in (await db.execute(stmt)).scalars().all():
+        start = row.scheduled_start_time
+        end = start + timedelta(minutes=settings.lesson_duration_minutes)
+        if start <= local_occurred_at <= end and (best is None or start > best):
+            best = start
+    return best
 
 
 def find_best_match(
@@ -122,13 +158,13 @@ async def upsert_attendance_from_recognition(
     app/timezone.py) before its date/time are extracted — record_date is
     the LOCAL calendar day (not UTC's, which would misfile a real local
     midnight-to-5am arrival under yesterday's date), and occurred_time is
-    what actually gets compared against attendance_ai_late_cutoff below,
-    which is itself written as a local clock time."""
+    what actually gets compared against a lateness cutoff below — either
+    the person's actual lesson start time (see _relevant_lesson_start) or,
+    when no lesson is currently relevant, attendance_ai_late_cutoff as a
+    flat fallback, itself written as a local clock time."""
     local_occurred_at = to_local(occurred_at)
     record_date = local_occurred_at.date()
     occurred_time = local_occurred_at.time().replace(microsecond=0)
-    cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
-    status = "kech_keldi" if occurred_time >= cutoff else "keldi"
     is_exit_sighting = camera is not None and camera.is_exit
 
     existing = (
@@ -140,8 +176,24 @@ async def upsert_attendance_from_recognition(
     ).scalar_one_or_none()
     is_first_sighting_today = existing is None
     wrote_something = False
+    person: StudentStaff | None = None
 
     if is_first_sighting_today:
+        person = await db.get(StudentStaff, student_staff_id)
+        lesson_start = await _relevant_lesson_start(db, person, local_occurred_at) if person is not None else None
+        if lesson_start is not None:
+            # scheduled_start_time comes back from the DB as an aware
+            # datetime, but not necessarily labeled in the institute's own
+            # timezone (asyncpg/postgres normalize to UTC) — to_local()
+            # first, or .time() below would extract the wrong wall-clock
+            # hour:minute to compare against occurred_time.
+            cutoff = (
+                to_local(lesson_start) + timedelta(minutes=settings.attendance_late_to_lesson_grace_minutes)
+            ).time()
+        else:
+            cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
+        status = "kech_keldi" if occurred_time >= cutoff else "keldi"
+
         # on_conflict_do_nothing (not do_update): a concurrent sighting on
         # another camera may have inserted the row a moment ago — that
         # insert already owns check_in/status for today, so this one backs
@@ -186,14 +238,15 @@ async def upsert_attendance_from_recognition(
     elif not wrote_something:
         record = existing
 
-    # Skip the extra lookup entirely for the common no-op case (a mid-day
-    # sighting on an ordinary, non-exit camera writes nothing) — this
-    # function runs once per matched face per sweep tick, so an unneeded
-    # StudentStaff SELECT here isn't free at scale.
-    needs_person = wrote_something or (
-        is_first_sighting_today and off_hours_module_active and camera is not None and _is_off_hours(occurred_time)
-    )
-    person = await db.get(StudentStaff, student_staff_id) if needs_person else None
+    # person is already fetched above whenever this was a first sighting
+    # (needed for the lesson lookup) — only the non-first-sighting,
+    # exit-camera-checkout path still needs to fetch it here, and only for
+    # the audit log entry. Skips the lookup entirely for the common no-op
+    # case (a mid-day sighting on an ordinary, non-exit camera writes
+    # nothing) — this function runs once per matched face per sweep tick,
+    # so an unneeded StudentStaff SELECT here isn't free at scale.
+    if person is None and wrote_something:
+        person = await db.get(StudentStaff, student_staff_id)
     if wrote_something:
         db.add(
             AuditLog(

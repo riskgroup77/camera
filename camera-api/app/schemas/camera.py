@@ -46,8 +46,8 @@ class CameraOut(CamelModel):
     # app/jobs/attendance_ai.py grabs a multi-frame burst from this
     # camera instead of a single frame.
     is_entrance: bool = False
-    # Hovli, bino oldi, avtoturargoh — begona shaxs va transport AI uchun.
-    # is_entrance (piyoda kirish) bilan birga yoki alohida belgilanadi.
+    # See app/models/camera.py's Camera.is_perimeter docstring —
+    # app/jobs/vehicle_ai.py only runs on cameras flagged this way.
     is_perimeter: bool = False
     # See app/models/camera.py's Camera.is_exit docstring — only a sighting
     # on a camera flagged this way ever advances AttendanceRecord.check_out.
