@@ -11,6 +11,7 @@ from app.models import Report
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.report import ReportGenerateIn, ReportOut
 from app.services.report_generator import generate_rule_based_report
+from app.timezone import to_local
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -22,7 +23,7 @@ def _to_out(r: Report) -> ReportOut:
         id=str(r.id),
         period=r.period,
         period_label=r.period_label,
-        generated_at=r.generated_at.strftime("%Y-%m-%d %H:%M"),
+        generated_at=to_local(r.generated_at).strftime("%Y-%m-%d %H:%M"),
         source=r.source,
         summary=r.summary,
         body=r.body,

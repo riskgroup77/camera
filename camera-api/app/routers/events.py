@@ -23,7 +23,7 @@ from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.event import EventCreateIn, EventOut, EventReviewIn
 from app.security import decode_access_token
 from app.storage import presigned_url
-from app.timezone import local_now
+from app.timezone import local_now, to_local
 from app.ws import manager
 
 router = APIRouter(tags=["events"])
@@ -32,7 +32,7 @@ router = APIRouter(tags=["events"])
 def _to_out(event: Event) -> EventOut:
     return EventOut(
         id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
+        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
         camera_id=str(event.camera_id) if event.camera_id else "",
         camera_name=event.camera_name,
         building=event.building,

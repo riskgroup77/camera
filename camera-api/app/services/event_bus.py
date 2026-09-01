@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Camera, Event
 from app.schemas.event import EventOut
 from app.storage import presigned_url, upload_file
+from app.timezone import to_local
 from app.ws import manager
 
 logger = logging.getLogger("app.event_bus")
@@ -75,7 +76,7 @@ async def raise_event(
     await db.flush()
     event_out = EventOut(
         id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
+        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
         camera_id=str(event.camera_id) if event.camera_id else "",
         camera_name=event.camera_name,
         building=event.building,

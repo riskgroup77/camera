@@ -9,6 +9,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.models import AuditLog
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.audit_log import AuditLogOut
+from app.timezone import to_local
 
 router = APIRouter(prefix="/api/audit-log", tags=["audit-log"])
 
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/api/audit-log", tags=["audit-log"])
 def _to_out(entry: AuditLog) -> AuditLogOut:
     return AuditLogOut(
         id=str(entry.id),
-        timestamp=entry.occurred_at.strftime("%Y-%m-%d %H:%M:%S"),
+        timestamp=to_local(entry.occurred_at).strftime("%Y-%m-%d %H:%M:%S"),
         user=entry.user_name,
         action=entry.action,
         module=entry.module,

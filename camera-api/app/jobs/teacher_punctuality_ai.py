@@ -56,7 +56,7 @@ from app.schemas.event import EventOut
 from app.services.face_matching import find_best_match
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_for_camera
-from app.timezone import local_now
+from app.timezone import local_now, to_local
 from app.ws import manager
 
 logger = logging.getLogger("app.teacher_punctuality_ai")
@@ -154,7 +154,7 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
     await db.flush()
     event_out = EventOut(
         id=str(event.id),
-        timestamp=event.occurred_at.strftime("%Y-%m-%d %H:%M"),
+        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
         camera_id=str(event.camera_id) if event.camera_id else "",
         camera_name=event.camera_name,
         building=event.building,

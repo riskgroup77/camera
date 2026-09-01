@@ -14,6 +14,7 @@ from app.rate_limit import limiter
 from app.schemas.permission import PermissionEntryOut, PermissionToggleIn
 from app.schemas.user import AdminUserOut, ResetUserPasswordIn, UserCreateIn, UserUpdateIn
 from app.security import hash_password
+from app.timezone import to_local
 from app.utils import compute_initials
 
 router = APIRouter(tags=["users"])
@@ -22,7 +23,7 @@ router = APIRouter(tags=["users"])
 def _format_last_login(user: User) -> str:
     if user.last_login_at is None:
         return "Hali kirmagan"
-    return user.last_login_at.strftime("%Y-%m-%d %H:%M")
+    return to_local(user.last_login_at).strftime("%Y-%m-%d %H:%M")
 
 
 def _to_admin_user_out(user: User) -> AdminUserOut:
