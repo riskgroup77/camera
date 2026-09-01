@@ -33,6 +33,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
+import cv2
 import numpy as np
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -74,6 +75,31 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+def _frame_height(image_bytes: bytes) -> int:
+    arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    return img.shape[0] if img is not None else 0
+
+
+def _filter_faces_by_size(faces: list, image_bytes: bytes) -> list:
+    """Drops faces whose bbox height is smaller than
+    unauthorized_min_face_height_fraction of the frame's height — see that
+    setting's docstring in app/config.py. A printed photo on a wall reads
+    as a real, matchable-or-not face to InsightFace with nothing to tell
+    it apart from a distant/small genuine face except relative size, so
+    this is a size floor, not a face-quality check. Returns a new list;
+    never mutates the caller's `faces` (which may be a list shared with
+    attendance matching elsewhere, e.g. unified_face_sweep.py's
+    primary_faces)."""
+    if not faces:
+        return faces
+    frame_height = _frame_height(image_bytes)
+    if frame_height <= 0:
+        return faces  # couldn't decode dimensions — fail open rather than silently drop real faces
+    min_height = frame_height * settings.unauthorized_min_face_height_fraction
+    return [face for face in faces if (face.bbox[3] - face.bbox[1]) >= min_height]
+
+
 def _has_unmatched_face(faces, candidates: CandidateMatrix) -> bool:
     if not faces:
         return False
@@ -97,6 +123,7 @@ async def process_camera_frame_pair_for_unauthorized(
     see the module docstring for the two-frame confirmation rationale."""
     if faces_b is None:
         faces_b = await detect_faces(frame_b)
+    faces_b = _filter_faces_by_size(faces_b, frame_b)
     if not faces_b:
         return False
 
@@ -108,6 +135,7 @@ async def process_camera_frame_pair_for_unauthorized(
 
     if faces_a is None:
         faces_a = await detect_faces(frame_a)
+    faces_a = _filter_faces_by_size(faces_a, frame_a)
     if not _has_unmatched_face(faces_a, candidates):
         return False  # frame_a had no unmatched face — frame_b's miss looks like a one-off angle/lighting glitch
 

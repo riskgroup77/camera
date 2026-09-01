@@ -1,12 +1,15 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import insightface
 import pytest
 from sqlalchemy import select
 
+from app.config import settings
 from app.jobs import unauthorized_person_ai
 from app.jobs.unauthorized_person_ai import (
     UNAUTHORIZED_MODULE_CODE,
+    _filter_faces_by_size,
     _recently_flagged,
     process_camera_frame_pair_for_unauthorized,
     run_unauthorized_person_ai_sweep_once,
@@ -45,8 +48,45 @@ class TestRecentlyFlagged:
         assert await _recently_flagged(db_session, a_camera.id) is True
 
 
+class TestFilterFacesBySize:
+    def test_face_below_min_fraction_is_dropped(self, monkeypatch):
+        monkeypatch.setattr(unauthorized_person_ai, "_frame_height", lambda image_bytes: 1000)
+        monkeypatch.setattr(settings, "unauthorized_min_face_height_fraction", 0.1)
+        small_face = SimpleNamespace(bbox=[0, 0, 50, 50])  # 50px height on a 1000px frame = 5% < 10%
+        assert _filter_faces_by_size([small_face], b"fake") == []
+
+    def test_face_at_or_above_min_fraction_is_kept(self, monkeypatch):
+        monkeypatch.setattr(unauthorized_person_ai, "_frame_height", lambda image_bytes: 1000)
+        monkeypatch.setattr(settings, "unauthorized_min_face_height_fraction", 0.1)
+        large_face = SimpleNamespace(bbox=[0, 0, 50, 150])  # 150px height = 15% >= 10%
+        assert _filter_faces_by_size([large_face], b"fake") == [large_face]
+
+    def test_undecodable_frame_fails_open_rather_than_drop_real_faces(self, monkeypatch):
+        monkeypatch.setattr(unauthorized_person_ai, "_frame_height", lambda image_bytes: 0)
+        tiny_face = SimpleNamespace(bbox=[0, 0, 1, 1])
+        assert _filter_faces_by_size([tiny_face], b"fake") == [tiny_face]
+
+    def test_empty_faces_list_returns_as_is(self):
+        assert _filter_faces_by_size([], b"fake") == []
+
+
 @pytest.mark.usefixtures("seeded")
 class TestProcessCameraFramePairForUnauthorized:
+    async def test_small_face_like_a_wall_photo_does_not_raise(self, db_session, a_camera, monkeypatch):
+        # Simulates the real-world false positive this filter targets: a
+        # printed photo on a wall (a noticeboard, a poster) reads as a
+        # face to InsightFace but is a small fraction of the frame — see
+        # app/config.py's unauthorized_min_face_height_fraction docstring.
+        monkeypatch.setattr(unauthorized_person_ai, "_filter_faces_by_size", lambda faces, image_bytes: [])
+
+        frame = FACE_IMAGE_PATH.read_bytes()
+        raised = await process_camera_frame_pair_for_unauthorized(frame, frame, db_session, a_camera)
+        assert raised is False
+
+        events = (await db_session.execute(select(Event))).scalars().all()
+        assert len(events) == 0
+
+
     async def test_no_face_in_frame_raises_no_event(self, db_session, a_camera):
         import io
 

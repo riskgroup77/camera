@@ -180,6 +180,17 @@ class Settings(BaseSettings):
     # app/jobs/unauthorized_person_ai.py.
     unauthorized_person_ai_interval_seconds: int = 30
     unauthorized_person_dedup_minutes: int = 5
+    # InsightFace's detector has no liveness/depth check — a printed photo
+    # on a wall (a noticeboard, an ID card, a poster) reads as a real face
+    # just like a person does, and being flat and permanent, it passes the
+    # two-frame confirmation every single time (unlike a genuine one-off
+    # detection glitch). A real person close enough to a hallway camera to
+    # be a security-relevant sighting has a face that's a meaningfully
+    # larger fraction of the frame than a small photo on a distant wall.
+    # Faces shorter than this fraction of the frame's height are ignored
+    # for unauthorized-person purposes (still detected/matched normally
+    # for attendance elsewhere, where a false match just costs nothing).
+    unauthorized_min_face_height_fraction: float = 0.08
 
     # TT kriteriya 5 ("Olomon zichligi anomaliyasi") —
     # app/jobs/crowd_density_ai.py. baseline_window/min_samples control the
