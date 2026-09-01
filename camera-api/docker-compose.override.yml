@@ -18,8 +18,20 @@ services:
     # above that (not a tight cap) so the container can't runaway and
     # starve the ~18 other projects sharing this host, without risking an
     # OOM-kill from a limit set too close to real usage.
+    #
+    # cpus raised 8 -> 20 after a follow-up finding: raising
+    # face_recognition_inference_concurrency (2 -> 8, see that setting's
+    # docstring in app/config.py) to fix a measured AI-sweep backlog gave
+    # the process real work to do with the new concurrency, and `top` on
+    # the host showed the api process pinned at ~635% — hard up against
+    # the old 8-core (800%) cap while the HOST itself sat at ~76% idle
+    # across all 32 cores. The old cap was sized for the pre-inference-fix
+    # workload, not this one; 20 leaves the other ~18 projects on this
+    # host a comfortable 12+ cores and matches what the process actually
+    # needs to use the concurrency now configured, instead of silently
+    # cgroup-throttling it back down.
     mem_limit: 70g
-    cpus: 8
+    cpus: 20
     pids_limit: 10000
     logging:
       driver: "json-file"
