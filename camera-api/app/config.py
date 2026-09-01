@@ -354,7 +354,24 @@ class Settings(BaseSettings):
     # Max cameras processed concurrently ACROSS ALL AI sweep modules.
     # app/jobs/sweep_concurrency.py — every module shares this one cap so
     # parallel scheduler ticks can't spawn (module_count × N) pipelines.
-    ai_global_sweep_concurrency: int = 18
+    #
+    # Raised 18 -> 40 after tracing a measured production backlog past
+    # face_recognition_inference_concurrency: app/jobs/unified_face_sweep.py's
+    # _process_camera holds ONE camera_sweep_slot for its camera's ENTIRE
+    # multi-frame sequence, including the deliberate asyncio.sleep() gaps
+    # between burst frames (sleep_confirmation_gap_seconds /
+    # attendance_entrance_burst_gap_seconds / grab_frame_pair's gap) — up
+    # to ~4s of pure waiting, zero CPU, per camera needing both sleep and
+    # unauthorized-person checks. With only 18 slots, most of the pool was
+    # tied up WAITING rather than computing (confirmed live: `top` showed
+    # the container at just ~47% CPU of its cap while the sweep still ran
+    # ~140s/round for 107 cameras — not CPU-bound, slot-starved on
+    # deliberately-idle time). Raising this doesn't add real compute load
+    # the way face_recognition_inference_concurrency does — it lets more
+    # cameras' idle gap-waits overlap — so it can go much higher than that
+    # setting without a proportional CPU cost. Re-measure via
+    # sweep_result_cache timestamps after any change to this number.
+    ai_global_sweep_concurrency: int = 40
 
     # Deprecated alias kept for older .env files — prefer
     # AI_GLOBAL_SWEEP_CONCURRENCY on production servers.
