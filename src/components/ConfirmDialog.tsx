@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import Modal from './Modal';
 
@@ -21,6 +21,22 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Bitta ConfirmDialog instansi sahifa umrida qayta-qayta ochiladi
+  // (masalan Hodisalar jurnalida har bir qatorning o'z "O'chirish"
+  // tugmasi bir xil dialogni ochadi) — `pending`/`error` shu instansining
+  // ICHKI holati bo'lgani uchun, ochilish/yopilish orasida o'zi
+  // tozalanmasdi: birinchi o'chirishdan qolgan `pending=true` ikkinchi
+  // ochilishda ham qolib, tasdiqlash tugmasini "O'chirilmoqda..." holida
+  // abadiy o'chirilgan (disabled) qilib qo'yardi — go'yo hali ham
+  // birinchisi o'chirilayotgandek. Har safar YANGI ochilganda (open
+  // false->true) holatni tozalab qo'yamiz.
+  useEffect(() => {
+    if (open) {
+      setPending(false);
+      setError(null);
+    }
+  }, [open]);
 
   async function handleConfirm() {
     setPending(true);
