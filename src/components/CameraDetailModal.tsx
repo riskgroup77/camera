@@ -3,25 +3,8 @@ import { Building2, Circle, Expand, MapPin, Minimize2, Sparkles } from 'lucide-r
 import Modal from './Modal';
 import LiveVideoPlayer from './LiveVideoPlayer';
 import { useCameraAnalysisStatus } from '../lib/useCameraAnalysisStatus';
+import { formatModules, formatSecondsAgo } from '../lib/formatAnalysis';
 import type { CameraFeed } from '../types';
-
-function formatSecondsAgo(seconds: number | null | undefined): string {
-  if (seconds == null) return 'hali tahlil yo\'q';
-  if (seconds < 60) return `${seconds} soniya oldin`;
-  const mins = Math.floor(seconds / 60);
-  return `${mins} daqiqa oldin`;
-}
-
-function formatModules(modules: string[]): string {
-  if (!modules.length) return 'modul yo\'q';
-  const labels: Record<string, string> = {
-    attendance: 'davomat',
-    crowd: 'olomon',
-    unauthorized: 'begona',
-    sleep: 'uxlab qolish',
-  };
-  return modules.map((m) => labels[m] ?? m).join(', ');
-}
 
 export default function CameraDetailModal({
   camera,

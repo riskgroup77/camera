@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Clock3, LogOut, Loader2, Moon, Search, Trophy, UserCheck, Users, UserX } from 'lucide-react';
+import { AlertTriangle, Clock3, LogOut, Moon, Search, SlidersHorizontal, Trophy, UserCheck, Users, UserX } from 'lucide-react';
 import StatCard from '../../components/StatCard';
 import CameraFilterBar, { EMPTY_FILTERS, type CameraFilters } from '../../components/CameraFilterBar';
-import CameraDetailModal from '../../components/CameraDetailModal';
-import VirtualCameraGrid from '../../components/VirtualCameraGrid';
-import type { GridLayoutMode } from '../../lib/virtualCameraGrid';
 import TopStudentsModal from '../../components/TopStudentsModal';
 import QuickAccessBar from '../../components/QuickAccessBar';
+import MainCameraView from '../../components/monitor/MainCameraView';
+import CameraThumbnailStrip, { THUMBS_PER_PAGE } from '../../components/monitor/CameraThumbnailStrip';
+import ReportPanel from '../../components/monitor/ReportPanel';
+import EventsLogPanel from '../../components/monitor/EventsLogPanel';
+import AlarmPanel from '../../components/monitor/AlarmPanel';
 import { api, buildQuery, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { AttendanceStats, CameraFeed } from '../../types';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = THUMBS_PER_PAGE;
 const SEARCH_DEBOUNCE_MS = 300;
 
 const EMPTY_STATS: AttendanceStats = {
@@ -34,15 +36,13 @@ export default function MonitoringPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filters, setFilters] = useState<CameraFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
-  const [selectedCamera, setSelectedCamera] = useState<CameraFeed | null>(null);
+  const [activeCamera, setActiveCamera] = useState<CameraFeed | null>(null);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
-  const [layoutMode, setLayoutMode] = useState<GridLayoutMode>('scroll');
 
   const [cameras, setCameras] = useState<CameraFeed[]>([]);
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
   const [stats, setStats] = useState<AttendanceStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Qidiruv har bosilgan tugmada emas, foydalanuvchi to'xtaganda so'rov
@@ -77,14 +77,15 @@ export default function MonitoringPage() {
     setPage(1);
   }, [debouncedSearch, filters.building, statusFilter]);
 
-  // Joriy sahifani (yoki "Ko'proq ko'rsatish" bosilganda keyingi sahifani)
-  // serverdan yuklaydi — javob endi bitta katta massiv emas, chegaralangan
+  // Joriy 8 talik sahifani serverdan yuklaydi — javob chegaralangan
   // Page<T> (app/pagination.py), shuning uchun kameralar soni ortsa ham
-  // bitta so'rov hajmi cheklangan bo'lib qoladi.
+  // bitta so'rov hajmi cheklangan bo'lib qoladi. Eskisidek to'plab
+  // borish ("load more") o'rniga endi har sahifa avvalgisini almashtiradi
+  // — kichik miniatyuralar panelida haqiqiy oldingi/keyingi navigatsiya
+  // kutiladi.
   useEffect(() => {
     let cancelled = false;
-    if (page === 1) setLoading(true);
-    else setLoadingMore(true);
+    setLoading(true);
 
     const qs = buildQuery({
       page,
@@ -98,18 +99,21 @@ export default function MonitoringPage() {
       .get<Page<CameraFeed>>(`/api/public/cameras${qs}`)
       .then((res) => {
         if (cancelled) return;
-        setCameras((prev) => (page === 1 ? res.items : [...prev, ...res.items]));
+        setCameras(res.items);
         setPageInfo({ total: res.total, totalPages: res.totalPages });
         setError(null);
+        // Faqat birinchi marta (hali hech narsa tanlanmaganda) asosiy
+        // ko'rinish uchun birinchi kamerani avtomatik tanlaydi — asosiy
+        // kamera tanlangandan keyin miniatyuralar sahifasini almashtirish
+        // uni o'zgartirmasligi kerak (asosiy kamera joriy 8 talikda
+        // bo'lishi shart emas).
+        setActiveCamera((current) => current ?? res.items[0] ?? current);
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);
       })
       .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-          setLoadingMore(false);
-        }
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -127,9 +131,6 @@ export default function MonitoringPage() {
     }),
     [stats],
   );
-
-  const visible = cameras;
-  const remaining = pageInfo.total - cameras.length;
 
   function resetFilters(next: CameraFilters) {
     setFilters(next);
@@ -220,89 +221,64 @@ export default function MonitoringPage() {
         </div>
       </section>
 
-      <section className="glass p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
-              Video Monitoring Markazi
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {pageInfo.total} ta kamera topildi · {visible.length} ta ko&apos;rsatilmoqda
-              (kamerani bosing — batafsil ma&apos;lumot)
-            </p>
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        {/* Monitor — 3/4 */}
+        <div className="glass space-y-4 p-6 lg:col-span-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
+                Video Monitoring Markazi
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {pageInfo.total} ta kamera · miniatyurani bosing — asosiy ko&apos;rinishga o&apos;tadi
+              </p>
+            </div>
+
+            <div className="relative w-full max-w-xs">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Kamera nomi yoki zona bo'yicha qidiruv..."
+                aria-label="Kameralarni qidirish"
+                className="w-full rounded-xl border border-white/80 dark:border-white/10 bg-white/60 dark:bg-white/5 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 dark:text-slate-500 focus:border-indigo-300"
+              />
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {(
-              [
-                ['scroll', 'Ro\'yxat'],
-                ['wall-4', '4 ta devor'],
-                ['wall-9', '9 ta devor'],
-                ['wall-16', '16 ta devor'],
-              ] as const
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setLayoutMode(mode)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                  layoutMode === mode
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="glass-deep p-3">
+            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <SlidersHorizontal size={13} className="text-indigo-500" />
+              Smart Filtr
+            </h3>
+            <CameraFilterBar filters={filters} onChange={resetFilters} stats={quickStats} buildings={stats.buildings} />
           </div>
 
-          <div className="relative w-full max-w-xs">
-            <Search
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Kamera nomi yoki zona bo'yicha qidiruv..."
-              aria-label="Kameralarni qidirish"
-              className="w-full rounded-xl border border-white/80 dark:border-white/10 bg-white/60 dark:bg-white/5 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 dark:text-slate-500 focus:border-indigo-300"
-            />
-          </div>
+          <MainCameraView camera={activeCamera} />
+
+          <CameraThumbnailStrip
+            cameras={cameras}
+            activeId={activeCamera?.id ?? null}
+            onSelect={setActiveCamera}
+            page={page}
+            totalPages={pageInfo.totalPages}
+            total={pageInfo.total}
+            onPageChange={setPage}
+            loading={loading}
+          />
         </div>
 
-        <CameraFilterBar filters={filters} onChange={resetFilters} stats={quickStats} buildings={stats.buildings} />
-
-        {loading && cameras.length === 0 ? (
-          <div className="flex items-center justify-center py-10 text-slate-400">
-            <Loader2 size={20} className="animate-spin" />
-          </div>
-        ) : visible.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-sm text-slate-400 dark:text-slate-500">
-            Filtrlarga mos kamera topilmadi
-          </p>
-        ) : (
-          <VirtualCameraGrid
-            cameras={visible}
-            layoutMode={layoutMode}
-            onSelect={setSelectedCamera}
-          />
-        )}
-
-        {layoutMode === 'scroll' && remaining > 0 && (
-          <div className="mt-6 flex justify-center">
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={loadingMore}
-              className="btn-glass disabled:opacity-60"
-            >
-              {loadingMore ? "Yuklanmoqda..." : `Ko'proq ko'rsatish (+${Math.min(PAGE_SIZE, remaining)} kamera)`}
-            </button>
-          </div>
-        )}
+        {/* Yon panel — 1/4 */}
+        <div className="space-y-4 lg:col-span-1">
+          <ReportPanel />
+          <EventsLogPanel />
+          <AlarmPanel cameras={cameras} onSelectCamera={setActiveCamera} />
+        </div>
       </section>
 
-      <CameraDetailModal camera={selectedCamera} onClose={() => setSelectedCamera(null)} />
       <TopStudentsModal open={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
     </div>
   );
