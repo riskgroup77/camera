@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Annotated
@@ -17,7 +18,7 @@ from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import invalidate_candidate_matrix_cache
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
 from app.services.student_import import import_students_staff_csv
-from app.storage import presigned_url, upload_file
+from app.storage import delete_files_quietly, presigned_url, upload_file
 from app.utils import compute_initials
 
 router = APIRouter(prefix="/api/students-staff", tags=["students-staff"])
@@ -175,7 +176,13 @@ async def enroll_biometrics(
     except NoFaceDetectedError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
-    _file_id, key = upload_file(data, photo.filename or "face.jpg", photo.content_type or "image/jpeg", "biometrics")
+    # upload_file is a blocking boto3 network call — off the event loop,
+    # same as app/services/event_bus.py's snapshot upload. On a busy API
+    # process a synchronous S3 round trip here stalls every other request.
+    previous_key = record.biometric_photo_key
+    _file_id, key = await asyncio.to_thread(
+        upload_file, data, photo.filename or "face.jpg", photo.content_type or "image/jpeg", "biometrics"
+    )
     record.biometric_photo_key = key
     record.biometric_embedding = json.dumps(embedding)
     record.biometrics_status = "tasdiqlangan"
@@ -183,5 +190,9 @@ async def enroll_biometrics(
     await log_action(db, request, current_user.id, f"Biometrik ma'lumot saqlandi: {record.full_name}", "Talabalar")
     await db.commit()
     await db.refresh(record)
+    # Re-enrollment replaces the key on the row; without this the previous
+    # photo stays in object storage with nothing referencing it, forever.
+    if previous_key and previous_key != key:
+        await delete_files_quietly([previous_key])
     invalidate_candidate_matrix_cache()
     return _to_out(record, record.faculty.name if record.faculty else "")

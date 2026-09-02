@@ -22,7 +22,7 @@ from app.models import Camera, Event, User
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.event import EventCreateIn, EventOut, EventReviewIn
 from app.security import decode_access_token
-from app.storage import presigned_url
+from app.storage import delete_files_quietly, presigned_url
 from app.timezone import local_now, to_local
 from app.ws import manager
 
@@ -148,9 +148,15 @@ async def delete_event(
     if event is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hodisa topilmadi")
 
+    snapshot_key = event.snapshot_key
     await log_action(db, request, current_user.id, f"Hodisani o'chirdi: {event.module_name}", "AI Modullari")
     await db.delete(event)
     await db.commit()
+    # The row is the source of truth; its snapshot in object storage is
+    # derived data that nothing can reach once the row is gone. Deleting
+    # it here (best-effort, after the commit) is what keeps MinIO from
+    # accumulating unreachable JPEGs forever — see delete_files_quietly.
+    await delete_files_quietly([snapshot_key])
 
 
 @router.patch("/api/events/{event_id}/review", response_model=EventOut)

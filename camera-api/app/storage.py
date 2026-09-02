@@ -4,11 +4,16 @@ S3_ENDPOINT_URL changes). Replaces the frontend's fileUpload.ts, which
 only ever created a temporary browser object URL — nothing was actually
 persisted anywhere."""
 
+import asyncio
+import logging
 import uuid
+from collections.abc import Iterable
 
 import boto3
 
 from app.config import settings
+
+logger = logging.getLogger("app.storage")
 
 _s3 = boto3.client(
     "s3",
@@ -69,3 +74,28 @@ def presigned_url(key: str) -> str:
 
 def delete_file(key: str) -> None:
     _s3.delete_object(Bucket=settings.s3_bucket, Key=key)
+
+
+async def delete_files_quietly(keys: Iterable[str | None]) -> int:
+    """Best-effort removal of stored objects whose owning DB rows are going
+    away. Returns how many were actually deleted.
+
+    Deliberately swallows per-key failures: an object that's already gone,
+    or a transient MinIO hiccup, must never fail (or roll back) the DB
+    operation that triggered this — the row deletion is the source of
+    truth, the object is derived data. Anything left behind is at worst a
+    leaked object, which is exactly what this function exists to reduce.
+
+    Runs the blocking boto3 calls off the event loop (see upload_file's
+    call site in app/services/event_bus.py for the same reasoning).
+    """
+    deleted = 0
+    for key in keys:
+        if not key:
+            continue
+        try:
+            await asyncio.to_thread(delete_file, key)
+            deleted += 1
+        except Exception:
+            logger.warning("could not delete stored object", extra={"key": key}, exc_info=True)
+    return deleted

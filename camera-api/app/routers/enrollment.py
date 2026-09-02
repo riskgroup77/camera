@@ -17,6 +17,7 @@ someone else's already-verified one; an admin has to do that deliberately
 via the existing /api/students-staff/{id}/biometrics endpoint.
 """
 
+import asyncio
 import json
 import logging
 from typing import Annotated
@@ -36,7 +37,7 @@ from app.services.face_recognition import (
     NoFaceDetectedError,
     extract_enrollment_embedding,
 )
-from app.storage import upload_file
+from app.storage import delete_files_quietly, upload_file
 
 logger = logging.getLogger("app.enrollment")
 
@@ -128,12 +129,19 @@ async def submit_enrollment(
     except (NoFaceDetectedError, InconsistentFacesError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
-    _file_id, key = upload_file(frames[0], "face.jpg", "image/jpeg", "biometrics")
+    # Blocking boto3 call kept off the event loop, and the photo this
+    # replaces (a re-enrollment) removed afterwards so it doesn't sit in
+    # object storage unreferenced — see app/storage.py's
+    # delete_files_quietly for why both matter.
+    previous_key = record.biometric_photo_key
+    _file_id, key = await asyncio.to_thread(upload_file, frames[0], "face.jpg", "image/jpeg", "biometrics")
     record.biometric_photo_key = key
     record.biometric_embedding = json.dumps(embedding)
     record.biometrics_status = "tasdiqlangan"
 
     await db.commit()
+    if previous_key and previous_key != key:
+        await delete_files_quietly([previous_key])
     logger.info("self-service biometric enrollment completed", extra={"record_id": record_id})
     invalidate_candidate_matrix_cache()
     return EnrollmentSubmitOut(full_name=record.full_name, biometrics_status=record.biometrics_status)

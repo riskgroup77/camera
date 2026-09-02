@@ -11,12 +11,13 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models import AuditLog, Event, PasswordResetToken, RevokedToken
+from app.storage import delete_files_quietly
 
 logger = logging.getLogger("app.cleanup")
 
@@ -33,14 +34,31 @@ async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
     )
     audit_result = await db.execute(delete(AuditLog).where(AuditLog.occurred_at < retention_cutoff))
     event_cutoff = now - timedelta(days=settings.event_retention_days)
+    # Collect the snapshot keys BEFORE the rows go away — once they're
+    # deleted nothing knows those objects exist, and MinIO grows forever.
+    # (Every purged event previously leaked its JPEG; delete_file() existed
+    # in app/storage.py but had no caller anywhere in the codebase.)
+    expiring_keys = (
+        await db.execute(
+            select(Event.snapshot_key).where(
+                Event.occurred_at < event_cutoff, Event.snapshot_key.is_not(None)
+            )
+        )
+    ).scalars().all()
     event_result = await db.execute(delete(Event).where(Event.occurred_at < event_cutoff))
     await db.commit()
+
+    # After the commit: the rows are gone regardless of whether object
+    # storage cooperates, and a failed object delete must not roll the
+    # purge back (see delete_files_quietly).
+    snapshots_deleted = await delete_files_quietly(expiring_keys)
 
     counts = {
         "revoked_tokens": revoked_result.rowcount or 0,
         "password_reset_tokens": reset_result.rowcount or 0,
         "audit_logs": audit_result.rowcount or 0,
         "events": event_result.rowcount or 0,
+        "event_snapshots": snapshots_deleted,
     }
     if any(counts.values()):
         logger.info("cleanup sweep removed expired rows", extra=counts)
