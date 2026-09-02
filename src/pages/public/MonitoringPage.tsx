@@ -1,17 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Clock3, LogOut, Moon, Search, SlidersHorizontal, Trophy, UserCheck, Users, UserX } from 'lucide-react';
-import StatCard from '../../components/StatCard';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import CameraFilterBar, { EMPTY_FILTERS, type CameraFilters } from '../../components/CameraFilterBar';
-import TopStudentsModal from '../../components/TopStudentsModal';
-import QuickAccessBar from '../../components/QuickAccessBar';
 import MainCameraView from '../../components/monitor/MainCameraView';
 import CameraThumbnailStrip, { THUMBS_PER_PAGE } from '../../components/monitor/CameraThumbnailStrip';
 import ReportPanel from '../../components/monitor/ReportPanel';
 import EventsLogPanel from '../../components/monitor/EventsLogPanel';
 import AlarmPanel from '../../components/monitor/AlarmPanel';
 import { api, buildQuery, type Page } from '../../lib/apiClient';
-import { useAuth } from '../../lib/auth';
 import type { AttendanceStats, CameraFeed } from '../../types';
 
 const PAGE_SIZE = THUMBS_PER_PAGE;
@@ -30,14 +25,11 @@ const EMPTY_STATS: AttendanceStats = {
 };
 
 export default function MonitoringPage() {
-  const navigate = useNavigate();
-  const { role, logout } = useAuth();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filters, setFilters] = useState<CameraFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [activeCamera, setActiveCamera] = useState<CameraFeed | null>(null);
-  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
   const [cameras, setCameras] = useState<CameraFeed[]>([]);
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
@@ -54,8 +46,8 @@ export default function MonitoringPage() {
 
   const statusFilter = filters.status === 'JONLI' ? 'live' : filters.status === 'OFLAYN' ? 'offline' : undefined;
 
-  // Statistikalar (jami/jonli/oflayn kameralar, binolar ro'yxati) —
-  // sahifalash va filtrlardan mustaqil, alohida so'raladi.
+  // Statistikalar (jami/jonli/oflayn kameralar, binolar ro'yxati) — Smart
+  // Filtr'ning tezkor ko'rsatkichlari va bino ro'yxati shundan olinadi.
   useEffect(() => {
     let cancelled = false;
     api
@@ -118,8 +110,6 @@ export default function MonitoringPage() {
     };
   }, [page, debouncedSearch, filters.building, statusFilter]);
 
-  const attendanceRate = stats.totalStudents > 0 ? Math.round((stats.present / stats.totalStudents) * 100) : 0;
-
   const quickStats = useMemo(
     () => ({
       live: stats.liveCameras,
@@ -135,84 +125,7 @@ export default function MonitoringPage() {
   }
 
   return (
-    <div className="w-full space-y-4">
-      <section className="glass p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
-            Bugungi Davomat Statistikasi
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setLeaderboardOpen(true)}
-              className="btn-glass flex items-center gap-1.5"
-            >
-              <Trophy size={14} />
-              Namunali talabalar
-            </button>
-            <button
-              onClick={() => {
-                if (role) logout();
-                navigate('/admin/login');
-              }}
-              className="glass-btn-danger flex items-center gap-1.5 !py-2"
-            >
-              <LogOut size={14} />
-              Chiqish
-            </button>
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <QuickAccessBar />
-        </div>
-
-        <div className="mb-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-500/10 p-3 text-sm">
-          <span className="font-semibold text-indigo-700 dark:text-indigo-400">Umumiy davomat: </span>
-          <span className="text-indigo-900 dark:text-indigo-300">
-            {attendanceRate}% ({stats.present}/{stats.totalStudents})
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <StatCard
-            icon={<Users size={20} />}
-            value={stats.totalStudents.toLocaleString('ru-RU')}
-            label="Jami talabalar"
-            sublabel="Barcha kurslar"
-            tone="indigo"
-          />
-          <StatCard
-            icon={<UserCheck size={20} />}
-            value={stats.present}
-            label="Qatnashganlar"
-            sublabel={`${attendanceRate}% davomat`}
-            tone="green"
-          />
-          <StatCard
-            icon={<UserX size={20} />}
-            value={stats.absent}
-            label="Kelmaydiganlar"
-            sublabel="Sababsiz"
-            tone="red"
-          />
-          <StatCard icon={<Moon size={20} />} value={stats.sleepIncidents} label="Uyquda" sublabel="Darsda uyquda" tone="amber" />
-          <StatCard
-            icon={<AlertTriangle size={20} />}
-            value={stats.violations}
-            label="Qoidabuzarlik"
-            sublabel="Xavf aniqlandi"
-            tone="red"
-          />
-          <StatCard
-            icon={<Clock3 size={20} />}
-            value={stats.late}
-            label="Kechikish"
-            sublabel="Kech kelganlar"
-            tone="amber"
-          />
-        </div>
-      </section>
-
+    <div className="w-full">
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         {/* Monitor — 3/4 */}
         <div className="glass space-y-4 p-6 lg:col-span-3">
@@ -270,8 +183,6 @@ export default function MonitoringPage() {
           <AlarmPanel cameras={cameras} onSelectCamera={setActiveCamera} />
         </div>
       </section>
-
-      <TopStudentsModal open={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
     </div>
   );
 }
