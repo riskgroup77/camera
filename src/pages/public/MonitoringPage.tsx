@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import CameraFilterBar, { EMPTY_FILTERS, type CameraFilters } from '../../components/CameraFilterBar';
 import MainCameraView from '../../components/monitor/MainCameraView';
@@ -110,16 +110,6 @@ export default function MonitoringPage() {
     };
   }, [page, debouncedSearch, filters.building, statusFilter]);
 
-  const quickStats = useMemo(
-    () => ({
-      live: stats.liveCameras,
-      risk: stats.violations,
-      offline: stats.offlineCameras,
-      late: stats.late,
-    }),
-    [stats],
-  );
-
   function resetFilters(next: CameraFilters) {
     setFilters(next);
   }
@@ -159,7 +149,7 @@ export default function MonitoringPage() {
               <SlidersHorizontal size={13} className="text-indigo-500" />
               Smart Filtr
             </h3>
-            <CameraFilterBar filters={filters} onChange={resetFilters} stats={quickStats} buildings={stats.buildings} />
+            <CameraFilterBar filters={filters} onChange={resetFilters} buildings={stats.buildings} />
           </div>
 
           <MainCameraView camera={activeCamera} />
