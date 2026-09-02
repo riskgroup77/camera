@@ -401,19 +401,24 @@ class Settings(BaseSettings):
     # measured production backlog: with 107 cameras and this at 2, median
     # per-camera background-sweep gap was 100-175s against a configured
     # 30s (worst case: one camera unswept for 42+ minutes). Measured the
-    # actual cost on this CPU-only production host before raising it: a
-    # single InsightFace call is ~1.4s, and running the gate's max (was 2)
-    # concurrently used only ~32% of this box's 32 cores — there was
-    # nowhere near enough concurrency to use the CPU headroom that was
-    # actually available. 8 is still conservative, not maxed out; if
-    # measured backlog persists, this can go higher — re-measure via the
-    # same method (app/services/sweep_result_cache.py timestamps) after
-    # any change, the same way this number was chosen, rather than
-    # guessing further. A real GPU deployment should raise this a lot
-    # more (GPUs are built for exactly this kind of concurrent batched
-    # throughput) — tune against the actual production GPU's memory and
-    # measured latency then, same discipline.
-    face_recognition_inference_concurrency: int = 8
+    # actual cost on this CPU-only production host: a single InsightFace
+    # call is ~1.4s. Raising this alone (2 -> 8) wasn't enough, because
+    # app/jobs/unified_face_sweep.py's _process_camera was ALSO issuing a
+    # camera's own multiple detect_faces() calls (up to 6, for a camera
+    # needing both sleep and unauthorized-person checks) strictly
+    # sequentially — fixed alongside this, see that function's docstring;
+    # it now gathers them concurrently. With that fixed, direct math on
+    # the measured per-call cost: 107 cameras x up to 6 calls each / a 30s
+    # target needs roughly 30 concurrent slots to keep up. 24 is a
+    # calibrated step toward that (not the full 30, kept conservative
+    # since this host's real per-call latency under this much concurrency
+    # hasn't been measured yet) — re-measure via sweep_result_cache
+    # timestamps after deploy and adjust, don't leave this guessed. A real
+    # GPU deployment should raise this a lot more (GPUs are built for
+    # exactly this kind of concurrent batched throughput) — tune against
+    # the actual production GPU's memory and measured latency then, same
+    # discipline.
+    face_recognition_inference_concurrency: int = 24
 
     # Persistent per-camera frame cache (app/services/stream_cache.py) —
     # replaces spawning a fresh ffmpeg process on every single frame grab

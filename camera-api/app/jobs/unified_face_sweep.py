@@ -122,7 +122,36 @@ async def _process_camera(
         if primary_frame is None and not sleep_frames and pair is None:
             return counts
 
-        primary_faces = await detect_faces(primary_frame) if primary_frame else []
+        # Every frame this camera grabbed (primary, the unauthorized pair,
+        # the sleep burst) needs its own detect_faces() call, but they're
+        # independent inference calls on independent frames — nothing here
+        # depends on another frame's result. Running them one `await` at a
+        # time (as this used to) served them strictly sequentially even
+        # though face_inference_gate (app/services/inference_gate.py)
+        # allows many calls to run concurrently: measured on production,
+        # that turned a ~1.4s-per-call cost into ~10s of serialized wall
+        # clock for a single camera needing sleep+unauthorized (up to 6
+        # calls back to back), which was the dominant cost behind a
+        # measured AI-sweep backlog going far past its configured
+        # interval. Deduplicated by object identity (frames reused as
+        # `primary_frame` are detected once, not twice) and gathered
+        # concurrently instead — same results, a fraction of the wall time.
+        frames_needing_faces: list[bytes] = []
+        if primary_frame is not None:
+            frames_needing_faces.append(primary_frame)
+        if needs_unauthorized and pair is not None:
+            for frame in pair:
+                if not any(frame is f for f in frames_needing_faces):
+                    frames_needing_faces.append(frame)
+        if needs_sleep and len(sleep_frames) >= 2:
+            for frame in sleep_frames:
+                if not any(frame is f for f in frames_needing_faces):
+                    frames_needing_faces.append(frame)
+
+        detected = await asyncio.gather(*(detect_faces(frame) for frame in frames_needing_faces))
+        faces_by_frame_id = {id(frame): faces for frame, faces in zip(frames_needing_faces, detected, strict=True)}
+
+        primary_faces = faces_by_frame_id.get(id(primary_frame), []) if primary_frame is not None else []
 
         async with session_factory() as db:
             if needs_crowd and primary_frame is not None:
@@ -144,8 +173,8 @@ async def _process_camera(
 
             if needs_unauthorized and pair is not None:
                 frame_a, frame_b = pair
-                faces_b = primary_faces if frame_b is primary_frame else await detect_faces(frame_b)
-                faces_a = await detect_faces(frame_a)
+                faces_a = faces_by_frame_id[id(frame_a)]
+                faces_b = faces_by_frame_id[id(frame_b)]
                 if await process_camera_frame_pair_for_unauthorized(
                     frame_a,
                     frame_b,
@@ -158,12 +187,7 @@ async def _process_camera(
                     counts["unauthorized"] = 1
 
             if needs_sleep and len(sleep_frames) >= 2:
-                frames_faces = []
-                for frame in sleep_frames:
-                    if frame is primary_frame and primary_faces:
-                        frames_faces.append(primary_faces)
-                    else:
-                        frames_faces.append(await detect_faces(frame))
+                frames_faces = [faces_by_frame_id[id(frame)] for frame in sleep_frames]
                 counts["sleep"] = await process_camera_frame_for_sleep(
                     sleep_frames,
                     db,
