@@ -43,7 +43,6 @@ export default function MonitoringPage() {
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
   const [stats, setStats] = useState<AttendanceStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Qidiruv har bosilgan tugmada emas, foydalanuvchi to'xtaganda so'rov
   // yuboradi — endi qidiruv serverda bajariladi (kameralar soni ko'payganda
@@ -101,7 +100,6 @@ export default function MonitoringPage() {
         if (cancelled) return;
         setCameras(res.items);
         setPageInfo({ total: res.total, totalPages: res.totalPages });
-        setError(null);
         // Faqat birinchi marta (hali hech narsa tanlanmaganda) asosiy
         // ko'rinish uchun birinchi kamerani avtomatik tanlaydi — asosiy
         // kamera tanlangandan keyin miniatyuralar sahifasini almashtirish
@@ -109,8 +107,8 @@ export default function MonitoringPage() {
         // bo'lishi shart emas).
         setActiveCamera((current) => current ?? res.items[0] ?? current);
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+      .catch(() => {
+        /* kameralarni yuklab bo'lmadi — bo'sh ro'yxat/oldingi holat bilan davom etamiz, texnik xatoni ko'rsatmaymiz */
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -137,7 +135,7 @@ export default function MonitoringPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-4">
+    <div className="w-full space-y-4">
       <section className="glass p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
@@ -167,12 +165,6 @@ export default function MonitoringPage() {
         <div className="mb-4">
           <QuickAccessBar />
         </div>
-
-        {error && (
-          <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
-            {error}
-          </p>
-        )}
 
         <div className="mb-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-500/10 p-3 text-sm">
           <span className="font-semibold text-indigo-700 dark:text-indigo-400">Umumiy davomat: </span>
