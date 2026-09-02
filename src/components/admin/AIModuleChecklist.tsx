@@ -1,5 +1,5 @@
 import { AlertCircle, Ban } from 'lucide-react';
-import { AI_MODULE_GROUP_LABELS } from '../../mock/admin';
+import { AI_MODULE_GROUP_LABELS } from '../../lib/aiModuleGroups';
 import type { AIModuleGroup, CameraModuleOption } from '../../types';
 
 const GROUPS = Object.keys(AI_MODULE_GROUP_LABELS) as AIModuleGroup[];

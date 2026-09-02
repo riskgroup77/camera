@@ -1,59 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { cameraConfigs } from '../mock/admin';
 import { useAuth } from './auth';
 import { config, isBackendConfigured } from './config';
-import { toLocalDateString } from './date';
 import type { AIEvent } from '../types';
 
 export type LiveEventHandler = (event: AIEvent) => void;
 
-const SIM_TEMPLATES: {
-  moduleCode: number;
-  moduleName: string;
-  group: AIEvent['group'];
-  severity: AIEvent['severity'];
-  personPool?: string[];
-}[] = [
-  { moduleCode: 1, moduleName: 'Notanish/begona shaxsni aniqlash', group: 'A', severity: 'yuqori' },
-  { moduleCode: 8, moduleName: 'Darsga kechikish', group: 'B', severity: "o'rta", personPool: ['Rashidov U.', 'Normatova X.', 'Mirzayev T.'] },
-  { moduleCode: 10, moduleName: 'Oq xalat kiyilganligi', group: 'C', severity: 'past', personPool: ['Holiqova S.', 'Qodirov A.'] },
-  { moduleCode: 20, moduleName: 'Talabaning uxlab qolishi', group: 'E', severity: "o'rta", personPool: ['Sultonova M.', 'Botirov J.'] },
-];
-
-let counter = 0;
-
-function synthesizeEvent(): AIEvent {
-  counter += 1;
-  const template = SIM_TEMPLATES[counter % SIM_TEMPLATES.length];
-  const camera = cameraConfigs[counter % cameraConfigs.length];
-  const now = new Date();
-  const timestamp = `${toLocalDateString(now)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-  return {
-    id: `ev-live-${Date.now()}-${counter}`,
-    timestamp,
-    cameraId: camera.id,
-    cameraName: camera.name,
-    building: camera.building,
-    moduleCode: template.moduleCode,
-    moduleName: template.moduleName,
-    group: template.group,
-    confidence: 70 + ((counter * 5) % 29),
-    severity: template.severity,
-    status: 'yangi',
-    personName: template.personPool?.[counter % template.personPool.length],
-  };
-}
-
-const SIMULATION_INTERVAL_MS = 25_000;
 const RECONNECT_DELAY_MS = 3_000;
-
-function subscribeSimulated(onEvent: LiveEventHandler): () => void {
-  const intervalId = window.setInterval(() => {
-    onEvent(synthesizeEvent());
-  }, SIMULATION_INTERVAL_MS);
-  return () => window.clearInterval(intervalId);
-}
 
 /**
  * Haqiqiy backend'ga /ws/events orqali ulanadi (app/routers/events.py) —
@@ -95,6 +47,16 @@ function subscribeWebSocket(token: string, onEvent: LiveEventHandler): () => voi
   };
 }
 
+/**
+ * Backend/token bo'lmasa — HECH NARSA qilmaydi.
+ *
+ * Ilgari bu yerda "simulyatsiya" rejimi bor edi: mock ma'lumotlaridan
+ * (src/mock/admin.ts) har 25 soniyada SOXTA AI hodisa yasab, uni haqiqiy
+ * hodisa sifatida UI'ga uzatardi. Xavfsizlik tizimida bu qabul qilib
+ * bo'lmaydigan xatar — operator ekranda ko'rgan "hodisa" hech qachon
+ * o'ylab topilgan bo'lmasligi kerak. Demo ma'lumot kerak bo'lsa, u
+ * backend tomonda, ochiq belgilangan holda berilishi lozim.
+ */
 export function useLiveEvents(onEvent: LiveEventHandler, enabled = true) {
   const { token } = useAuth();
   const handlerRef = useRef(onEvent);
@@ -102,9 +64,7 @@ export function useLiveEvents(onEvent: LiveEventHandler, enabled = true) {
 
   useEffect(() => {
     if (!enabled) return;
-    if (isBackendConfigured && config.realtimeUrl && token) {
-      return subscribeWebSocket(token, (event) => handlerRef.current(event));
-    }
-    return subscribeSimulated((event) => handlerRef.current(event));
+    if (!isBackendConfigured || !config.realtimeUrl || !token) return;
+    return subscribeWebSocket(token, (event) => handlerRef.current(event));
   }, [enabled, token]);
 }

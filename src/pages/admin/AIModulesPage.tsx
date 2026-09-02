@@ -7,7 +7,7 @@ import ModuleCamerasModal from '../../components/admin/ModuleCamerasModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
-import { AI_MODULE_GROUP_LABELS } from '../../mock/admin';
+import { AI_MODULE_GROUP_LABELS } from '../../lib/aiModuleGroups';
 import type { AIModule, AIModuleGroup } from '../../types';
 
 const GROUPS = Object.keys(AI_MODULE_GROUP_LABELS) as AIModuleGroup[];
