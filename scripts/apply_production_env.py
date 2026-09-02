@@ -1,4 +1,5 @@
 """Merge deploy/env.production.scale into server camera-api/.env and restart API."""
+import os
 import sys
 from pathlib import Path
 
@@ -6,7 +7,13 @@ import paramiko
 
 HOSTS = [("87.192.230.208", 2222), ("192.168.0.101", 22)]
 USER = "admin_root"
-PASSWORD = "qazxsw123@!"
+PASSWORD = os.environ.get("CAMERA_DEPLOY_PASSWORD")
+if not PASSWORD:
+    sys.exit(
+        "CAMERA_DEPLOY_PASSWORD muhit ozgaruvchisi ornatilmagan. "
+        "Server paroli endi kodda saqlanmaydi - u git tarixiga tushib qolgan edi. "
+        "Ishlatishdan oldin uni muhit ozgaruvchisi sifatida bering."
+    )
 
 SCALE_FILE = Path(__file__).resolve().parent.parent / "deploy" / "env.production.scale"
 
