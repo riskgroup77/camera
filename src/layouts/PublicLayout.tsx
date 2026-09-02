@@ -12,8 +12,8 @@ export default function PublicLayout() {
   const onMonitoring = location.pathname === '/';
 
   return (
-    <div className="min-h-screen bg-canvas dark:bg-[#0a0f1e]">
-      <header className="glass mx-3 mt-3 space-y-3 rounded-2xl px-6 py-4">
+    <div className="flex h-screen flex-col overflow-hidden bg-canvas dark:bg-[#0a0f1e]">
+      <header className="glass mx-3 mt-3 shrink-0 space-y-3 rounded-2xl px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[15px] font-extrabold leading-tight text-slate-900 dark:text-slate-100">
@@ -56,7 +56,7 @@ export default function PublicLayout() {
         )}
       </header>
 
-      <main className="p-3">
+      <main className="min-h-0 flex-1 overflow-y-auto p-3">
         <Outlet />
       </main>
     </div>

@@ -115,11 +115,16 @@ export default function MonitoringPage() {
   }
 
   return (
-    <div className="w-full">
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-        {/* Monitor — 3/4 */}
-        <div className="glass space-y-4 p-6 lg:col-span-3">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex h-full w-full flex-col">
+      <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-4">
+        {/* Monitor — 3/4. Butun blok ekran balandligiga sig'adigan qilib
+            qurilgan (scroll qilinmasin degan talab bo'yicha): sarlavha
+            qatori o'z balandligini oladi (shrink-0), asosiy kamera qolgan
+            bo'sh joyni egallaydi (flex-1 — endi aspect-video EMAS, shuning
+            uchun tor bo'lib qolmaydi), miniatyuralar esa pastda kichik,
+            belgilangan balandlikda turadi. */}
+        <div className="glass flex min-h-0 flex-col gap-2.5 p-4 lg:col-span-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
                 Video Monitoring Markazi
@@ -152,7 +157,7 @@ export default function MonitoringPage() {
             </div>
           </div>
 
-          <MainCameraView camera={activeCamera} />
+          <MainCameraView camera={activeCamera} className="min-h-0 flex-1" />
 
           <CameraThumbnailStrip
             cameras={cameras}
@@ -166,8 +171,9 @@ export default function MonitoringPage() {
           />
         </div>
 
-        {/* Yon panel — 1/4 */}
-        <div className="space-y-4 lg:col-span-1">
+        {/* Yon panel — 1/4, mustaqil scroll qiladi (monitor balandligini
+            sherigicha cho'zib, uni ham scroll qildirib qo'ymasligi uchun). */}
+        <div className="min-h-0 space-y-4 overflow-y-auto lg:col-span-1">
           <ReportPanel />
           <EventsLogPanel />
           <AlarmPanel cameras={cameras} onSelectCamera={setActiveCamera} />

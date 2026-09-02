@@ -7,8 +7,21 @@ import type { CameraFeed } from '../../types';
 
 /** Katta, asosiy kamera ko'rinishi — CameraThumbnailStrip'dan tanlangan
  * kamerani shu yerda ko'rsatadi. CameraDetailModal bilan bir xil
- * video/overlay tarkibi, faqat modal emas, sahifaning o'zida joylashgan. */
-export default function MainCameraView({ camera }: { camera: CameraFeed | null }) {
+ * video/overlay tarkibi, faqat modal emas, sahifaning o'zida joylashgan.
+ *
+ * Qasddan aspect-video EMAS: butun "Video Monitoring Markazi" bloki bir
+ * ekranga (scroll'siz) sig'ishi kerak bo'lgani uchun, bu komponent o'z
+ * balandligini kenglikdan hisoblab chiqarish o'rniga MonitoringPage'dan
+ * kelgan `className` (odatda flex-1) orqali qolgan bo'sh joyni egallaydi
+ * — video elementning o'zi baribir object-cover bilan to'ldiriladi, shu
+ * sababli nisbat qat'iy 16:9 bo'lmasa ham vizual jihatdan to'g'ri chiqadi. */
+export default function MainCameraView({
+  camera,
+  className = '',
+}: {
+  camera: CameraFeed | null;
+  className?: string;
+}) {
   const [fullscreen, setFullscreen] = useState(false);
   const isLive = camera?.status === 'live';
   const analysis = useCameraAnalysisStatus(camera?.id, !!camera && isLive);
@@ -19,8 +32,8 @@ export default function MainCameraView({ camera }: { camera: CameraFeed | null }
 
   return (
     <div
-      className={`relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl bg-slate-900 transition-all ${
-        fullscreen ? 'fixed inset-4 z-[60] aspect-auto' : ''
+      className={`relative flex items-center justify-center overflow-hidden rounded-2xl bg-slate-900 transition-all ${
+        fullscreen ? 'fixed inset-4 z-[60]' : className
       }`}
     >
       {!camera && (

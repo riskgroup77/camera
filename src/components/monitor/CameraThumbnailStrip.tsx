@@ -31,7 +31,7 @@ function ThumbnailCard({
       type="button"
       onClick={onClick}
       aria-current={active}
-      className={`group relative aspect-video overflow-hidden rounded-xl bg-slate-900 text-left transition-all ${
+      className={`group relative h-16 w-full overflow-hidden rounded-lg bg-slate-900 text-left transition-all sm:h-20 lg:h-24 ${
         active
           ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900'
           : 'ring-1 ring-white/10 hover:ring-indigo-300'
@@ -85,17 +85,21 @@ export default function CameraThumbnailStrip({
   loading: boolean;
 }) {
   return (
-    <div>
+    <div className="shrink-0">
       {loading && cameras.length === 0 ? (
-        <div className="flex items-center justify-center py-8 text-slate-400">
-          <Loader2 size={18} className="animate-spin" />
+        <div className="flex items-center justify-center py-4 text-slate-400">
+          <Loader2 size={16} className="animate-spin" />
         </div>
       ) : cameras.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-xs text-slate-400 dark:border-white/10 dark:text-slate-500">
+        <p className="rounded-xl border border-dashed border-slate-300 py-4 text-center text-xs text-slate-400 dark:border-white/10 dark:text-slate-500">
           Kamera topilmadi
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        // 8 talik sahifa lg+da bitta qatorga sig'adigan qilib
+        // grid-cols-8 qilingan — "Video Monitoring Markazi" bloki
+        // ekranga scroll'siz sig'ishi shart bo'lgani uchun, 2 qatorli
+        // panjara (avvalgi sm:grid-cols-4) o'rniga.
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
           {cameras.map((camera, index) => (
             <ThumbnailCard
               key={camera.id}
