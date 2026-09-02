@@ -108,6 +108,22 @@ class Settings(BaseSettings):
     # Require at least this much of a gap before early_leave is trusted as
     # a real "was present, then left" signal rather than a single sighting.
     attendance_early_leave_min_presence_minutes: int = 15
+
+    # Davomat: "kelmadi" (absent) belgilash — app/jobs/absence_marker.py.
+    # Bu ish qo'shilgunga qadar HECH BIR kod 'kelmadi' yozmasdi: tizim
+    # faqat kamera TANIGAN odamni qayd qilardi, kelmagan odamda esa umuman
+    # yozuv bo'lmasdi, shuning uchun barcha panellarda "Kelmaydiganlar"
+    # doim 0 ko'rinardi.
+    #
+    # mark_after — ish kuni tugagach belgilanadi (mahalliy vaqt): soat
+    # 09:00 da "kelmadi" deb yozish shunchaki noto'g'ri bo'lardi, odam
+    # yo'lda bo'lishi mumkin. working_weekdays — ISO kunlar (Du=1..Ya=7);
+    # standart 1-6, ya'ni dam olish kuni faqat yakshanba.
+    attendance_absence_marking_enabled: bool = True
+    attendance_absence_mark_after: str = "20:00"
+    attendance_working_weekdays: str = "1,2,3,4,5,6"
+    attendance_absence_marking_interval_seconds: int = 900
+
     # TT kriteriya 3 ("Notekis/kechki vaqtda kirish") — also pure rule-based:
     # a face-recognized check-in outside [start, end) raises a real Event
     # (module_code=3), same as any other AI-detected incident.
@@ -351,6 +367,12 @@ class Settings(BaseSettings):
     fight_spike_multiplier: float = 4.0
     fight_min_absolute_magnitude: float = 2.0
 
+    # DIQQAT — bu son db_pool_size + db_max_overflow (hozir 20+40=60) dan
+    # oshib ketmasligi kerak: unified_face_sweep har bir kamera uchun
+    # alohida DB sessiyasi ochadi, shuning uchun bu qiymat + entrance_exit
+    # (6) + camera_health + API so'rovlari birgalikda pool sig'imidan
+    # oshsa, sweep'lar pool_timeout (30s) da kutib qotadi.
+    #
     # Max cameras processed concurrently ACROSS ALL AI sweep modules.
     # app/jobs/sweep_concurrency.py — every module shares this one cap so
     # parallel scheduler ticks can't spawn (module_count × N) pipelines.

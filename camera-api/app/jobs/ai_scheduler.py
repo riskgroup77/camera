@@ -27,6 +27,7 @@ from typing import Any, Literal
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.abandoned_object_ai import run_abandoned_object_ai_sweep_once
+from app.jobs.absence_marker import run_absence_marking_once
 from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_sweep_once
 from app.jobs.badge_ai import run_badge_ai_sweep_once
 from app.jobs.crowd_density_ai import run_crowd_density_ai_sweep_once
@@ -111,6 +112,10 @@ def _build_registry() -> list[_SweepEntry]:
         ("student_dress", settings.student_uniform_ai_interval_seconds, run_student_dress_code_ai_sweep_once, "standard"),
         ("vehicle", settings.vehicle_ai_interval_seconds, run_vehicle_ai_sweep_once, "standard"),
         ("lesson_quality", settings.lesson_quality_ai_interval_seconds, run_lesson_quality_ai_sweep_once, "standard"),
+        # Kamera talab qilmaydi (faqat DB) — shuning uchun "standard"
+        # qatorida va kamdan-kam bajariladi; o'zi ish kuni tugaguncha
+        # hech narsa qilmaydi (app/jobs/absence_marker.py).
+        ("absence_marking", settings.attendance_absence_marking_interval_seconds, run_absence_marking_once, "standard"),
     ]
     specs = _face_entries() + rest
     return [_SweepEntry(name=n, interval_seconds=i, run_once=fn, tier=t) for n, i, fn, t in specs]
