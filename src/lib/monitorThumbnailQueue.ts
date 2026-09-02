@@ -4,22 +4,28 @@
  * 8) bilan bir xil adolatli-aylanish mantig'i, lekin butunlay mustaqil
  * holat bilan, shuning uchun ikkalasi bir-biriga ta'sir qilmaydi.
  *
- * Nega alohida va nega kamroq: MonitoringPage'da asosiy kamera
- * (MainCameraView, navbatsiz — priority) HAR DOIM birinchi va darhol
- * ulanishi kerak. Ilgari miniatyuralar ham hammasi navbatsiz (priority)
- * qilib qo'yilgan edi — nazariy jihatdan "8 tadan oshmaydi" deb
- * o'ylangan edi, lekin bu amalda noto'g'ri bo'lib chiqdi: asosiy + 8
- * miniatyura = 9 ta HAQIQIY video oqimi bir vaqtning o'zida, hech qanday
- * cheklovsiz ulanishga urinardi — production'da bu asosiy kameraning
- * ham "birinchi" bo'lib ochilishini kafolatlamasdi (hammasi tarmoq/server
- * uchun bab-baravar raqobatlashardi) va umuman sekinlashtirardi. Endi:
- * miniatyuralar shu kichikroq (4) navbatdan o'tadi — bir vaqtda ko'pi
- * bilan 4 tasi haqiqatan ulanadi, qolgani streamLoadQueue'dagi bilan bir
- * xil aylanish orqali ("abadiy yuklanib qolmaydi", navbat bilan
- * ulanaveradi), asosiy kamera esa bu navbatga umuman kirmagani uchun har
- * doim darhol, raqobatsiz boshlanadi.
+ * Nega alohida: MonitoringPage'da asosiy kamera (MainCameraView,
+ * navbatsiz — priority) HAR DOIM birinchi va darhol ulanishi kerak,
+ * shuning uchun u bu navbatga umuman kirmaydi.
+ *
+ * MAX_CONCURRENT nega aynan THUMBS_PER_PAGE ga teng (kamroq emas):
+ * bu panelda kartalar soni O'ZGARMAS va hammasi doim ekranda — 8 ta.
+ * Avval bu 4 ga qo'yilgan edi, "bir vaqtda kamroq oqim ochilsin" degan
+ * niyat bilan. Amalda bu production'da aynan foydalanuvchi shikoyat
+ * qilgan sekinlikni keltirib chiqardi: 5-8-kartalar joy bo'shashini
+ * kutardi, joy esa faqat MIN_HOLD_MS (25 soniya) o'tgach aylanardi —
+ * ya'ni yarim panel ~25 soniya "Navbatda..." holatida qotib turardi.
+ *
+ * Aylanish mexanizmi ko'p kartali, scroll qilinadigan panjara uchun
+ * (streamLoadQueue.ts) — u yerda kartalar soni joylardan ko'p bo'lishi
+ * tabiiy. Bu yerda esa har bir ko'rinadigan karta ochilishi KERAK, va
+ * "birdaniga hujum" muammosi navbat bilan emas, CameraThumbnailStrip'dagi
+ * bosqichma-bosqich boshlash (MAIN_CAMERA_HEAD_START_MS +
+ * THUMBNAIL_STAGGER_MS) bilan hal qilingan: ulanishlar baribir bir
+ * lahzada emas, ketma-ket ochiladi. Navbat esa endi faqat kutilmagan
+ * holat uchun xavfsizlik to'ri bo'lib qoladi.
  */
-const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 8;
 const MIN_HOLD_MS = 25_000;
 const ROTATION_CHECK_MS = 4_000;
 

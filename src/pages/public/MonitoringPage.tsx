@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import CameraFilterBar, { EMPTY_FILTERS, type CameraFilters } from '../../components/CameraFilterBar';
 import MainCameraView from '../../components/monitor/MainCameraView';
@@ -35,6 +35,15 @@ export default function MonitoringPage() {
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
   const [stats, setStats] = useState<AttendanceStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
+
+  // Keyingi sahifaning kamera RO'YXATI (video emas) oldindan olib
+  // qo'yiladi, shuning uchun "keyingi" bosilganda kutish bo'lmaydi.
+  // `key` — qaysi qidiruv/filtr uchun ekanini belgilaydi: filtr
+  // o'zgargach eski sahifalar avtomatik yaroqsiz bo'ladi.
+  const prefetched = useRef<{ key: string; pages: Map<number, Page<CameraFeed>> }>({
+    key: '',
+    pages: new Map(),
+  });
 
   // Qidiruv har bosilgan tugmada emas, foydalanuvchi to'xtaganda so'rov
   // yuboradi — endi qidiruv serverda bajariladi (kameralar soni ko'payganda
@@ -74,20 +83,40 @@ export default function MonitoringPage() {
   // borish ("load more") o'rniga endi har sahifa avvalgisini almashtiradi
   // — kichik miniatyuralar panelida haqiqiy oldingi/keyingi navigatsiya
   // kutiladi.
+  const queryKey = `${debouncedSearch}|${filters.building}|${statusFilter ?? ''}`;
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
 
-    const qs = buildQuery({
-      page,
-      pageSize: PAGE_SIZE,
-      search: debouncedSearch || undefined,
-      building: filters.building || undefined,
-      status: statusFilter,
-    });
+    // Keyingi sahifa oldindan olib qo'yilgan bo'lsa — darhol ko'rsatamiz.
+    // Kesh faqat AYNAN shu qidiruv/filtr uchun (queryKey) amal qiladi,
+    // aks holda filtr o'zgargach eski sahifa qaytib kelib qolardi.
+    const cache = prefetched.current;
+    const cachedPage = cache.key === queryKey ? cache.pages.get(page) : undefined;
+    if (cachedPage) {
+      setCameras(cachedPage.items);
+      setPageInfo({ total: cachedPage.total, totalPages: cachedPage.totalPages });
+      setActiveCamera((current) => current ?? cachedPage.items[0] ?? current);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
+    function queryFor(targetPage: number) {
+      return buildQuery({
+        page: targetPage,
+        pageSize: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        building: filters.building || undefined,
+        status: statusFilter,
+      });
+    }
+
+    // Keshdan ko'rsatilgan bo'lsa ham qayta so'raymiz: kamera holati
+    // (JONLI/OFLAYN) o'zgarib turadi, kesh esa faqat "darhol ko'rinsin"
+    // uchun, haqiqat manbai emas.
     api
-      .get<Page<CameraFeed>>(`/api/public/cameras${qs}`)
+      .get<Page<CameraFeed>>(`/api/public/cameras${queryFor(page)}`)
       .then((res) => {
         if (cancelled) return;
         setCameras(res.items);
@@ -98,6 +127,31 @@ export default function MonitoringPage() {
         // uni o'zgartirmasligi kerak (asosiy kamera joriy 8 talikda
         // bo'lishi shart emas).
         setActiveCamera((current) => current ?? res.items[0] ?? current);
+
+        // Keyingi sahifani fon rejimida oldindan olib qo'yamiz — "keyingi"
+        // bosilganda so'rov-javob kutilmasin, miniatyuralar darhol
+        // chizilsin va video ulanishlari o'sha zahoti boshlansin.
+        //
+        // Faqat MA'LUMOT oldindan olinadi, video oqimi EMAS: 8 ta
+        // ko'rinmaydigan oqimni ham ochib qo'yish serverga ikki barobar
+        // yuk bo'lardi — aynan biz qochayotgan narsa.
+        const next = page + 1;
+        if (next <= res.totalPages) {
+          if (cache.key !== queryKey) {
+            cache.key = queryKey;
+            cache.pages.clear();
+          }
+          if (!cache.pages.has(next)) {
+            api
+              .get<Page<CameraFeed>>(`/api/public/cameras${queryFor(next)}`)
+              .then((nextRes) => {
+                if (cache.key === queryKey) cache.pages.set(next, nextRes);
+              })
+              .catch(() => {
+                /* oldindan olish — ixtiyoriy optimizatsiya, xatosi jimgina o'tkaziladi */
+              });
+          }
+        }
       })
       .catch(() => {
         /* kameralarni yuklab bo'lmadi — bo'sh ro'yxat/oldingi holat bilan davom etamiz, texnik xatoni ko'rsatmaymiz */
@@ -108,7 +162,7 @@ export default function MonitoringPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, debouncedSearch, filters.building, statusFilter]);
+  }, [page, debouncedSearch, filters.building, statusFilter, queryKey]);
 
   function resetFilters(next: CameraFilters) {
     setFilters(next);
