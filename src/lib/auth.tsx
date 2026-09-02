@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import { ApiError, api } from './apiClient';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { ApiError, api, setUnauthorizedHandler } from './apiClient';
 import { isBackendConfigured } from './config';
 
 export type Role = 'super-admin' | 'admin';
@@ -78,6 +78,22 @@ async function authenticate(role: Role, login: string, password: string): Promis
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(readAuth);
+
+  // Token muddati tugagach (server 401 qaytarganda) sessiyani darhol
+  // tozalaymiz — apiClient.ts'dagi setUnauthorizedHandler izohiga qarang.
+  // Bu yerda serverga logout so'rovi YUBORILMAYDI: token allaqachon
+  // yaroqsiz, va 401 to'lqini paytida har biriga bittadan so'rov yuborish
+  // faqat shovqin bo'lardi.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setState((current) => {
+        if (!current.token && !current.role) return current; // allaqachon tozalangan
+        localStorage.removeItem(STORAGE_KEY);
+        return { role: null, userName: null, token: null };
+      });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   function login(role: Role, userName: string, token: string | null = null) {
     const next: AuthState = { role, userName, token };

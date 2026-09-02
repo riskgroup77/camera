@@ -16,6 +16,25 @@ interface RequestOptions {
   isForm?: boolean;
 }
 
+/**
+ * Sessiya yaroqsiz bo'lganda (401) chaqiriladigan ishlovchi — auth.tsx
+ * uni o'rnatadi (setUnauthorizedHandler), shu orqali apiClient React'ga
+ * bog'lanib qolmaydi (aylanma import bo'lmaydi).
+ *
+ * Bunisiz: token muddati tugagach har bir so'rov jimgina 401 qaytarardi,
+ * saqlangan (endi yaroqsiz) token localStorage'da qolib ketardi, UI esa
+ * bo'sh panellar va konsol to'la xato bilan qotib turardi — foydalanuvchi
+ * o'zi taxmin qilib qayta kirmaguncha. Endi sessiya darhol tozalanadi,
+ * RequireAuth esa admin sahifalarini login'ga yo'naltiradi, ochiq
+ * sahifadagi panellar "Tizimga kiring" holatiga tushadi.
+ */
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  onUnauthorized = handler;
+}
+
 async function request<T>(path: string, { method = 'GET', body, token, isForm }: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -28,6 +47,12 @@ async function request<T>(path: string, { method = 'GET', body, token, isForm }:
   });
 
   if (!res.ok) {
+    // Faqat token YUBORILGAN so'rovda: ya'ni sessiya yaroqli bo'lishi
+    // kutilgan edi, lekin server rad etdi => sessiya tugagan. Login
+    // so'rovining 401'i (noto'g'ri parol) bunga kirmaydi — aks holda
+    // login sahifasi o'zini cheksiz "chiqish"ga yuborardi.
+    if (res.status === 401 && token) onUnauthorized?.();
+
     let detail = `So'rov muvaffaqiyatsiz tugadi (${res.status})`;
     try {
       const data = await res.json();

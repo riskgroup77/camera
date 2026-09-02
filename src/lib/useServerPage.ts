@@ -28,7 +28,14 @@ export function useServerPage<T>(
   }, [paramsKey]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      // Token yo'q => hech qachon so'rov yuborilmaydi, demak `loading`
+      // ham hech qachon o'chmasdi va chaqiruvchi komponent abadiy
+      // spinner ko'rsatib turardi. "Ma'lumot yo'q" — bu tugallangan
+      // holat, yuklanish emas.
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     const qs = buildQuery({ page, pageSize, ...JSON.parse(paramsKey) });
