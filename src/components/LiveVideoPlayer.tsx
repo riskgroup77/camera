@@ -35,6 +35,12 @@ interface LiveVideoPlayerProps {
   zoneEditing?: boolean;
   zonePoints?: [number, number][];
   onZonePointAdd?: (point: [number, number]) => void;
+  /** Standart holatda src/lib/streamLoadQueue.ts (admin panjarasi uchun,
+   * MAX 8) ishlatiladi — boshqa alohida navbat kerak bo'lsa (masalan
+   * src/lib/monitorThumbnailQueue.ts, kichikroq MAX bilan) shu yerdan
+   * almashtiriladi. priority=true bo'lsa ikkalasi ham chaqirilmaydi. */
+  acquireSlot?: (id: string, onRevoked: () => void) => Promise<void>;
+  releaseSlot?: (id: string) => void;
 }
 
 const LOAD_TIMEOUT_MS = 30_000;
@@ -60,6 +66,8 @@ export default function LiveVideoPlayer({
   zoneEditing = false,
   zonePoints = [],
   onZonePointAdd,
+  acquireSlot = acquireStreamSlot,
+  releaseSlot = releaseStreamSlot,
 }: LiveVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(false);
@@ -102,7 +110,7 @@ export default function LiveVideoPlayer({
     function releaseIfHeld() {
       if (slotHeld) {
         slotHeld = false;
-        releaseStreamSlot(streamUrl!);
+        releaseSlot(streamUrl!);
       }
     }
 
@@ -223,7 +231,7 @@ export default function LiveVideoPlayer({
         // joyni boshqa ko'rinadigan kartaga bergan — bu XATO EMAS, faqat
         // "hozircha to'xtat" signali, shuning uchun xato holatini
         // ko'rsatmasdan, jim ravishda qayta navbatga turamiz.
-        await acquireStreamSlot(streamUrl!, () => {
+        await acquireSlot(streamUrl!, () => {
           slotHeld = false;
           if (cancelled) return;
           if (loadTimer) {
@@ -235,7 +243,7 @@ export default function LiveVideoPlayer({
           void start();
         });
         if (cancelled) {
-          releaseStreamSlot(streamUrl!);
+          releaseSlot(streamUrl!);
           return;
         }
         slotHeld = true;
@@ -253,7 +261,7 @@ export default function LiveVideoPlayer({
       teardownPlayback();
       releaseIfHeld();
     };
-  }, [streamUrl, startDelayMs, priority]);
+  }, [streamUrl, startDelayMs, priority, acquireSlot, releaseSlot]);
 
   if (!streamUrl) return null;
 

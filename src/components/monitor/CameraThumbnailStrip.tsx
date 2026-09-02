@@ -1,9 +1,18 @@
 import { Circle, Loader2 } from 'lucide-react';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import Pagination from '../Pagination';
+import { acquireThumbnailSlot, releaseThumbnailSlot } from '../../lib/monitorThumbnailQueue';
 import type { CameraFeed } from '../../types';
 
 const THUMBS_PER_PAGE = 8;
+// MainCameraView's stream starts unthrottled at delay 0 — thumbnails
+// start no earlier than this, so the main camera's connection is always
+// genuinely underway before any thumbnail even attempts one, instead of
+// all ~9 streams racing for bandwidth from the same instant. See
+// monitorThumbnailQueue.ts for why they also go through their own
+// (smaller-than-8) concurrency-limited queue on top of this.
+const MAIN_CAMERA_HEAD_START_MS = 600;
+const THUMBNAIL_STAGGER_MS = 200;
 
 function ThumbnailCard({
   camera,
@@ -28,18 +37,13 @@ function ThumbnailCard({
           : 'ring-1 ring-white/10 hover:ring-indigo-300'
       }`}
     >
-      {/* priority: bypasses streamLoadQueue's shared MAX_CONCURRENT=8 gate
-          (src/lib/streamLoadQueue.ts) — that queue exists for grids that can
-          show far more than 8 cards at once (VirtualCameraGrid's scroll
-          mode), where letting every card connect immediately would open way
-          too many concurrent HLS streams. This strip never shows more than
-          THUMBS_PER_PAGE (8) at a time, plus MainCameraView's own one
-          priority stream, so there's no reason for any of them to sit
-          waiting for a turn — every visible thumbnail should load fully,
-          right away. A small startDelayMs stagger still avoids firing all
-          the connection requests in the exact same tick. */}
       {isLive && (
-        <LiveVideoPlayer streamUrl={camera.streamUrl} startDelayMs={streamStartDelayMs} priority />
+        <LiveVideoPlayer
+          streamUrl={camera.streamUrl}
+          startDelayMs={streamStartDelayMs}
+          acquireSlot={acquireThumbnailSlot}
+          releaseSlot={releaseThumbnailSlot}
+        />
       )}
       {isLive ? (
         <span className="absolute left-1.5 top-1.5 z-10 flex items-center gap-1 rounded-full bg-emerald-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white">
@@ -98,7 +102,7 @@ export default function CameraThumbnailStrip({
               camera={camera}
               active={camera.id === activeId}
               onClick={() => onSelect(camera)}
-              streamStartDelayMs={Math.min(index, THUMBS_PER_PAGE) * 150}
+              streamStartDelayMs={MAIN_CAMERA_HEAD_START_MS + Math.min(index, THUMBS_PER_PAGE) * THUMBNAIL_STAGGER_MS}
             />
           ))}
         </div>
