@@ -28,7 +28,19 @@ function ThumbnailCard({
           : 'ring-1 ring-white/10 hover:ring-indigo-300'
       }`}
     >
-      {isLive && <LiveVideoPlayer streamUrl={camera.streamUrl} startDelayMs={streamStartDelayMs} />}
+      {/* priority: bypasses streamLoadQueue's shared MAX_CONCURRENT=8 gate
+          (src/lib/streamLoadQueue.ts) — that queue exists for grids that can
+          show far more than 8 cards at once (VirtualCameraGrid's scroll
+          mode), where letting every card connect immediately would open way
+          too many concurrent HLS streams. This strip never shows more than
+          THUMBS_PER_PAGE (8) at a time, plus MainCameraView's own one
+          priority stream, so there's no reason for any of them to sit
+          waiting for a turn — every visible thumbnail should load fully,
+          right away. A small startDelayMs stagger still avoids firing all
+          the connection requests in the exact same tick. */}
+      {isLive && (
+        <LiveVideoPlayer streamUrl={camera.streamUrl} startDelayMs={streamStartDelayMs} priority />
+      )}
       {isLive ? (
         <span className="absolute left-1.5 top-1.5 z-10 flex items-center gap-1 rounded-full bg-emerald-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white">
           <Circle size={5} className="fill-white" />

@@ -119,7 +119,7 @@ export default function MonitoringPage() {
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         {/* Monitor — 3/4 */}
         <div className="glass space-y-4 p-6 lg:col-span-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100">
                 Video Monitoring Markazi
@@ -127,6 +127,14 @@ export default function MonitoringPage() {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {pageInfo.total} ta kamera · miniatyurani bosing — asosiy ko&apos;rinishga o&apos;tadi
               </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2">
+              <span className="mb-2 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                <SlidersHorizontal size={13} className="text-indigo-500" />
+                Smart Filtr
+              </span>
+              <CameraFilterBar filters={filters} onChange={resetFilters} buildings={stats.buildings} />
             </div>
 
             <div className="relative w-full max-w-xs">
@@ -142,14 +150,6 @@ export default function MonitoringPage() {
                 className="w-full rounded-xl border border-white/80 dark:border-white/10 bg-white/60 dark:bg-white/5 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 dark:text-slate-500 focus:border-indigo-300"
               />
             </div>
-          </div>
-
-          <div className="glass-deep p-3">
-            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              <SlidersHorizontal size={13} className="text-indigo-500" />
-              Smart Filtr
-            </h3>
-            <CameraFilterBar filters={filters} onChange={resetFilters} buildings={stats.buildings} />
           </div>
 
           <MainCameraView camera={activeCamera} />
