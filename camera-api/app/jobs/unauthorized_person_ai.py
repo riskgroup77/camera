@@ -4,8 +4,7 @@ the same InsightFace + app/services/face_matching.py pipeline as
 app/jobs/attendance_ai.py, just inverted: attendance_ai credits a MATCH,
 this raises an Event on the ABSENCE of one.
 
-Runs on faol+reachable **entrance** cameras only (Camera.is_entrance) —
-begona moduli 107 ta kamerada emas, faqat kirish nuqtalarida ishlaydi.
+Runs on every faol+reachable camera that allows module 1 (begona).
 Per-camera opt-out via excluded_module_codes remains supported.
 
 Grabs a PAIR of frames (grab_frame_pair_for_camera, ~1s apart — the same pattern
@@ -33,9 +32,9 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-import cv2
+
 import numpy as np
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
@@ -49,6 +48,7 @@ from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
+from app.services.image_size import jpeg_height
 
 logger = logging.getLogger("app.unauthorized_person_ai")
 
@@ -76,9 +76,11 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
 
 
 def _frame_height(image_bytes: bytes) -> int:
-    arr = np.frombuffer(image_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    return img.shape[0] if img is not None else 0
+    # Header parse, not a decode: this used to run a full cv2.imdecode of a
+    # frame detect_faces had ALREADY decoded, purely to learn its height —
+    # a second full-resolution decode per camera per sweep, on the event
+    # loop. See app/services/image_size.py.
+    return jpeg_height(image_bytes)
 
 
 def _filter_faces_by_size(faces: list, image_bytes: bytes) -> list:
@@ -170,7 +172,6 @@ async def run_unauthorized_person_ai_sweep_once(
         result = await db.execute(
             select(Camera)
             .where(Camera.status == "faol")
-            .where(or_(Camera.is_entrance.is_(True), Camera.is_perimeter.is_(True)))
             .where(camera_allows_module(UNAUTHORIZED_MODULE_CODE))
         )
         cameras = [c for c in result.scalars().all() if is_reachable(c.last_seen_at)]

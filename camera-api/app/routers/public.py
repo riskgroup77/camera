@@ -11,8 +11,6 @@ from datetime import datetime, timedelta, timezone
 import logging
 from typing import Annotated
 
-import cv2
-import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import and_, case, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +26,8 @@ from app.schemas.public import CameraAnalysisStatusOut, DetectedFaceOut, LiveDet
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
-from app.services.frame_grabber import grab_frame_for_camera
+from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera
+from app.services.image_size import jpeg_dimensions
 from app.services.sleep_detection import is_asleep
 from app.services.sweep_result_cache import get_camera_sweep
 
@@ -209,13 +208,18 @@ async def get_live_detection(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
 
     try:
-        frame_bytes = await grab_frame_for_camera(camera, wait_seconds=12.0)
+        frame_bytes = await grab_frame_for_camera(
+            camera, wait_seconds=frame_wait_seconds_for_camera(camera)
+        )
         if frame_bytes is None:
             return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
 
-        arr = np.frombuffer(frame_bytes, dtype=np.uint8)
-        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        frame_height, frame_width = (img.shape[0], img.shape[1]) if img is not None else (0, 0)
+        # Header parse instead of a full cv2.imdecode: this handler is async
+        # and polled repeatedly while an operator watches a camera, so a
+        # synchronous full-resolution decode here blocked the event loop on
+        # every poll — for two integers. See app/services/image_size.py.
+        dims = jpeg_dimensions(frame_bytes)
+        frame_width, frame_height = dims if dims else (0, 0)
 
         faces = await detect_faces(frame_bytes, priority=PRIORITY_LIVE)
         candidates = await load_candidate_matrix_cached(db)
