@@ -109,9 +109,24 @@ async def _process_camera(
                 primary_frame = sleep_frames[0]
 
         if needs_unauthorized:
-            pair = await grab_frame_pair_for_camera(camera)
-            if pair and primary_frame is None:
-                primary_frame = pair[1]
+            # Reuse the sleep burst when there is one instead of grabbing a
+            # SECOND set of frames from the same camera a second later.
+            # Both modules are active on most cameras, so this used to cost
+            # 6 frames and 6 detect_faces calls per camera (4 + 2) plus ~4s
+            # of gap-sleeping, when 4 frames already satisfy both.
+            #
+            # The unauthorized check wants two frames far enough apart that
+            # one bad angle can't fail both (see its module docstring). The
+            # burst's first and last are sleep_confirmation_gap_seconds x
+            # (count-1) apart — 3s by default, i.e. MORE separation than
+            # grab_frame_pair_for_camera's own 1s, so this is a stronger
+            # signal, not a weaker one.
+            if len(sleep_frames) >= 2:
+                pair = (sleep_frames[0], sleep_frames[-1])
+            else:
+                pair = await grab_frame_pair_for_camera(camera)
+                if pair and primary_frame is None:
+                    primary_frame = pair[1]
 
         # needs_attendance is never true for an is_entrance/is_exit camera
         # (see above) — those get burst-grabbed by their own dedicated,
