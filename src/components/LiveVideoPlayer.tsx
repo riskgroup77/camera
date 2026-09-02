@@ -91,7 +91,6 @@ export default function LiveVideoPlayer({
     let loadTimer: ReturnType<typeof setTimeout> | null = null;
     let startTimer: ReturnType<typeof setTimeout> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let slotHeld = false;
 
     function clearAllTimers() {
       if (loadTimer) clearTimeout(loadTimer);
@@ -107,11 +106,19 @@ export default function LiveVideoPlayer({
       video!.load();
     }
 
-    function releaseIfHeld() {
-      if (slotHeld) {
-        slotHeld = false;
-        releaseSlot(streamUrl!);
-      }
+    // Always called on cleanup, whether or not a slot was ever actually
+    // held: a card can unmount (e.g. the user paginates to the next 8
+    // thumbnails) WHILE STILL WAITING for a turn, before acquireSlot's
+    // promise even resolves. Gating this on "did we ever get granted a
+    // slot" left such waiters as ghost entries sitting in the queue
+    // forever (or until eventually granted, then immediately
+    // self-revoked — wasted churn), which could let a page-1 leftover
+    // jump the line ahead of a genuinely-waiting page-2 thumbnail.
+    // releaseSlot() itself already checks both the active-holder and
+    // waiter lists and is a safe no-op if this id is in neither, so
+    // calling it unconditionally here is always correct.
+    function releaseQueueSlot() {
+      releaseSlot(streamUrl!);
     }
 
     function markReady() {
@@ -134,7 +141,7 @@ export default function LiveVideoPlayer({
         loadTimer = null;
       }
       teardownPlayback();
-      releaseIfHeld();
+      releaseQueueSlot();
       attemptRef.current += 1;
       setLoading(true);
       setRetrying(true);
@@ -232,7 +239,6 @@ export default function LiveVideoPlayer({
         // "hozircha to'xtat" signali, shuning uchun xato holatini
         // ko'rsatmasdan, jim ravishda qayta navbatga turamiz.
         await acquireSlot(streamUrl!, () => {
-          slotHeld = false;
           if (cancelled) return;
           if (loadTimer) {
             clearTimeout(loadTimer);
@@ -246,7 +252,6 @@ export default function LiveVideoPlayer({
           releaseSlot(streamUrl!);
           return;
         }
-        slotHeld = true;
       }
       await attach();
     }
@@ -259,7 +264,7 @@ export default function LiveVideoPlayer({
       cancelled = true;
       clearAllTimers();
       teardownPlayback();
-      releaseIfHeld();
+      releaseQueueSlot();
     };
   }, [streamUrl, startDelayMs, priority, acquireSlot, releaseSlot]);
 
