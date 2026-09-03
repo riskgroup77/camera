@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -147,6 +147,23 @@ export default function AdminLayout() {
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Tizim faol
             </span>
+            {/* Monitoring devoriga o'tish. Bu sahifa endi tizimga kirishni
+                talab qilgani uchun (himoya qo'shilgandan keyin) unga
+                admin panelidan ko'rinadigan yo'l kerak edi — aks holda
+                operator manzilni qo'lda terishi kerak bo'lardi.
+
+                <Link>, oddiy tugma emas: operator ko'pincha devorni
+                ALOHIDA oynada ochib, admin panelini yonida ushlab
+                turadi — havola bo'lsa, o'rta tugma yoki Ctrl+bosish
+                bilan yangi ichki oynada ochiladi. */}
+            <Link
+              to="/"
+              title="Video monitoring markazi"
+              className="glass-deep flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-indigo-500 dark:text-slate-300 dark:hover:text-indigo-400"
+            >
+              <Video size={16} />
+              <span className="hidden sm:inline">Kamera</span>
+            </Link>
             <ThemeToggle />
             <button
               onClick={handleBellClick}
