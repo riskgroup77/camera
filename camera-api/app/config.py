@@ -541,6 +541,21 @@ class Settings(BaseSettings):
     # Browser HLS needs H.264 — when relay is off, on-demand ffmpeg transcodes.
     mediamtx_transcode_h264: bool = False
     mediamtx_transcode_height: int = 720
+    # 0 = kameradan kelgan tezlikni o'zgartirmaslik. > 0 bo'lsa ffmpeg
+    # chiqishni shu FPS ga cheklaydi.
+    #
+    # Nega muhim: transkodlash JONLI oqim ustida ishlaydi. Enkoder real
+    # vaqtga ulgurmasa, u kadrlarni tashlab yubormaydi — chiqish kirishdan
+    # har soniyada ko'proq orqada qoladi, ya'ni kechikish TO'PLANADI
+    # (production'da 2-3 daqiqagacha o'sgan holat aynan shu). FPS ni
+    # ikki barobar kamaytirish enkoder xarajatini ham taxminan ikki
+    # barobar kamaytiradi, monitoring devori uchun esa 25fps shart emas.
+    #
+    # mediamtx_transcode_height ham shu mantiqda: u MANBA balandligidan
+    # OSHIB ketmasligi kerak. Substream ~360p bo'lsa, 720 qo'yish tasvirni
+    # yaxshilamaydi (yo'q detalni yarata olmaydi), faqat enkoderga ~4
+    # barobar ko'p piksel ishini beradi.
+    mediamtx_transcode_fps: int = 0
 
     # TT kriteriya 12 — ID-badge evristikasi
     badge_ai_interval_seconds: int = 45

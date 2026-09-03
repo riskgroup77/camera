@@ -106,12 +106,19 @@ def _path_config(rtsp_url: str) -> dict:
 
     height = settings.mediamtx_transcode_height
     quoted_url = shlex.quote(rtsp_url)
+    # Framerate cap. A live encoder that can't sustain realtime doesn't
+    # drop frames politely — its output falls further behind its input
+    # every second, which is how a wall ends up minutes behind reality.
+    # Halving the framerate roughly halves the encode cost, and a
+    # monitoring wall does not need 25fps.
+    fps_arg = f"-r {settings.mediamtx_transcode_fps} " if settings.mediamtx_transcode_fps > 0 else ""
     cmd = (
         f"/ffmpeg -hide_banner -loglevel error "
         f"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 "
         f"-rtsp_transport tcp -i {quoted_url} "
         f"-c:v libx264 -preset ultrafast -tune zerolatency "
         f"-profile:v baseline -level 3.1 -pix_fmt yuv420p "
+        f"{fps_arg}"
         f"-vf scale=-2:{height} -an "
         f"-f rtsp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"
     )

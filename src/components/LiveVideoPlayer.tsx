@@ -56,6 +56,24 @@ const RETRY_BASE_MS = 6_000;
 const RETRY_MAX_MS = 20_000;
 const SHOW_ERROR_AFTER_ATTEMPTS = 10;
 
+// Jonli chekkadan orqada qolishni kuzatish.
+//
+// Nega kerak: bu monitoring devori — ekrandagi tasvir HOZIRGI holatni
+// ko'rsatishi shart. HLS pleyeri esa tabiatan orqada qoladi va bu
+// kechikish TO'PLANADI: brauzer fon yorlig'idagi videoni sekinlashtiradi
+// yoki to'xtatadi, tarmoq uzilib-ulanadi, video element esa qayerda
+// to'xtagan bo'lsa o'sha yerdan davom etadi — jonli chekkaga o'zi
+// qaytmaydi. Bir necha soat ochiq turgan devor shu tarzda daqiqalab
+// orqada qolishi mumkin.
+//
+// Shuning uchun: agar bufferlangan chekka bilan joriy vaqt orasidagi
+// farq MAX dan oshsa, jonli chekkaga sakraymiz. Sakrash ko'rinadi
+// (tasvir bir zumda "ilgarilaydi"), lekin eskirgan tasvirni ko'rsatib
+// turishdan yaxshiroq.
+const LIVE_EDGE_CHECK_MS = 5_000;
+const MAX_BEHIND_LIVE_S = 12;
+const TARGET_BEHIND_LIVE_S = 2;
+
 export default function LiveVideoPlayer({
   streamUrl,
   className = '',
@@ -91,6 +109,8 @@ export default function LiveVideoPlayer({
     let loadTimer: ReturnType<typeof setTimeout> | null = null;
     let startTimer: ReturnType<typeof setTimeout> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let liveEdgeTimer: ReturnType<typeof setInterval> | null = null;
+    let onVisible: (() => void) | null = null;
 
     function clearAllTimers() {
       if (loadTimer) clearTimeout(loadTimer);
@@ -176,7 +196,7 @@ export default function LiveVideoPlayer({
 
         hlsInstance = new HlsLib({
           enableWorker: true,
-          lowLatencyMode: false,
+          lowLatencyMode: true,
           liveSyncDurationCount: 3,
           liveMaxLatencyDurationCount: 6,
           maxLiveSyncPlaybackRate: 1.5,
@@ -256,6 +276,30 @@ export default function LiveVideoPlayer({
       await attach();
     }
 
+    // Jonli chekka kuzatuvchisi — yuqoridagi MAX_BEHIND_LIVE_S izohiga
+    // qarang. Buferlangan chekkadan hisoblaymiz, shuning uchun HLS ham,
+    // oddiy MP4/WebM manba ham bir xil ishlaydi.
+    function jumpToLiveEdge(force: boolean) {
+      if (cancelled || !video || video.readyState < 2) return;
+      const buffered = video.buffered;
+      if (!buffered.length) return;
+      const edge = buffered.end(buffered.length - 1);
+      const behind = edge - video.currentTime;
+      if (!force && behind <= MAX_BEHIND_LIVE_S) return;
+      if (behind <= TARGET_BEHIND_LIVE_S) return;
+      video.currentTime = Math.max(0, edge - TARGET_BEHIND_LIVE_S);
+    }
+
+    liveEdgeTimer = setInterval(() => jumpToLiveEdge(false), LIVE_EDGE_CHECK_MS);
+
+    // Brauzer fondagi yorliqda videoni to'xtatadi/sekinlashtiradi, qaytib
+    // kelganda esa u o'sha eski nuqtadan davom etadi — devor ochiq turib
+    // daqiqalab orqada qolishining eng keng tarqalgan sababi shu.
+    onVisible = () => {
+      if (document.visibilityState === 'visible') jumpToLiveEdge(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     startTimer = setTimeout(() => {
       if (!cancelled) void start();
     }, startDelayMs);
@@ -263,6 +307,8 @@ export default function LiveVideoPlayer({
     return () => {
       cancelled = true;
       clearAllTimers();
+      if (liveEdgeTimer) clearInterval(liveEdgeTimer);
+      if (onVisible) document.removeEventListener('visibilitychange', onVisible);
       teardownPlayback();
       releaseQueueSlot();
     };
