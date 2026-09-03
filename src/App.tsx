@@ -23,7 +23,16 @@ export default function App() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
-        <Route path="/" element={<MonitoringPage />} />
+        {/* Monitoring devori endi tizimga kirishni talab qiladi. Auditda
+            aniqlangan: token'siz ham 107 ta kameraning jonli tasviri
+            ko'rinardi — koridorlar, xonalar, kirish joylari internetdan
+            kira olgan har kimga ochiq edi.
+
+            Ro'yxatdan o'tish sahifasi ATAYLAB ochiq qoladi: u aynan hali
+            hisobi yo'q odam o'z yuzini yuborishi uchun mo'ljallangan. */}
+        <Route element={<RequireAuth />}>
+          <Route path="/" element={<MonitoringPage />} />
+        </Route>
         <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
       </Route>
 

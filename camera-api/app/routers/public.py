@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
+from app.dependencies import require_monitoring_access
 from app.jobs.camera_health import is_reachable
 from app.models import AttendanceRecord, Building, Camera, Event, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
@@ -34,7 +35,14 @@ from app.services.sweep_result_cache import get_camera_sweep
 logger = logging.getLogger("app.public")
 from app.timezone import local_now
 
-router = APIRouter(prefix="/api/public", tags=["public"])
+# Himoya BUTUN router darajasida: endpointlarga birma-bir qo'shilsa,
+# keyin qo'shiladigan yangi endpoint ochiq qolib ketishi mumkin edi —
+# audit aynan shunday teshikni topdi.
+router = APIRouter(
+    prefix="/api/public",
+    tags=["public"],
+    dependencies=[Depends(require_monitoring_access)],
+)
 
 
 def _is_live_expr():

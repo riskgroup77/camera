@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.config import settings
 from app.models import Building, Camera
 from tests.conftest import auth_headers
 
@@ -29,9 +30,52 @@ async def a_camera(db_session, seeded):
     return camera
 
 
+@pytest.fixture
+def monitoring_open(monkeypatch):
+    """Turns the monitoring wall's auth gate off for the tests below.
+
+    Those tests are about the endpoints' BEHAVIOUR (pagination, filters,
+    live/offline logic), not about who may call them; the gate itself is
+    covered separately in TestMonitoringAuthGate. Keeping them split
+    means a change to the gate cannot quietly pass by breaking fifteen
+    unrelated assertions."""
+    monkeypatch.setattr(settings, "public_monitoring_requires_auth", False)
+
+
 @pytest.mark.usefixtures("seeded")
+class TestMonitoringAuthGate:
+    """The wall used to be readable by anyone who could reach the site.
+    Measured on production before this: no token in localStorage, and all
+    107 live camera feeds rendered anyway."""
+
+    async def test_cameras_require_auth_by_default(self, client: AsyncClient, a_camera):
+        resp = await client.get("/api/public/cameras")
+        assert resp.status_code == 401
+
+    async def test_stats_require_auth_by_default(self, client: AsyncClient):
+        assert (await client.get("/api/public/stats")).status_code == 401
+
+    async def test_live_detection_requires_auth_by_default(self, client: AsyncClient, a_camera):
+        resp = await client.get(f"/api/public/cameras/{a_camera.id}/live-detection")
+        assert resp.status_code == 401
+
+    async def test_a_logged_in_user_gets_through(self, client: AsyncClient, a_camera):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.get("/api/public/cameras", headers=headers)
+        assert resp.status_code == 200
+
+    async def test_the_gate_can_be_reopened_by_configuration(
+        self, client: AsyncClient, a_camera, monitoring_open
+    ):
+        """A situation-centre wall display may have no one to type a
+        password into it. Closing the hole must not mean that screen
+        cannot be brought back without a redeploy."""
+        assert (await client.get("/api/public/cameras")).status_code == 200
+
+
+@pytest.mark.usefixtures("seeded", "monitoring_open")
 class TestPublicEndpoints:
-    async def test_public_cameras_requires_no_auth_and_hides_credentials(self, client: AsyncClient, a_camera):
+    async def test_public_cameras_hides_credentials(self, client: AsyncClient, a_camera):
         resp = await client.get("/api/public/cameras")
         assert resp.status_code == 200
         body = resp.json()
@@ -65,7 +109,7 @@ class TestPublicEndpoints:
         cam = next(c for c in resp.json()["items"] if c["name"] == "Hech qachon tekshirilmagan kamera")
         assert cam["status"] == "offline"
 
-    async def test_public_stats_requires_no_auth(self, client: AsyncClient):
+    async def test_public_stats_shape(self, client: AsyncClient):
         resp = await client.get("/api/public/stats")
         assert resp.status_code == 200
         body = resp.json()

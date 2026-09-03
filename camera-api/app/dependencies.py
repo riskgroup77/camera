@@ -46,6 +46,24 @@ async def get_current_user(
     return CurrentUser(id=payload.user_id, role=payload.role, jti=payload.jti, expires_at=payload.expires_at)
 
 
+async def require_monitoring_access(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CurrentUser | None:
+    """Monitoring devori uchun himoya — settings bilan o'chirilishi mumkin.
+
+    get_current_user'ni to'g'ridan-to'g'ri Depends qilib qo'ya olmaymiz,
+    chunki u sozlamadan qat'i nazar 401 qaytaradi; bu yerda esa himoya
+    o'chirilgan bo'lsa so'rov o'tishi kerak (public_monitoring_requires_auth
+    izohiga qarang).
+    """
+    from app.config import settings
+
+    if not settings.public_monitoring_requires_auth:
+        return None
+    return await get_current_user(credentials, db)
+
+
 def require_permission(key: str):
     """Server-side equivalent of the frontend's usePermissions().can(key, role) —
     this is the real security boundary; the frontend's own check is UX-only.

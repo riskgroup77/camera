@@ -570,6 +570,36 @@ class Settings(BaseSettings):
     # (LL-HLS) nihoyat ishlay boshlaydi.
     mediamtx_transcode_keyframe_seconds: float = 1.0
 
+    # Monitoring devori (MonitoringPage) tizimga kirishni talab qiladimi.
+    #
+    # Nega sozlama, nega darhol qat'iy emas: bu sahifa kodda ataylab
+    # "public" deb qurilgan va situatsion markazdagi katta ekranda
+    # doimiy ochiq turishi mumkin. Uni to'satdan yopish o'sha ekranni
+    # o'chirib qo'yadi. Shuning uchun himoya standart bo'yicha YOQILGAN
+    # (auditda aniqlangan: token'siz ham 107 ta kameraning jonli
+    # tasviri ko'rinardi), lekin bitta muhit o'zgaruvchisi bilan
+    # darhol qaytarib bo'ladi.
+    #
+    # DIQQAT: bu faqat API'ni himoyalaydi. Video oqimlarining o'zi
+    # nginx orqali MediaMTX'dan uzatiladi va u alohida himoya talab
+    # qiladi — kamera ro'yxati yopilgani bilan UUID'ni bilgan odam
+    # oqimni baribir ocha oladi.
+    public_monitoring_requires_auth: bool = True
+
+    # "Notanish shaxs" (1-modul) ishlashi uchun bazada kamida shuncha
+    # tasdiqlangan yuz bo'lishi kerak.
+    #
+    # Nega kerak: modul "bu odam bazada YO'Q" degan xulosa chiqaradi.
+    # Baza deyarli bo'sh bo'lsa, bu xulosa hech narsa anglatmaydi —
+    # binodagi HAR BIR odam begona bo'lib chiqadi. Production auditda
+    # aynan shu holat topilgan: bazada 3 ta tasdiqlangan yuz bor edi va
+    # modul 134 ta signal bergan, ularning 45% i bitta kameradan, 37
+    # tasi esa bino bo'sh bo'lgan tunda.
+    #
+    # Bu ro'yxatga olish tugagach o'zi hal bo'ladi — modul avtomatik
+    # ishlay boshlaydi, hech narsani qo'lda yoqish shart emas.
+    unauthorized_min_enrolled: int = 10
+
     # TT kriteriya 12 — ID-badge evristikasi
     badge_ai_interval_seconds: int = 45
     badge_dedup_minutes: int = 30
