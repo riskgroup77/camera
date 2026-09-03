@@ -17,7 +17,7 @@ can have tuned these deliberately: the control did nothing until now.
 Only rows still holding the old default are touched, so a value someone
 sets after this migration is never clobbered by a re-run.
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: b7c1d2e3f4a5
 Revises: f6a7b8c9d0e1
 """
 
@@ -25,7 +25,7 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = "a1b2c3d4e5f6"
+revision: str = "b7c1d2e3f4a5"
 down_revision: Union[str, None] = "f6a7b8c9d0e1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
