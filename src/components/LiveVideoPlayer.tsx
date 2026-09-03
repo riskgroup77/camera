@@ -190,13 +190,27 @@ export default function LiveVideoPlayer({
         if (video.videoWidth === 0) markFailed();
       }, LOAD_TIMEOUT_MS);
 
-      if (isHls && !video.canPlayType('application/vnd.apple.mpegurl')) {
-        const { default: HlsLib } = await import('hls.js');
-        if (cancelled) return;
-        if (!HlsLib.isSupported()) {
-          markFailed();
-          return;
-        }
+      // HLS uchun HAR DOIM avval hls.js sinaladi; brauzerning o'z HLS
+      // qo'llab-quvvatlashiga faqat hls.js ishlamaydigan joyda
+      // (Safari/iOS — u yerda MSE cheklangan, native HLS esa haqiqatan
+      // yaxshi ishlaydi) tushamiz.
+      //
+      // Avval bu shart `!video.canPlayType('application/vnd.apple.mpegurl')`
+      // edi va aynan shu Chrome'da pleyerni o'ldirgan: Chromium bu
+      // MIME uchun "maybe" qaytaradi (bo'sh satr emas!), ya'ni shart
+      // false bo'lib, hls.js chetlab o'tilardi va `.m3u8` to'g'ridan-
+      // to'g'ri <video src> ga berilardi — Chromium'da esa native HLS
+      // umuman yo'q. Production'da o'lchangan (Chrome 148): 9 tadan 9
+      // ta pleyer `readyState: 1`, `paused: true`, `currentTime: 0`
+      // holatida qotib qolgan. canPlayType'ning "maybe" javobi hech
+      // narsani kafolatlamaydi, shuning uchun unga qaror qabul
+      // qilishda tayanib bo'lmaydi.
+      const { default: HlsLib } = isHls
+        ? await import('hls.js')
+        : { default: null as unknown as typeof import('hls.js').default };
+      if (cancelled) return;
+
+      if (isHls && HlsLib.isSupported()) {
 
         hlsInstance = new HlsLib({
           enableWorker: true,
