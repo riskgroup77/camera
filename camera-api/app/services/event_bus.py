@@ -17,7 +17,9 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Camera, Event
+from sqlalchemy import select
+
+from app.models import AIModuleConfig, Camera, Event
 from app.schemas.event import EventOut
 from app.storage import presigned_url, upload_file
 from app.timezone import to_local
@@ -53,11 +55,43 @@ async def raise_event(
     severity: str,
     frame_bytes: bytes | None = None,
     person_name: str | None = None,
-) -> Event:
+) -> Event | None:
     """Creates, commits, and broadcasts one Event, with a snapshot of
     `frame_bytes` if given. Caller is responsible for its own dedup check
-    (e.g. _recently_flagged) before calling this — this function always
-    raises."""
+    (e.g. _recently_flagged) before calling this.
+
+    Returns None when the module's configured threshold rejects the
+    detection. Before this, AIModuleConfig.threshold was written by the
+    admin panel and read back by it, and NOTHING else ever looked at it —
+    the "sezgirlik" control was decorative. Production proof at the time:
+    every single event of modules 1, 5, 17 and 25 sat below its own
+    module's threshold (134/134, 28/28, 84/84, 4/4), which is impossible
+    if the number means anything.
+
+    Note what the threshold can and cannot do. Several modules report a
+    CONSTANT confidence (see the comments beside each `confidence=` — they
+    are honest self-assessments of coarse heuristics, not measurements),
+    so for those the threshold acts as an on/off switch rather than a
+    sensitivity dial: set it above the constant and the module goes
+    quiet. That is a real, useful control, but it is not a gradual one,
+    and pretending otherwise in the UI would be the same lie in a new
+    place.
+    """
+    threshold = (
+        await db.execute(select(AIModuleConfig.threshold).where(AIModuleConfig.code == module_code))
+    ).scalar_one_or_none()
+    if threshold is not None and confidence < threshold:
+        logger.info(
+            "event suppressed by module threshold",
+            extra={
+                "module_code": module_code,
+                "confidence": confidence,
+                "threshold": threshold,
+                "camera": camera.name,
+            },
+        )
+        return None
+
     snapshot_key = await _save_snapshot(frame_bytes)
     event = Event(
         camera_id=camera.id,
