@@ -70,9 +70,13 @@ const SHOW_ERROR_AFTER_ATTEMPTS = 10;
 // farq MAX dan oshsa, jonli chekkaga sakraymiz. Sakrash ko'rinadi
 // (tasvir bir zumda "ilgarilaydi"), lekin eskirgan tasvirni ko'rsatib
 // turishdan yaxshiroq.
-const LIVE_EDGE_CHECK_MS = 5_000;
-const MAX_BEHIND_LIVE_S = 12;
-const TARGET_BEHIND_LIVE_S = 2;
+const LIVE_EDGE_CHECK_MS = 3_000;
+// Bu chegaralar segmentlar 20 soniyalik bo'lgan davrdan qolgan edi (12s
+// — bir segmentdan kichik, ya'ni hech qachon ishga tushmasdi). Endi
+// segmentlar 1 soniya, LL-HLS qismlari esa 250ms, shuning uchun 3
+// soniyadan ortiq orqada qolish allaqachon anomaliya.
+const MAX_BEHIND_LIVE_S = 3;
+const TARGET_BEHIND_LIVE_S = 1;
 
 export default function LiveVideoPlayer({
   streamUrl,
@@ -197,12 +201,20 @@ export default function LiveVideoPlayer({
         hlsInstance = new HlsLib({
           enableWorker: true,
           lowLatencyMode: true,
-          liveSyncDurationCount: 3,
-          liveMaxLatencyDurationCount: 6,
+          // liveSyncDurationCount ATAYLAB berilmagan. hls.js pleylistdagi
+          // PART-HOLD-BACK qiymatini (production'da o'lchangan: 0.625s)
+          // faqat bu sozlama BERILMAGAN bo'lsa ishlatadi — qo'lda qiymat
+          // qo'yilsa, LL-HLS sinxronizatsiyasi butunlay chetlab o'tiladi.
+          // Avval bu yerda 3 turardi va aynan shu sababli server 0.6
+          // soniyalik kechikish taklif qilib turganda pleyer jonli
+          // chekkadan 11 soniya orqada qotib qolgan edi.
           maxLiveSyncPlaybackRate: 1.5,
           backBufferLength: 0,
-          maxBufferLength: 8,
-          maxMaxBufferLength: 16,
+          // Oldinga buferni kichik ushlaymiz: katta bufer sekin tarmoqda
+          // uzilishlardan himoya qiladi, lekin monitoring devorida
+          // buferning har soniyasi — real vaqtdan orqada qolgan soniya.
+          maxBufferLength: 4,
+          maxMaxBufferLength: 8,
           fragLoadingMaxRetry: 8,
           manifestLoadingMaxRetry: 6,
           levelLoadingMaxRetry: 6,
