@@ -393,6 +393,20 @@ async def run_attendance_ai_sweep_once(
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
 
+        # Konfiguratsiya bo'shlig'i haqida ogohlantirish. is_exit ataylab
+        # standart bo'yicha False (Camera.is_exit izohiga qarang) — uni
+        # admin belgilashi kerak. Lekin hech kim belgilamasa, check_out
+        # HECH QACHON yozilmaydi va 9-modul ("erta ketish") jimgina hech
+        # narsa qilmaydi. Production auditda aynan shu holat: 11 ta kirish
+        # kamerasi bor, chiqish kamerasi 0 ta. Bu jimgina o'tib ketadigan
+        # xato edi — endi u loglarda ko'rinadi.
+        if cameras and not any(c.is_exit for c in cameras):
+            logger.warning(
+                "no camera is flagged is_exit — check_out will never be recorded, "
+                "so early-departure detection cannot work",
+                extra={"entrance_cameras": sum(1 for c in cameras if c.is_entrance)},
+            )
+
     if not cameras or candidates.is_empty:
         return 0
 
@@ -480,6 +494,20 @@ async def run_entrance_exit_attendance_sweep_once(
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
+
+        # Konfiguratsiya bo'shlig'i haqida ogohlantirish. is_exit ataylab
+        # standart bo'yicha False (Camera.is_exit izohiga qarang) — uni
+        # admin belgilashi kerak. Lekin hech kim belgilamasa, check_out
+        # HECH QACHON yozilmaydi va 9-modul ("erta ketish") jimgina hech
+        # narsa qilmaydi. Production auditda aynan shu holat: 11 ta kirish
+        # kamerasi bor, chiqish kamerasi 0 ta. Bu jimgina o'tib ketadigan
+        # xato edi — endi u loglarda ko'rinadi.
+        if cameras and not any(c.is_exit for c in cameras):
+            logger.warning(
+                "no camera is flagged is_exit — check_out will never be recorded, "
+                "so early-departure detection cannot work",
+                extra={"entrance_cameras": sum(1 for c in cameras if c.is_entrance)},
+            )
 
     if not cameras or candidates.is_empty:
         return 0
