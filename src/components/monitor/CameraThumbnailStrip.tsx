@@ -74,6 +74,7 @@ export default function CameraThumbnailStrip({
   total,
   onPageChange,
   loading,
+  error = null,
 }: {
   cameras: CameraFeed[];
   activeId: string | null;
@@ -83,6 +84,9 @@ export default function CameraThumbnailStrip({
   total: number;
   onPageChange: (page: number) => void;
   loading: boolean;
+  /** So'rov muvaffaqiyatsiz tugagan bo'lsa — matn. Bo'sh ro'yxatdan
+      farqli o'laroq, bu foydalanuvchi hal qila oladigan holat. */
+  error?: string | null;
 }) {
   return (
     <div className="shrink-0">
@@ -90,6 +94,15 @@ export default function CameraThumbnailStrip({
         <div className="flex items-center justify-center py-4 text-slate-400">
           <Loader2 size={16} className="animate-spin" />
         </div>
+      ) : error ? (
+        // "Kamera topilmadi" NOTO'G'RI xabar edi bu holat uchun: 107 ta
+        // kamera ishlab turganda ham so'rov muvaffaqiyatsiz bo'lsa
+        // shu chiqardi, va nosozlikni oddiy bo'sh natijadan ajratib
+        // bo'lmasdi. Aynan shu narsa himoya qo'shilgandan keyingi 401
+        // to'lqinini bir necha soat ko'rinmas qilib turdi.
+        <p className="rounded-xl border border-dashed border-red-300 py-4 text-center text-xs text-red-600 dark:border-red-900/50 dark:text-red-400">
+          {error}
+        </p>
       ) : cameras.length === 0 ? (
         <p className="rounded-xl border border-dashed border-slate-300 py-4 text-center text-xs text-slate-400 dark:border-white/10 dark:text-slate-500">
           Kamera topilmadi

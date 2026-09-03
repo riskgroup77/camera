@@ -35,6 +35,7 @@ export default function MonitoringPage() {
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1 });
   const [stats, setStats] = useState<AttendanceStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Keyingi sahifaning kamera RO'YXATI (video emas) oldindan olib
   // qo'yiladi, shuning uchun "keyingi" bosilganda kutish bo'lmaydi.
@@ -127,6 +128,7 @@ export default function MonitoringPage() {
       .then((res) => {
         if (cancelled) return;
         setCameras(res.items);
+        setLoadError(null);
         setPageInfo({ total: res.total, totalPages: res.totalPages });
         // Qidiruv/filtr o'zgargan bo'lsa — natijaning birinchisini
         // ko'rsatamiz. Aks holda (shunchaki sahifa almashgan bo'lsa)
@@ -166,7 +168,13 @@ export default function MonitoringPage() {
         }
       })
       .catch(() => {
-        /* kameralarni yuklab bo'lmadi — bo'sh ro'yxat/oldingi holat bilan davom etamiz, texnik xatoni ko'rsatmaymiz */
+        if (cancelled) return;
+        // Jimgina o'tkazib yuborish xavfli: sahifa o'shanda "Kamera
+        // topilmadi" chizardi, ya'ni NOSOZLIK bo'sh natijaga o'xshab
+        // ko'rinardi. Texnik tafsilot operatorga kerak emas, lekin
+        // "yuklab bo'lmadi" bilan "yo'q" farqi kerak.
+        setCameras([]);
+        setLoadError("Kameralarni yuklab bo'lmadi. Sahifani yangilang yoki qayta kiring.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -234,6 +242,7 @@ export default function MonitoringPage() {
             total={pageInfo.total}
             onPageChange={setPage}
             loading={loading}
+            error={loadError}
           />
         </div>
 

@@ -35,9 +35,36 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
   onUnauthorized = handler;
 }
 
+/**
+ * Joriy sessiya tokenini beruvchi — auth.tsx uni o'rnatadi
+ * (setAuthTokenGetter), setUnauthorizedHandler bilan bir xil sababga
+ * ko'ra: apiClient React'ga bog'lanib qolmasin.
+ *
+ * Nega kerak bo'ldi: token har bir chaqiruvga QO'LDA uzatilardi
+ * (api.get(path, token)). Bu admin sahifalarida ishlardi, chunki ular
+ * doim token uzatgan. Monitoring devori esa /api/public/* ni ochiq deb
+ * bilib, hech qachon uzatmagan — va o'sha endpointlar himoyalanishi
+ * bilan har biri 401 qaytardi, sahifa esa xatoni ko'rsatmasdan bo'sh
+ * ro'yxat chizdi: "hech qanday kamera ulanmagan".
+ *
+ * Buni oltita chaqiruv joyiga qo'lda token qo'shib ham tuzatsa
+ * bo'lardi, lekin keyingi yangi chaqiruv yana o'shani unutardi —
+ * server shartnomasi o'zgarganda mijozning HAMMA joyini eslab qolish
+ * kerak bo'lgan yechim ishonchli emas. Endi token bitta joydan
+ * qo'shiladi; aniq uzatilgan token esa baribir ustun turadi (login
+ * so'rovi kabi maxsus holatlar uchun).
+ */
+type TokenGetter = () => string | null;
+let getAuthToken: TokenGetter | null = null;
+
+export function setAuthTokenGetter(getter: TokenGetter | null): void {
+  getAuthToken = getter;
+}
+
 async function request<T>(path: string, { method = 'GET', body, token, isForm }: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const authToken = token ?? getAuthToken?.() ?? null;
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${config.apiBaseUrl}${path}`, {
@@ -51,7 +78,7 @@ async function request<T>(path: string, { method = 'GET', body, token, isForm }:
     // kutilgan edi, lekin server rad etdi => sessiya tugagan. Login
     // so'rovining 401'i (noto'g'ri parol) bunga kirmaydi — aks holda
     // login sahifasi o'zini cheksiz "chiqish"ga yuborardi.
-    if (res.status === 401 && token) onUnauthorized?.();
+    if (res.status === 401 && authToken) onUnauthorized?.();
 
     let detail = `So'rov muvaffaqiyatsiz tugadi (${res.status})`;
     try {

@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { ApiError, api, setUnauthorizedHandler } from './apiClient';
+import { createContext, useContext, useEffect, useState, type ReactNode, useRef } from 'react';
+import { ApiError, api, setAuthTokenGetter, setUnauthorizedHandler } from './apiClient';
 import { isBackendConfigured } from './config';
 
 export type Role = 'super-admin' | 'admin';
@@ -78,6 +78,21 @@ async function authenticate(role: Role, login: string, password: string): Promis
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(readAuth);
+
+  // apiClient har bir so'rovga tokenni shu yerdan oladi — izohi
+  // apiClient.ts'dagi setAuthTokenGetter'da.
+  //
+  // ref orqali, state orqali emas: getter apiClient ichida saqlanadi va
+  // uni har render'da qayta o'rnatish (yoki eski qiymatni yopib qolish)
+  // token yangilangach eskisini yuborishga olib kelardi. ref esa doim
+  // oxirgi qiymatni ko'rsatadi.
+  const tokenRef = useRef(state.token);
+  tokenRef.current = state.token;
+
+  useEffect(() => {
+    setAuthTokenGetter(() => tokenRef.current);
+    return () => setAuthTokenGetter(null);
+  }, []);
 
   // Token muddati tugagach (server 401 qaytarganda) sessiyani darhol
   // tozalaymiz — apiClient.ts'dagi setUnauthorizedHandler izohiga qarang.
