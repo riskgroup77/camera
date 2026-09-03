@@ -123,14 +123,29 @@ async def process_camera_frame_pair_for_unauthorized(
 ) -> bool:
     """Returns True if a (deduped) unauthorized-person Event was raised —
     see the module docstring for the two-frame confirmation rationale."""
+    # Ro'yxat tekshiruvi ENG BOSHIDA va aynan shu yerda — chunki bu
+    # funksiya ikkita mustaqil chaqiruvchiga ega
+    # (run_unauthorized_person_ai_sweep_once va unified_face_sweep.py).
+    # Shartni faqat sweep funksiyasiga qo'yganimda unified_face_sweep uni
+    # chetlab o'tib, kamera 192.168.0.36 yana signal bergan edi.
+    #
+    # Nega umuman kerak: settings.unauthorized_min_enrolled izohiga
+    # qarang. Qisqasi — baza deyarli bo'sh bo'lsa, "bazada yo'q" degan
+    # xulosa hech narsa anglatmaydi.
+    #
+    # Tekshiruv detect_faces'dan OLDIN turadi: u eng qimmat chaqiruv
+    # (CPU'da ~1.4s), va natijasi baribir ishlatilmasa uni bajarish
+    # behuda.
+    if candidates is None:
+        candidates = await load_candidate_matrix_for_sweep(db)
+    if len(candidates.ids) < settings.unauthorized_min_enrolled:
+        return False
+
     if faces_b is None:
         faces_b = await detect_faces(frame_b)
     faces_b = _filter_faces_by_size(faces_b, frame_b)
     if not faces_b:
         return False
-
-    if candidates is None:
-        candidates = await load_candidate_matrix_for_sweep(db)
 
     if not _has_unmatched_face(faces_b, candidates):
         return False  # everyone detected in frame_b matched an enrolled person

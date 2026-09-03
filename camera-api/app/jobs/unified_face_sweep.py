@@ -254,6 +254,18 @@ async def run_unified_face_sweep_once(
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
 
+        # Ro'yxat juda kichik bo'lsa 1-modulni shu yerda o'chiramiz.
+        # Haqiqiy himoya process_camera_frame_pair_for_unauthorized
+        # ichida, lekin bayroqni shu yerda tushirish kadr JUFTLIGINI
+        # olishning oldini oladi — u har kamera uchun qo'shimcha ikki
+        # kadr va bir necha soniya kutish demakdir.
+        if flags["unauthorized"] and len(candidates.ids) < settings.unauthorized_min_enrolled:
+            logger.warning(
+                "unauthorized-person check disabled this sweep: enrolled roster too small",
+                extra={"enrolled": len(candidates.ids), "required": settings.unauthorized_min_enrolled},
+            )
+            flags["unauthorized"] = False
+
     totals = {"attendance": 0, "crowd": 0, "unauthorized": 0, "sleep": 0}
     if not cameras:
         return totals

@@ -72,6 +72,15 @@ class TestFilterFacesBySize:
 
 @pytest.mark.usefixtures("seeded")
 class TestProcessCameraFramePairForUnauthorized:
+    @pytest.fixture(autouse=True)
+    def _roster_guard_off(self, monkeypatch):
+        """These tests exercise the MATCHING logic — face size filtering,
+        two-frame confirmation, dedup. The separate roster-size guard
+        (settings.unauthorized_min_enrolled) would stop every one of them
+        before they reach that logic, since a test database has almost
+        nobody enrolled. The guard has its own tests below."""
+        monkeypatch.setattr(settings, "unauthorized_min_enrolled", 0)
+
     async def test_small_face_like_a_wall_photo_does_not_raise(self, db_session, a_camera, monkeypatch):
         # Simulates the real-world false positive this filter targets: a
         # printed photo on a wall (a noticeboard, a poster) reads as a
@@ -180,6 +189,44 @@ class TestSweepConcurrency:
 
         await run_unauthorized_person_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing
+
+    async def test_the_guard_lives_in_the_shared_decision_function(
+        self, db_session, seeded, monkeypatch
+    ):
+        """unified_face_sweep.py calls process_camera_frame_pair_for_unauthorized
+        directly, so a guard placed only in this module's own sweep is not a
+        guard at all. That is not hypothetical: it shipped that way, and the
+        same corridor camera kept raising alerts after the deploy.
+        """
+        building = (await db_session.execute(select(Building))).scalars().first()
+        from datetime import datetime, timezone
+
+        camera = Camera(
+            name="Kamera", ip="10.0.9.55", stream_url="rtsp://fake/y",
+            building_id=building.id, zone="Z", resolution="1080p", status="faol",
+            last_seen_at=datetime.now(timezone.utc),
+        )
+        db_session.add(camera)
+        await db_session.commit()
+        await db_session.refresh(camera, ["building"])
+
+        detected = {"n": 0}
+
+        async def counting_detect(frame):
+            detected["n"] += 1
+            return []
+
+        monkeypatch.setattr(unauthorized_person_ai, "detect_faces", counting_detect)
+        monkeypatch.setattr(settings, "unauthorized_min_enrolled", 10)
+
+        frame = FACE_IMAGE_PATH.read_bytes()
+        raised = await unauthorized_person_ai.process_camera_frame_pair_for_unauthorized(
+            frame, frame, db_session, camera
+        )
+
+        assert raised is False
+        # The guard sits before detect_faces, the most expensive call here.
+        assert detected["n"] == 0
 
     async def test_sweep_stops_when_almost_nobody_is_enrolled(self, db_session, seeded, monkeypatch):
         """"Not in the database" says nothing when the database is empty.
