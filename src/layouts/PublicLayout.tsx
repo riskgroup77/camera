@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
-import { LogOut, ScanFace } from 'lucide-react';
+import { LogIn, LogOut, ScanFace } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 import QuickAccessBar from '../components/QuickAccessBar';
 import { useAuth } from '../lib/auth';
@@ -36,15 +36,18 @@ export default function PublicLayout() {
               Jonli yangilanish
             </span>
             <ThemeToggle />
+            {/* Tizimga kirmagan foydalanuvchiga "Chiqish" deb turish
+                chalg'ituvchi edi — tugma aslida kirish sahifasiga olib
+                boradi. Endi yozuv ham, belgi ham, rangi ham holatga mos. */}
             <button
               onClick={() => {
                 if (role) logout();
                 navigate('/admin/login');
               }}
-              className="glass-btn-danger flex items-center gap-1.5 !py-2"
+              className={`flex items-center gap-1.5 !py-2 ${role ? 'glass-btn-danger' : 'btn-glass'}`}
             >
-              <LogOut size={14} />
-              Chiqish
+              {role ? <LogOut size={14} /> : <LogIn size={14} />}
+              {role ? 'Chiqish' : 'Kirish'}
             </button>
           </div>
         </div>

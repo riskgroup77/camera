@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Building2, Circle, Expand, MapPin, Minimize2, Sparkles, VideoOff } from 'lucide-react';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import { useCameraAnalysisStatus } from '../../lib/useCameraAnalysisStatus';
@@ -30,11 +31,25 @@ export default function MainCameraView({
     setFullscreen(false);
   }, [camera?.id]);
 
-  return (
+  // Escape — to'liq ekrandan chiqish. Bu haqiqiy Fullscreen API emas,
+  // oddiy qoplama, shuning uchun brauzer Escape'ni o'zi ushlamaydi va
+  // usiz foydalanuvchi qoplamada qamalib qolishi mumkin edi.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  const body = (
     <div
-      className={`relative flex items-center justify-center overflow-hidden rounded-2xl bg-slate-900 transition-all ${
-        fullscreen ? 'fixed inset-4 z-[60]' : className
-      }`}
+      className={
+        fullscreen
+          ? 'fixed inset-4 z-[60] flex items-center justify-center overflow-hidden rounded-2xl bg-slate-900'
+          : `relative flex items-center justify-center overflow-hidden rounded-2xl bg-slate-900 transition-all ${className}`
+      }
     >
       {!camera && (
         <div className="flex flex-col items-center gap-1.5 text-white/40">
@@ -105,4 +120,27 @@ export default function MainCameraView({
       )}
     </div>
   );
+
+  // To'liq ekran qoplamasi document.body'ga PORTAL orqali chiqariladi.
+  //
+  // Sababi nozik va uni faqat production'da ko'rib aniqladik: bu
+  // komponentning ota elementi `.glass` klassiga ega, unda esa
+  // `backdrop-blur` (ya'ni backdrop-filter) bor. CSS qoidasi bo'yicha
+  // backdrop-filter qo'yilgan element o'zining ichidagi
+  // `position: fixed` elementlar uchun yangi tayanch nuqta (containing
+  // block) yaratadi — natijada `inset-4` ekranga emas, o'sha shisha
+  // panelga nisbatan hisoblanardi va qoplama ko'rinmay qolardi, asosiy
+  // joy esa (element oqimdan chiqqani uchun) bo'shab qolardi.
+  //
+  // Portal ota zanjirini butunlay chetlab o'tadi, shuning uchun
+  // `fixed` yana ekranga nisbatan ishlaydi.
+  if (fullscreen) {
+    return (
+      <>
+        <div className={className} aria-hidden />
+        {createPortal(body, document.body)}
+      </>
+    );
+  }
+  return body;
 }

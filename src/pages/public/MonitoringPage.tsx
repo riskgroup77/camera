@@ -45,6 +45,13 @@ export default function MonitoringPage() {
     pages: new Map(),
   });
 
+  // Oxirgi qidiruv/filtr — asosiy kamerani QACHON almashtirishni shu
+  // hal qiladi. Sahifadan sahifaga o'tganda almashtirmaymiz (bu ataylab:
+  // tanlangan kamera 8 talikda bo'lmasa ham ko'rinib turishi kerak),
+  // lekin qidiruv o'zgarganda almashtiramiz — "192.168.0.36" deb qidirib,
+  // ekranda butunlay boshqa kamerani ko'rib turish chalg'ituvchi.
+  const lastQueryKey = useRef<string | null>(null);
+
   // Qidiruv har bosilgan tugmada emas, foydalanuvchi to'xtaganda so'rov
   // yuboradi — endi qidiruv serverda bajariladi (kameralar soni ko'payganda
   // ularning hammasini oldindan yuklab olish shart emas).
@@ -121,12 +128,17 @@ export default function MonitoringPage() {
         if (cancelled) return;
         setCameras(res.items);
         setPageInfo({ total: res.total, totalPages: res.totalPages });
-        // Faqat birinchi marta (hali hech narsa tanlanmaganda) asosiy
-        // ko'rinish uchun birinchi kamerani avtomatik tanlaydi — asosiy
-        // kamera tanlangandan keyin miniatyuralar sahifasini almashtirish
-        // uni o'zgartirmasligi kerak (asosiy kamera joriy 8 talikda
-        // bo'lishi shart emas).
-        setActiveCamera((current) => current ?? res.items[0] ?? current);
+        // Qidiruv/filtr o'zgargan bo'lsa — natijaning birinchisini
+        // ko'rsatamiz. Aks holda (shunchaki sahifa almashgan bo'lsa)
+        // tanlangan kameraga tegmaymiz: u joriy 8 talikda bo'lishi shart
+        // emas va operator uni ataylab tanlab qo'ygan bo'lishi mumkin.
+        const queryChanged = lastQueryKey.current !== queryKey;
+        lastQueryKey.current = queryKey;
+        if (queryChanged) {
+          setActiveCamera(res.items[0] ?? null);
+        } else {
+          setActiveCamera((current) => current ?? res.items[0] ?? current);
+        }
 
         // Keyingi sahifani fon rejimida oldindan olib qo'yamiz — "keyingi"
         // bosilganda so'rov-javob kutilmasin, miniatyuralar darhol
