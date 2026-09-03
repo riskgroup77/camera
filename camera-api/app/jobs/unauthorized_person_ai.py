@@ -177,6 +177,18 @@ async def run_unauthorized_person_ai_sweep_once(
         cameras = [c for c in result.scalars().all() if is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
 
+    # Ro'yxat juda kichik bo'lsa modul umuman ma'noga ega emas — sozlama
+    # izohiga qarang (unauthorized_min_enrolled). Jimgina to'xtamaymiz:
+    # operator "modul yoqilgan, lekin signal yo'q" holatini ko'rib,
+    # sababini bilishi kerak.
+    enrolled = len(candidates.ids)
+    if enrolled < settings.unauthorized_min_enrolled:
+        logger.warning(
+            "unauthorized-person sweep skipped: enrolled roster too small to be meaningful",
+            extra={"enrolled": enrolled, "required": settings.unauthorized_min_enrolled},
+        )
+        return 0
+
     if not cameras:
         return 0
 

@@ -173,6 +173,45 @@ class TestSweepConcurrency:
             return frame, frame
 
         monkeypatch.setattr(unauthorized_person_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
+        # This test is about error isolation, not about the roster guard —
+        # switch the guard off so an empty test roster doesn't end the
+        # sweep before any camera is touched (see settings.unauthorized_min_enrolled).
+        monkeypatch.setattr(settings, "unauthorized_min_enrolled", 0)
 
         await run_unauthorized_person_ai_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both cameras were attempted despite the first one failing
+
+    async def test_sweep_stops_when_almost_nobody_is_enrolled(self, db_session, seeded, monkeypatch):
+        """"Not in the database" says nothing when the database is empty.
+
+        Production audit: 3 enrolled faces and 134 unauthorized-person
+        alerts, 45% of them from a single corridor camera and 37 raised
+        overnight in an empty building. The module was not wrong — with
+        that roster, everyone genuinely is unknown — it was just useless,
+        and it buried the alerts that mattered."""
+        building = (await db_session.execute(select(Building))).scalars().first()
+        from datetime import datetime, timezone
+
+        db_session.add(
+            Camera(
+                name="Kamera", ip="10.0.9.99", stream_url="rtsp://fake/x",
+                building_id=building.id, zone="Z", resolution="1080p", status="faol",
+                last_seen_at=datetime.now(timezone.utc), is_entrance=True,
+            )
+        )
+        await db_session.commit()
+
+        grabbed = {"n": 0}
+
+        async def counting_grab(stream_url, gap_seconds=1.0):
+            grabbed["n"] += 1
+            frame = FACE_IMAGE_PATH.read_bytes()
+            return frame, frame
+
+        monkeypatch.setattr(unauthorized_person_ai, "grab_frame_pair_for_camera", counting_grab)
+        monkeypatch.setattr(settings, "unauthorized_min_enrolled", 10)
+
+        raised = await run_unauthorized_person_ai_sweep_once(session_factory=TestSessionLocal)
+
+        assert raised == 0
+        assert grabbed["n"] == 0  # not even a frame was pulled — no camera work, no CPU burnt
