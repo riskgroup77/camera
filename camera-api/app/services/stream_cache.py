@@ -31,6 +31,7 @@ import re
 import time
 
 from app.config import settings
+from app.services.frame_quality import is_frame_corrupt
 
 logger = logging.getLogger("app.stream_cache")
 
@@ -88,6 +89,13 @@ class _StreamReader:
         self._latest_frame_at: float = 0.0
         self._last_requested_at: float = time.monotonic()
         self._lock = asyncio.Lock()
+        # Buzilgan kadr tekshiruvi (frame_quality.py) uchun holat.
+        # `_last_judged` — AYNAN o'sha bayt obyekti: grab_frame_for_camera
+        # kadr paydo bo'lguncha har 0.5 soniyada qayta so'raydi, va bitta
+        # kadrni o'nlab marta dekodlab o'tirish behuda bo'lardi.
+        self._last_judged: bytes | None = None
+        self._last_judged_corrupt = False
+        self._consecutive_rejected = 0
 
     def touch(self) -> None:
         self._last_requested_at = time.monotonic()
@@ -101,7 +109,34 @@ class _StreamReader:
             return None
         if time.monotonic() - self._latest_frame_at > settings.stream_cache_max_age_seconds:
             return None  # stale — reader is running but hasn't decoded anything recent (stream stalled)
-        return self._latest_frame
+
+        frame = self._latest_frame
+        if frame is not self._last_judged:
+            self._last_judged = frame
+            self._last_judged_corrupt = is_frame_corrupt(frame)
+            if self._last_judged_corrupt:
+                self._consecutive_rejected += 1
+                # Bir-ikkita shikastlangan kadr — tarmoqda odatiy hol,
+                # jimgina tashlab yuboriladi. Ketma-ket ko'p rad etilishi
+                # esa boshqa narsani anglatadi: yo kamera doimiy buzuq
+                # oqim beryapti, yo chegara shu manzara uchun juda qattiq
+                # (masalan kadrning katta qismi oqarib ketgan deraza).
+                # Ikkala holatda ham kamera AI uchun ko'r bo'lib qoladi,
+                # va bu jimgina sodir bo'lmasligi kerak.
+                if self._consecutive_rejected % 20 == 0:
+                    logger.warning(
+                        "stream keeps yielding corrupted frames; this camera is invisible to the AI sweeps",
+                        extra={
+                            "stream_url": self._log_url,
+                            "consecutive_rejected": self._consecutive_rejected,
+                        },
+                    )
+            else:
+                self._consecutive_rejected = 0
+
+        if self._last_judged_corrupt:
+            return None
+        return frame
 
     def is_known_broken(self) -> bool:
         """True once this reader has had stream_broken_grace_seconds to
@@ -121,7 +156,13 @@ class _StreamReader:
             await self._start()
 
     async def _start(self) -> None:
-        cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+        # +discardcorrupt: shikastlangan paketni dekoderga bermaydi, ya'ni
+        # qisman dekodlangan kadr umuman hosil bo'lmaydi. Bu birinchi
+        # himoya qatlami; frame_quality.py esa o'tib ketganini ushlaydi.
+        # Ikkalasi kerak — ffmpeg faqat O'ZI shikastlangan deb bilgan
+        # paketni tashlaydi, kadrdagi oq blok esa ba'zan "to'g'ri" deb
+        # qabul qilingan paketdan ham chiqadi.
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-fflags", "+discardcorrupt"]
         # See stream_cache_decode_threads/stream_cache_keyframes_only's
         # docstrings in app/config.py — both target the same measured
         # problem (one persistent reader per camera decoding far more

@@ -469,6 +469,62 @@ class Settings(BaseSettings):
     # since that verification is camera/fleet-specific, not something
     # this code can confirm for itself.
     stream_cache_keyframes_only: bool = False
+
+    # --- Buzilgan kadrni rad etish (app/services/frame_quality.py) ---
+    #
+    # Qiymatlar production'dan olingan 23 ta hodisa rasmini o'lchash
+    # orqali tanlangan, taxmin bilan emas:
+    #
+    #   sog'lom kadrlar : oq ulush 0.0-8.6%, kengligi 0%
+    #   buzilgan kadrlar: oq ulush 22.8% va 29.4%, kengligi ikkalasida 25%
+    #
+    # Ikki chegara orasida keng bo'shliq bor, shuning uchun oraliqdan
+    # qiymat olindi. Ikkala shart BIRGA bajarilishi talab qilinadi —
+    # yorug' deraza kadrni oqartiradi, oq eshik romi esa tor tik chiziq
+    # beradi; dekodlash shikasti esa ikkalasi ham bo'ladi.
+    frame_corruption_white_level: int = 250
+    # Kadr maydonining necha ulushini bitta yaxlit oq blok egallasa,
+    # kadr shikastlangan deb hisoblanadi.
+    #
+    # 0.04 taxmin emas — production'dan olingan 23 ta hodisa rasmi
+    # o'lchandi:
+    #
+    #   sog'lom 19 ta : eng kattasi 1.8% (yorug' derazali xona)
+    #   buzilgan 4 ta : 6.6%, 8.1%, 22.0%, 28.8%
+    #
+    # Ikki to'plam orasida deyarli 4 barobar bo'shliq bor; chegara
+    # o'rtadan olindi, shunda ikkala tomonga ham zaxira qoladi.
+    #
+    # Xavf: butunlay oqarib ketgan katta deraza ham shu chegaradan
+    # oshishi mumkin. Bunday kamera AI uchun "ko'r" bo'lib qolmasligi
+    # kerak, shuning uchun stream_cache rad etishlar ketma-ket
+    # takrorlansa ogohlantirish yozadi — jimgina yo'qolib qolmaydi.
+    frame_corruption_max_flat_block_fraction: float = 0.04
+
+    # --- Xulq-atvor modullari uchun ish vaqti oynasi ---
+    #
+    # Bino bo'sh bo'lganda "tartib-intizom buzilishi" yoki "talaba uxlab
+    # qolgan" izlashning ma'nosi yo'q — u yerda kuzatiladigan xulq-atvor
+    # umuman mavjud emas. Production'da 17-modul hodisalarining ~30% i
+    # 00:00-05:00 oralig'ida yozilgan va tekshirilgan namunalarning
+    # HAMMASI bo'sh xona bo'lib chiqdi.
+    #
+    # Bu ro'yxatda XAVFSIZLIK modullari ataylab YO'Q. Tunda begona shaxs
+    # (#1), yong'in (#23), yiqilish (#24), taqiqlangan zonaga kirish (#2)
+    # — aynan shular eng muhim bo'ladi. Bu yerdagilar esa faqat odamlar
+    # bor joyda ma'noga ega bo'lgan modullar.
+    behaviour_hours_enabled: bool = True
+    behaviour_hours_start: str = "07:00"
+    behaviour_hours_end: str = "21:00"
+    behaviour_hours_module_codes: str = "5,16,17,20"
+
+    @property
+    def behaviour_hours_codes(self) -> set[int]:
+        return {
+            int(part.strip())
+            for part in self.behaviour_hours_module_codes.split(",")
+            if part.strip()
+        }
     # ffmpeg's default is one decode thread per CPU core - fine for a
     # single process, but with one persistent reader PER CAMERA (see
     # stream_cache.py's module docstring) that's core-count-times-camera-

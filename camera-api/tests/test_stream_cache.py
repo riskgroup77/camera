@@ -10,6 +10,7 @@ verification against a real camera."""
 import time
 
 from app.config import settings
+from app.services import stream_cache
 from app.services.stream_cache import StreamCache, _StreamReader, extract_complete_jpeg_frames
 
 
@@ -54,20 +55,65 @@ class TestExtractCompleteJpegFrames:
         assert remainder == b""
 
 
+def _real_jpeg(flat: bool = False) -> bytes:
+    """A decodable frame. The freshness tests below used a placeholder
+    byte string, which stopped working the moment get_frame() started
+    judging picture quality: undecodable bytes are exactly what a
+    corruption check must reject."""
+    import cv2
+    import numpy as np
+
+    rng = np.random.default_rng(7)
+    image = rng.integers(20, 200, size=(240, 320, 3), dtype=np.uint8)
+    if flat:
+        image[:, 80:] = 255
+    ok, buffer = cv2.imencode(".jpg", image)
+    assert ok
+    return buffer.tobytes()
+
+
 class TestStreamReaderFreshness:
     def test_no_frame_yet_returns_none(self):
         reader = _StreamReader("rtsp://fake")
         assert reader.get_frame() is None
 
     def test_fresh_frame_is_returned(self):
+        frame = _real_jpeg()
         reader = _StreamReader("rtsp://fake")
-        reader._latest_frame = b"jpeg-bytes"
+        reader._latest_frame = frame
         reader._latest_frame_at = time.monotonic()
-        assert reader.get_frame() == b"jpeg-bytes"
+        assert reader.get_frame() == frame
+
+    def test_a_corrupted_frame_is_withheld(self):
+        """Decode damage reaches this cache looking like an ordinary
+        frame. Handing it out means handing it to the detectors, which is
+        how an empty classroom at 23:54 became a "disorder" alert."""
+        reader = _StreamReader("rtsp://fake")
+        reader._latest_frame = _real_jpeg(flat=True)
+        reader._latest_frame_at = time.monotonic()
+        assert reader.get_frame() is None
+
+    def test_the_verdict_is_reused_for_the_same_frame(self, monkeypatch):
+        """grab_frame_for_camera re-reads every 0.5s while it waits, so a
+        frame that is judged once must not be decoded again on each poll."""
+        calls = {"n": 0}
+        real = stream_cache.is_frame_corrupt
+
+        def counting(frame):
+            calls["n"] += 1
+            return real(frame)
+
+        monkeypatch.setattr(stream_cache, "is_frame_corrupt", counting)
+        reader = _StreamReader("rtsp://fake")
+        reader._latest_frame = _real_jpeg()
+        reader._latest_frame_at = time.monotonic()
+        for _ in range(5):
+            reader.get_frame()
+        assert calls["n"] == 1
 
     def test_stale_frame_reads_as_none(self):
         reader = _StreamReader("rtsp://fake")
-        reader._latest_frame = b"jpeg-bytes"
+        reader._latest_frame = _real_jpeg()
         reader._latest_frame_at = time.monotonic() - settings.stream_cache_max_age_seconds - 1
         assert reader.get_frame() is None
 
