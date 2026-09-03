@@ -1,3 +1,4 @@
+import pytest
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
@@ -24,6 +25,27 @@ async def _setup_schema():
         await conn.run_sync(Base.metadata.create_all)
     yield
     await test_engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _behaviour_hours_off():
+    """Takes the wall clock out of the test suite.
+
+    The behaviour-hours gate (app/jobs/module_status.py) switches modules
+    5/16/17/20 off outside working hours, so without this every sweep
+    test for those modules passed by day and failed by night — which is
+    exactly how it was found: three of them broke on an evening run and
+    nothing about the code had changed since the morning.
+
+    The gate has its own tests, which set the window and the clock
+    explicitly rather than inheriting whatever time it happens to be.
+    """
+    from app.config import settings
+
+    original = settings.behaviour_hours_enabled
+    settings.behaviour_hours_enabled = False
+    yield
+    settings.behaviour_hours_enabled = original
 
 
 @pytest_asyncio.fixture(autouse=True)

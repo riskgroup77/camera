@@ -472,16 +472,9 @@ class Settings(BaseSettings):
 
     # --- Buzilgan kadrni rad etish (app/services/frame_quality.py) ---
     #
-    # Qiymatlar production'dan olingan 23 ta hodisa rasmini o'lchash
-    # orqali tanlangan, taxmin bilan emas:
-    #
-    #   sog'lom kadrlar : oq ulush 0.0-8.6%, kengligi 0%
-    #   buzilgan kadrlar: oq ulush 22.8% va 29.4%, kengligi ikkalasida 25%
-    #
-    # Ikki chegara orasida keng bo'shliq bor, shuning uchun oraliqdan
-    # qiymat olindi. Ikkala shart BIRGA bajarilishi talab qilinadi —
-    # yorug' deraza kadrni oqartiradi, oq eshik romi esa tor tik chiziq
-    # beradi; dekodlash shikasti esa ikkalasi ham bo'ladi.
+    # Piksel shu qiymatdan yorug' bo'lsa "oq" hisoblanadi. 250 ataylab
+    # qattiq: dekodlash shikasti deyarli sof oq (255) blok beradi, oddiy
+    # yorug' devor yoki quyoshli pol esa bunchalik yuqoriga chiqmaydi.
     frame_corruption_white_level: int = 250
     # Kadr maydonining necha ulushini bitta yaxlit oq blok egallasa,
     # kadr shikastlangan deb hisoblanadi.

@@ -16,16 +16,60 @@ existing camera (column is nullable) keeps today's behavior — every
 active module still runs on it — until an admin deliberately opts it out
 of specific modules via PATCH /api/cameras/{id}/modules."""
 
+from datetime import time as time_type
+import logging
+
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
+from app.config import settings
 from app.models import AIModuleConfig, Camera
+from app.timezone import local_now
+
+logger = logging.getLogger("app.module_status")
+
+
+def _parse_hhmm(value: str, fallback: time_type) -> time_type:
+    try:
+        hour, minute = value.split(":")
+        return time_type(int(hour), int(minute))
+    except (ValueError, AttributeError):
+        logger.warning("invalid behaviour-hours value; using fallback", extra={"value": value})
+        return fallback
+
+
+def is_within_behaviour_hours(now: time_type | None = None) -> bool:
+    """Whether the configured active window covers this moment.
+
+    Handles a window that crosses midnight (start > end, e.g. 21:00-07:00)
+    because nothing stops an operator configuring one, and getting that
+    silently backwards would disable a module all day instead of all
+    night."""
+    current = now if now is not None else local_now().time()
+    start = _parse_hhmm(settings.behaviour_hours_start, time_type(7, 0))
+    end = _parse_hhmm(settings.behaviour_hours_end, time_type(21, 0))
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
 
 
 async def is_module_active(db: AsyncSession, code: int) -> bool:
     result = await db.execute(select(AIModuleConfig.active).where(AIModuleConfig.code == code))
-    return bool(result.scalar_one_or_none())
+    if not bool(result.scalar_one_or_none()):
+        return False
+
+    # Ish vaqti oynasi — settings.behaviour_hours_* izohiga qarang.
+    # Tekshiruv aynan SHU YERDA, chunki har bir sweep baribir shu
+    # funksiyani chaqiradi: har biriga alohida qo'shilsa, keyin
+    # qo'shiladigan modul uni unutib qolardi. Va bu tekshiruv sweep
+    # ishni BOSHLASHIDAN oldin bo'lgani uchun kadr olish ham, model
+    # chaqirish ham bajarilmaydi.
+    if settings.behaviour_hours_enabled and code in settings.behaviour_hours_codes:
+        if not is_within_behaviour_hours():
+            return False
+
+    return True
 
 
 async def any_module_active(db: AsyncSession, codes: list[int]) -> bool:
