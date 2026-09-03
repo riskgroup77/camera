@@ -112,6 +112,13 @@ def _path_config(rtsp_url: str) -> dict:
     # Halving the framerate roughly halves the encode cost, and a
     # monitoring wall does not need 25fps.
     fps_arg = f"-r {settings.mediamtx_transcode_fps} " if settings.mediamtx_transcode_fps > 0 else ""
+    # height <= 0 => masshtablamaymiz. Bu registratsiya SUBSTREAM ustida
+    # ishlaydi (stream_sync._rtsp_url_for), substreamlar esa allaqachon
+    # kichik (o'lchangan: 640x360 va 768x432). Qat'iy balandlik qo'yish
+    # aralash parkda muqarrar ravishda ba'zi kameralarni KATTALASHTIRadi —
+    # yo'q detal paydo bo'lmaydi, enkoder esa bir necha barobar ko'p
+    # piksel ishlaydi (production'da 360p -> 720p, ya'ni 4 barobar).
+    scale_arg = f"-vf scale=-2:{height} " if height > 0 else ""
     cmd = (
         f"/ffmpeg -hide_banner -loglevel error "
         f"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 "
@@ -119,14 +126,18 @@ def _path_config(rtsp_url: str) -> dict:
         f"-c:v libx264 -preset ultrafast -tune zerolatency "
         f"-profile:v baseline -level 3.1 -pix_fmt yuv420p "
         f"{fps_arg}"
-        f"-vf scale=-2:{height} -an "
+        f"{scale_arg}-an "
         f"-f rtsp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"
     )
     return {
         "runOnDemand": cmd,
         "runOnDemandRestart": True,
         "runOnDemandStartTimeout": "20s",
-        "runOnDemandCloseAfter": "45s",
+        # Ko'ruvchi ketgach enkoder qancha vaqt ishlab turishi. Uzun
+        # bo'lsa, miniatyura sahifalari orasida yurgan operator ortidan
+        # bir necha o'nlab enkoder bir vaqtda ishlab qolishi mumkin —
+        # har biri CPU yeydi va qolganlarini real vaqtdan orqada qoldiradi.
+        "runOnDemandCloseAfter": f"{settings.mediamtx_transcode_close_after_seconds}s",
     }
 
 

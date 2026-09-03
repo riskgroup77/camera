@@ -540,7 +540,7 @@ class Settings(BaseSettings):
     mediamtx_relay_h264_substream: bool = True
     # Browser HLS needs H.264 — when relay is off, on-demand ffmpeg transcodes.
     mediamtx_transcode_h264: bool = False
-    mediamtx_transcode_height: int = 720
+    mediamtx_transcode_height: int = 0
     # 0 = kameradan kelgan tezlikni o'zgartirmaslik. > 0 bo'lsa ffmpeg
     # chiqishni shu FPS ga cheklaydi.
     #
@@ -556,6 +556,10 @@ class Settings(BaseSettings):
     # yaxshilamaydi (yo'q detalni yarata olmaydi), faqat enkoderga ~4
     # barobar ko'p piksel ishini beradi.
     mediamtx_transcode_fps: int = 0
+    # Ko'ruvchi ketgandan keyin enkoder qancha ishlab turadi (soniya).
+    # Kichikroq qiymat sahifalar orasida yurganda to'planib qolgan
+    # enkoderlarni tezroq bo'shatadi.
+    mediamtx_transcode_close_after_seconds: int = 20
 
     # TT kriteriya 12 — ID-badge evristikasi
     badge_ai_interval_seconds: int = 45
