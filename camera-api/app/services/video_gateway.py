@@ -119,12 +119,37 @@ def _path_config(rtsp_url: str) -> dict:
     # yo'q detal paydo bo'lmaydi, enkoder esa bir necha barobar ko'p
     # piksel ishlaydi (production'da 360p -> 720p, ya'ni 4 barobar).
     scale_arg = f"-vf scale=-2:{height} " if height > 0 else ""
+    # Kalit kadr oralig'i — bu yerdagi ENG MUHIM sozlama. MediaMTX HLS
+    # segmentini faqat kalit kadrda kesadi, pleyer esa jonli chekkaga
+    # yaqinlashish uchun butun segmentni kutishi shart. Ya'ni kechikish
+    # quyi chegarasi = kalit kadr oralig'i, boshqa hech qanday sozlama
+    # buni aylanib o'ta olmaydi.
+    #
+    # `-tune zerolatency` buni O'ZI hal qilmaydi: u B-kadrlarni va
+    # enkoder ichki buferini olib tashlaydi, lekin GOP uzunligiga
+    # tegmaydi — libx264 baribir standart 250 KADR oralig'ida qoladi.
+    # Production'da o'lchangan: 12 fps da segmentlar aynan 20.83s
+    # (250/12) bo'lgan va LL-HLS qismlari (parts) umuman yaratilmagan.
+    #
+    # `-force_key_frames` `-g` o'rniga ishlatiladi, chunki oraliq
+    # SONIYADA beriladi va fps cheklanmagan (0) bo'lsa ham to'g'ri
+    # ishlaydi — `-g` esa kadrlarda o'lchanadi, ya'ni manba fps'ini
+    # bilishni talab qilardi. `-sc_threshold 0` sahna almashuvida qo'shimcha
+    # kalit kadr qo'yilishini to'xtatadi, shunda segmentlar bir tekis
+    # uzunlikda qoladi.
+    keyframe = settings.mediamtx_transcode_keyframe_seconds
+    keyframe_arg = (
+        f"-force_key_frames expr:gte(t,n_forced*{keyframe}) -sc_threshold 0 "
+        if keyframe > 0
+        else ""
+    )
     cmd = (
         f"/ffmpeg -hide_banner -loglevel error "
         f"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 "
         f"-rtsp_transport tcp -i {quoted_url} "
         f"-c:v libx264 -preset ultrafast -tune zerolatency "
         f"-profile:v baseline -level 3.1 -pix_fmt yuv420p "
+        f"{keyframe_arg}"
         f"{fps_arg}"
         f"{scale_arg}-an "
         f"-f rtsp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"

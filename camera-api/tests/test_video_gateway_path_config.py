@@ -61,6 +61,29 @@ class TestTranscodeMode:
         cmd = _path_config(RTSP)["runOnDemand"]
         assert "-r 12" in cmd
 
+    def test_keyframe_interval_is_forced(self, monkeypatch):
+        """Measured on production: without this, segments were 20.83s
+        (libx264's default 250-frame GOP at 12fps) and no player could
+        get closer to live than one whole segment."""
+        monkeypatch.setattr(settings, "mediamtx_transcode_keyframe_seconds", 1.0)
+        cmd = _path_config(RTSP)["runOnDemand"]
+        assert "-force_key_frames expr:gte(t,n_forced*1.0)" in cmd
+        assert "-sc_threshold 0" in cmd
+
+    def test_keyframe_forcing_can_be_disabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "mediamtx_transcode_keyframe_seconds", 0)
+        cmd = _path_config(RTSP)["runOnDemand"]
+        assert "-force_key_frames" not in cmd
+
+    def test_keyframe_interval_is_independent_of_the_framerate_cap(self, monkeypatch):
+        """The two settings interacted badly before: capping fps to 12
+        made the frame-counted default GOP twice as long in seconds.
+        Expressing the interval in seconds decouples them."""
+        monkeypatch.setattr(settings, "mediamtx_transcode_keyframe_seconds", 1.0)
+        for fps in (0, 12, 25):
+            monkeypatch.setattr(settings, "mediamtx_transcode_fps", fps)
+            assert "n_forced*1.0)" in _path_config(RTSP)["runOnDemand"]
+
     def test_close_after_follows_the_setting(self, monkeypatch):
         monkeypatch.setattr(settings, "mediamtx_transcode_close_after_seconds", 15)
         assert _path_config(RTSP)["runOnDemandCloseAfter"] == "15s"

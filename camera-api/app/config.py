@@ -560,6 +560,15 @@ class Settings(BaseSettings):
     # Kichikroq qiymat sahifalar orasida yurganda to'planib qolgan
     # enkoderlarni tezroq bo'shatadi.
     mediamtx_transcode_close_after_seconds: int = 20
+    # Kalit kadrlar orasidagi masofa (soniya) — KECHIKISHNI BELGILAYDIGAN
+    # ASOSIY QIYMAT. MediaMTX HLS segmentini faqat kalit kadrda kesa
+    # oladi, shuning uchun segment uzunligi = shu qiymat, pleyer esa
+    # butun segment yozilishini kutadi. libx264 standarti 250 KADR
+    # (soniya emas): 12 fps da bu 20.8 soniyalik segment demakdir —
+    # production'da aynan shu o'lchangan. 1 soniya qo'yilsa,
+    # mediamtx.yml'dagi hlsSegmentDuration: 1s va hlsPartDuration: 200ms
+    # (LL-HLS) nihoyat ishlay boshlaydi.
+    mediamtx_transcode_keyframe_seconds: float = 1.0
 
     # TT kriteriya 12 — ID-badge evristikasi
     badge_ai_interval_seconds: int = 45
