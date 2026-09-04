@@ -8,6 +8,12 @@ class ReportStatOut(CamelModel):
     value: str
 
 
+class ReportSectionOut(CamelModel):
+    title: str
+    rows: list[ReportStatOut]
+    note: str | None = None
+
+
 class ReportOut(CamelModel):
     """Matches src/types/index.ts `Report` exactly."""
 
@@ -19,6 +25,7 @@ class ReportOut(CamelModel):
     summary: str
     body: str
     stats: list[ReportStatOut]
+    sections: list[ReportSectionOut] = []
 
 
 class ReportGenerateIn(CamelModel):

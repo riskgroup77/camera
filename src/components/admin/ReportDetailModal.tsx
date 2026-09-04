@@ -44,6 +44,31 @@ export default function ReportDetailModal({
             </p>
           </div>
 
+          {/* Taqsimotlar — modul/kamera/vaqt bo'yicha. Ular PDF'da ham
+              bor; bu yerda ko'rsatilishi operatorga yuklab olmasdan
+              qarash imkonini beradi. `sections` ixtiyoriy, chunki bu
+              maydon qo'shilishidan oldingi hisobotlarda u yo'q. */}
+          {(report.sections ?? []).map((section) => (
+            <div key={section.title} className="glass-deep p-4">
+              <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {section.title}
+              </h4>
+              <dl className="space-y-1">
+                {section.rows.map((row) => (
+                  <div key={row.label} className="flex items-baseline justify-between gap-3 text-sm">
+                    <dt className="min-w-0 truncate text-slate-600 dark:text-slate-300">{row.label}</dt>
+                    <dd className="shrink-0 font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                      {row.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {section.note && (
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">{section.note}</p>
+              )}
+            </div>
+          ))}
+
           <div className="flex items-center justify-end gap-2">
             {!canExport && (
               <span className="text-[11px] text-slate-400 dark:text-slate-500">Eksport huquqi yo'q</span>

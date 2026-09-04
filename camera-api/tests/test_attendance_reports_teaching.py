@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 from httpx import AsyncClient
 
+from app.timezone import local_now
 from tests.conftest import auth_headers
 
 
@@ -230,22 +231,27 @@ class TestLessonSessions:
 
 @pytest.mark.usefixtures("seeded")
 class TestReports:
-    async def test_generate_with_no_data_is_honest_zeros(self, client: AsyncClient):
+    async def test_generate_with_no_data_says_so_rather_than_zero(self, client: AsyncClient):
+        """This used to assert 0.0% and called it honest. It is not: an
+        attendance figure of 0% says everybody was absent, while an empty
+        database says nothing has been recorded. A count of zero events
+        IS a real zero and stays one."""
         headers = await auth_headers(client, "admin", "admin123")
         resp = await client.post("/api/reports/generate", headers=headers, json={"period": "Kunlik"})
         assert resp.status_code == 201
         body = resp.json()
         assert body["source"] == "rule"
         stat_values = {s["label"]: s["value"] for s in body["stats"]}
-        assert stat_values["Umumiy davomat"] == "0.0%"
+        assert stat_values["Davomat"] == "ma'lumot yo'q"
         assert stat_values["AI signallar"] == "0"
 
     async def test_generate_reflects_real_attendance(self, client: AsyncClient, a_student):
         headers = await auth_headers(client, "admin", "admin123")
-        # "Kunlik" aggregates over date.today() — record attendance for
-        # that exact date so the assertion is a real, deterministic 100%,
-        # not a hedge over whichever day the test happens to run on.
-        today = date.today().isoformat()
+        # "Kunlik" aggregates over the LOCAL day, not the UTC one — the
+        # containers run in UTC, so between 19:00 and midnight UTC the
+        # two dates differ and recording against date.today() would file
+        # the record under a day the report does not cover.
+        today = local_now().date().isoformat()
         await client.post(
             "/api/attendance",
             headers=headers,
@@ -253,7 +259,7 @@ class TestReports:
         )
         resp = await client.post("/api/reports/generate", headers=headers, json={"period": "Kunlik"})
         stat_values = {s["label"]: s["value"] for s in resp.json()["stats"]}
-        assert stat_values["Umumiy davomat"] == "100.0%"
+        assert stat_values["Davomat"] == "100.0%"
 
     async def test_list_and_get_report(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

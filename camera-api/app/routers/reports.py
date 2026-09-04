@@ -28,6 +28,7 @@ def _to_out(r: Report) -> ReportOut:
         summary=r.summary,
         body=r.body,
         stats=r.stats,
+        sections=r.sections or [],
     )
 
 
@@ -65,6 +66,9 @@ async def generate_report(
         summary=generated.summary,
         body=generated.body,
         stats=generated.stats,
+        sections=[
+            {"title": s.title, "rows": s.rows, "note": s.note} for s in generated.sections
+        ],
     )
     db.add(report)
     await log_action(db, request, current_user.id, f"Hisobot generatsiya qildi: {body.period}", "Hisobotlar")

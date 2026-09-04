@@ -187,6 +187,15 @@ export interface Report {
   summary: string;
   body: string;
   stats: { label: string; value: string }[];
+  /** Sarlavhali jadvallar — modul/kamera/vaqt bo'yicha taqsimotlar.
+      Bu ustun qo'shilishidan oldingi hisobotlarda bo'lmaydi. */
+  sections?: ReportSection[];
+}
+
+export interface ReportSection {
+  title: string;
+  rows: { label: string; value: string }[];
+  note?: string | null;
 }
 
 export interface AdminUser {

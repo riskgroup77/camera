@@ -17,7 +17,11 @@ and 2:00 PM was silently misclassified in one direction or the other).
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-INSTITUTE_TZ = ZoneInfo("Asia/Tashkent")
+from sqlalchemy import func
+from sqlalchemy.sql.elements import ColumnElement
+
+INSTITUTE_TZ_NAME = "Asia/Tashkent"
+INSTITUTE_TZ = ZoneInfo(INSTITUTE_TZ_NAME)
 
 
 def local_now() -> datetime:
@@ -29,3 +33,20 @@ def to_local(moment: datetime) -> datetime:
     clock time — use this before extracting .date()/.time() to compare
     against a config setting like attendance_ai_late_cutoff."""
     return moment.astimezone(INSTITUTE_TZ)
+
+
+def local_date(column: ColumnElement) -> ColumnElement:
+    """SQL expression for the LOCAL calendar date of a timestamptz column.
+
+    The Python helpers above only fix values that pass through Python.
+    Anything grouped or filtered by date in SQL needs this instead, and
+    plain func.date() is NOT it: Postgres casts a timestamptz using the
+    session timezone, which in these containers is UTC.
+
+    Found as a real bug in the daily report. At 10:57 local it counted 35
+    events for "today" while the local day actually held 49 — every event
+    between local midnight and 05:00 belongs to the previous UTC date, so
+    the first five hours of each day were silently missing. Opened before
+    05:00 local, the same report was labelled with YESTERDAY's date.
+    """
+    return func.date(func.timezone(INSTITUTE_TZ_NAME, column))

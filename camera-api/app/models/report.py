@@ -31,3 +31,9 @@ class Report(Base):
     summary: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[str] = mapped_column(String, nullable=False)
     stats: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Sarlavhali jadvallar (modul bo'yicha taqsimot, eng ko'p signal
+    # bergan kameralar va h.k.). Nullable — bu ustun qo'shilishidan
+    # oldin yaratilgan hisobotlarda u yo'q, va eski hisobotni qayta
+    # yozish uni SOXTALASHTIRISH bo'lardi: o'sha paytdagi ma'lumot
+    # allaqachon o'zgargan.
+    sections: Mapped[list | None] = mapped_column(JSONB, nullable=True)
