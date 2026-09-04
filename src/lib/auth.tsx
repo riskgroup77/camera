@@ -89,10 +89,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tokenRef = useRef(state.token);
   tokenRef.current = state.token;
 
-  useEffect(() => {
-    setAuthTokenGetter(() => tokenRef.current);
-    return () => setAuthTokenGetter(null);
-  }, []);
+  // Ro'yxatdan o'tkazish RENDER paytida, useEffect'da EMAS.
+  //
+  // React bola komponentlarning effektlarini otanikidan OLDIN ishga
+  // tushiradi. Bu getter effektda o'rnatilganda, MonitoringPage o'z
+  // ma'lumotini allaqachon so'rab bo'lgan bo'lardi — token'siz. Natija:
+  // sahifa birinchi ochilishida 401 va "Kameralarni yuklab bo'lmadi",
+  // keyingi har qanday so'rov esa muammosiz. Aynan shu holat
+  // production'da kuzatildi.
+  //
+  // Render paytida chaqirish bu yerda xavfsiz: getter faqat ref o'qiydi,
+  // holatni o'zgartirmaydi va bir necha marta chaqirilishi hech narsani
+  // buzmaydi.
+  setAuthTokenGetter(() => tokenRef.current);
+
+  useEffect(() => () => setAuthTokenGetter(null), []);
 
   // Token muddati tugagach (server 401 qaytarganda) sessiyani darhol
   // tozalaymiz — apiClient.ts'dagi setUnauthorizedHandler izohiga qarang.

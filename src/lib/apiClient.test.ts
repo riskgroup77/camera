@@ -48,6 +48,19 @@ describe('apiClient auth token', () => {
     expect(lastHeaders().Authorization).toBe('Bearer explicit-token');
   });
 
+  it('a getter registered during render is used by requests fired from child effects', async () => {
+    // React runs child effects BEFORE parent ones. When auth.tsx
+    // registered this getter in an effect, the monitoring page had
+    // already fired its first request without a token and rendered
+    // "could not load cameras" — every fresh page load, on a perfectly
+    // valid session. Registration happens during render now; this pins
+    // that the getter works the moment it is set, with no mount step in
+    // between.
+    setAuthTokenGetter(() => 'render-time-token');
+    await api.get('/api/public/cameras');
+    expect(lastHeaders().Authorization).toBe('Bearer render-time-token');
+  });
+
   it('reads the token at call time, not at registration time', async () => {
     let current: string | null = null;
     setAuthTokenGetter(() => current);
