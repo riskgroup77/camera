@@ -13,6 +13,10 @@ export interface CameraFeed {
   status: CameraStatus;
   /** Backend video-gateway tomonidan beriladigan HLS (.m3u8) yoki MP4/WebM manzil. Bo'sh bo'lsa — placeholder ko'rsatiladi. */
   streamUrl?: string;
+  /** Kamera tarmoqda javob beryapti, lekin tasvir kelyaptimi. `status`
+      bilan qo'shilmaydi: "erishib bo'lmaydi" va "erishiladi, lekin
+      tasvirsiz" — operator uchun ikki xil nosozlik. */
+  hasVideo?: boolean;
 }
 
 /** Backenddagi GET /api/public/cameras/{id}/live-detection javobiga mos —

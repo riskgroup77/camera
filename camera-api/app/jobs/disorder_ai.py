@@ -94,17 +94,32 @@ def _is_motion_spike(
     min_abs = min_absolute_magnitude if min_absolute_magnitude is not None else settings.disorder_min_absolute_magnitude
     history = _motion_history[camera_id]
     is_spike = False
+    baseline = sum(history) / len(history) if history else 0.0
+    threshold = max(min_abs, baseline * mult)
     if len(history) >= settings.disorder_baseline_min_samples:
-        baseline = sum(history) / len(history)
-        threshold = max(min_abs, baseline * mult)
         is_spike = magnitude >= threshold
     history.append(magnitude)
+    _last_decision[camera_id] = (magnitude, baseline, threshold)
     return is_spike
+
+
+_last_decision: dict[str, tuple[float, float, float]] = {}
+"""camera_id -> (magnitude, baseline, threshold) of the most recent
+judgement. Written for the log line on a raised event.
+
+Why this exists: this module decides on numbers nobody can see. When it
+fired 138 times and the snapshots turned out to be empty rooms, there was
+no way to tell whether the baseline had collapsed, the floor was too low,
+or the frames were damaged — the answer turned out to be damaged frames,
+but only because the SNAPSHOTS could be looked at. Raising a threshold
+without these numbers would be guessing, and guessing at a threshold is
+what took 29 cameras off the air earlier today."""
 
 
 def reset_motion_history_for_tests() -> None:
     """Tests only — motion baselines must not leak between test cases."""
     _motion_history.clear()
+    _last_decision.clear()
 
 
 async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
@@ -134,6 +149,17 @@ async def process_camera_frame_pair_for_disorder(
 
     if await _recently_flagged(db, camera.id):
         return False
+
+    magnitude_now, baseline_now, threshold_now = _last_decision.get(str(camera.id), (0.0, 0.0, 0.0))
+    logger.info(
+        "disorder motion spike",
+        extra={
+            "camera": camera.name,
+            "magnitude": round(magnitude_now, 3),
+            "baseline": round(baseline_now, 3),
+            "threshold": round(threshold_now, 3),
+        },
+    )
 
     await raise_event(
         db,

@@ -499,6 +499,17 @@ class Settings(BaseSettings):
     # dekodlash shikasti esa har safar boshqa joyda paydo bo'ladi.
     frame_corruption_persistence_overlap: float = 0.5
 
+    # Kamera "tasvir bermayapti" deb hisoblanishidan oldin oxirgi
+    # yaroqli kadrdan qancha vaqt o'tishi kerak (soniya).
+    #
+    # Kamera erishilishi (last_seen_at) bilan aralashtirmaslik kerak.
+    # Bu qiymat ataylab kattaroq: AI sweep'lari har kameraga bir necha
+    # o'n soniyada bir marta murojaat qiladi, ba'zi kameralar esa
+    # birinchi kadrni berish uchun 25 soniyagacha vaqt oladi
+    # (production'da o'lchangan). Juda kichik qiymat sog'lom, lekin
+    # sekin kamerani "nosoz" deb belgilab qo'yardi.
+    camera_video_stale_seconds: int = 300
+
     # --- Xulq-atvor modullari uchun ish vaqti oynasi ---
     #
     # Bino bo'sh bo'lganda "tartib-intizom buzilishi" yoki "talaba uxlab

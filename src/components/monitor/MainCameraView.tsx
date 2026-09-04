@@ -64,7 +64,11 @@ export default function MainCameraView({
 
       {camera && (
         <>
-          {isLive ? (
+          {isLive && camera.hasVideo === false ? (
+            <span className="absolute left-3 top-3 z-10 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-bold text-white">
+              TASVIRSIZ — kamera javob beryapti, lekin video kelmayapti
+            </span>
+          ) : isLive ? (
             <>
               <span className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-bold text-white">
                 <Circle size={7} className="fill-white" />

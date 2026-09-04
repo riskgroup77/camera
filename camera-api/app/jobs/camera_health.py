@@ -31,6 +31,8 @@ from app.jobs.camera_health_metrics import (
 )
 from app.jobs.sweep_guard import SweepGuard
 from app.models import AuditLog, Camera
+from app.services.frame_grabber import camera_video_source
+from app.services.stream_cache import peek_cached_frame
 from app.services.connectivity import tcp_check
 
 logger = logging.getLogger("app.camera_health")
@@ -42,6 +44,19 @@ _sweep_guard = SweepGuard("camera_health")
 _offline_since: dict[str, datetime] = {}
 # camera_ids that already received an alert for the current offline streak
 _alerted: set[str] = set()
+
+
+def is_video_flowing(last_frame_at: datetime | None) -> bool:
+    """Whether this camera has recently produced a usable picture.
+
+    Deliberately separate from is_reachable(): a camera can answer on its
+    RTSP port and still decode to nothing. Six of the fleet were doing
+    exactly that while the wall showed them as live."""
+    if last_frame_at is None:
+        return False
+    return (datetime.now(timezone.utc) - last_frame_at) < timedelta(
+        seconds=settings.camera_video_stale_seconds
+    )
 
 
 def is_reachable(last_seen_at: datetime | None) -> bool:
@@ -128,6 +143,7 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
     results = await asyncio.gather(*(_check_one(camera) for camera in cameras), return_exceptions=True)
 
     reachable_count = 0
+    frames_count = 0
     for camera, outcome in zip(cameras, results, strict=True):
         if isinstance(outcome, BaseException):
             logger.exception("camera health check failed", extra={"camera_id": str(camera.id)}, exc_info=outcome)
@@ -139,6 +155,15 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
             camera.last_seen_at = now
             _mark_camera_online(camera)
             reachable_count += 1
+            # Tasvir kelayotganini ham shu yerda belgilaymiz. Bu deyarli
+            # tekin: kadr allaqachon xotirada turadi, peek esa o'quvchi
+            # ochmaydi va uni "so'ralgan" deb belgilamaydi — ya'ni bu
+            # tekshiruv hech qanday ffmpeg jarayonini tirik ushlab
+            # turmaydi.
+            source = camera_video_source(camera)
+            if source and peek_cached_frame(source) is not None:
+                camera.last_frame_at = now
+                frames_count += 1
         else:
             offline_since = _track_offline_camera(camera, now)
             await _maybe_raise_offline_alert(db, camera, offline_since)
@@ -148,6 +173,15 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
         faol_checked=len(cameras),
         reachable=reachable_count,
     )
+    blind = reachable_count - frames_count
+    if blind > 0:
+        # Erishiladigan, lekin tasvirsiz kameralar. Bu jimgina o'tib
+        # ketadigan holat edi: devorda ular "JONLI" ko'rinadi, AI esa
+        # ulardan hech narsa ololmaydi.
+        logger.warning(
+            "cameras answer on the network but produce no picture",
+            extra={"reachable": reachable_count, "with_video": frames_count, "blind": blind},
+        )
     return reachable_count
 
 

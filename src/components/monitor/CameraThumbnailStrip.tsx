@@ -45,7 +45,15 @@ function ThumbnailCard({
           releaseSlot={releaseThumbnailSlot}
         />
       )}
-      {isLive ? (
+      {/* Uchinchi holat — "erishiladi, lekin tasvir yo'q". Auditda
+          107 kameradan 6 tasi aynan shunday edi: port ochiq, dekoder
+          esa bo'sh kulrang kadr beradi. Ilgari ular JONLI ko'rinardi,
+          ya'ni nosozlik operatorga umuman ko'rinmasdi. */}
+      {isLive && camera.hasVideo === false ? (
+        <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white">
+          TASVIRSIZ
+        </span>
+      ) : isLive ? (
         <span className="absolute left-1.5 top-1.5 z-10 flex items-center gap-1 rounded-full bg-emerald-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white">
           <Circle size={5} className="fill-white" />
           JONLI

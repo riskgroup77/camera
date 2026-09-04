@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.dependencies import require_monitoring_access
-from app.jobs.camera_health import is_reachable
+from app.jobs.camera_health import is_reachable, is_video_flowing
 from app.models import AttendanceRecord, Building, Camera, Event, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.rate_limit import limiter
@@ -59,12 +59,17 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
     # alone used to be enough, which meant a camera whose cable was
     # unplugged kept showing JONLI here indefinitely.
     live = camera.status == "faol" and is_reachable(camera.last_seen_at)
+    # Tasvir alohida o'lchanadi — camera_health.is_video_flowing izohiga
+    # qarang. Erishilmaydigan kamera uchun bu savol ma'nosiz, shuning
+    # uchun u True qoladi va faqat `status` gapiradi.
+    has_video = is_video_flowing(camera.last_frame_at) if live else True
     return PublicCameraOut(
         id=str(camera.id),
         name=camera.name,
         building=camera.building.name if camera.building else "",
         zone=camera.zone,
         status="live" if live else "offline",
+        has_video=has_video,
         stream_url=camera.stream_url,
     )
 

@@ -46,6 +46,14 @@ class Camera(Base):
     # page, admin table) until someone happens to click "Ulanishni tekshirish"
     # — the exact gap this column closes.
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Oxirgi marta bu kameradan YAROQLI kadr olingan vaqt.
+    #
+    # last_seen_at dan farqi muhim: u kamera RTSP portiga javob
+    # berayotganini bildiradi, bu esa tasvir kelayotganini. Ikkalasi bir
+    # narsa emas — audit paytida 107 kameradan 6 tasi "JONLI" ko'rinib
+    # turgan holda faqat bo'sh kulrang kadr berayotgani aniqlandi:
+    # port ochiq, dekoder esa hech narsa chiqarmaydi.
+    last_frame_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # TT kriteriya 2 ("Taqiqlangan zonaga kirish") — app/jobs/zone_entry_ai.py.

@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import settings
-from app.jobs.camera_health import is_reachable, run_camera_health_sweep_once
+from app.jobs.camera_health import is_reachable, is_video_flowing, run_camera_health_sweep_once
 from app.models import Building, Camera
 
 
@@ -110,3 +110,76 @@ class TestCameraHealthSweep:
         entry = result.scalars().first()
         assert entry is not None
         assert entry.status == "ogohlantirish"
+
+
+class TestVideoFlowing:
+    """A camera answering on its RTSP port is not the same as a camera
+    producing a picture. Measured on production: 6 of 107 were reachable
+    and decoded to a flat grey frame, while the wall showed them JONLI.
+    Nothing in the system could tell those two states apart."""
+
+    def test_a_camera_that_never_produced_a_frame_is_not_flowing(self):
+        assert is_video_flowing(None) is False
+
+    def test_a_recent_frame_counts_as_flowing(self):
+        assert is_video_flowing(datetime.now(timezone.utc)) is True
+
+    def test_an_old_frame_does_not(self):
+        stale = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.camera_video_stale_seconds + 1
+        )
+        assert is_video_flowing(stale) is False
+
+    def test_the_video_window_is_wider_than_the_reachability_one(self):
+        """Some cameras take up to 25 seconds to hand over their first
+        frame (measured). A window as tight as the ping check would mark
+        a healthy but slow camera as broken."""
+        assert settings.camera_video_stale_seconds > settings.camera_health_freshness_seconds
+
+
+@pytest.mark.usefixtures("seeded")
+class TestSweepRecordsVideo:
+    async def test_a_reachable_camera_with_a_frame_is_stamped(
+        self, db_session, a_building, monkeypatch
+    ):
+        camera = Camera(
+            name="Tasvirli", ip="10.0.0.61", building_id=a_building.id, zone="Z",
+            resolution="1080p", status="faol", stream_url="rtsp://fake/a",
+        )
+        db_session.add(camera)
+        await db_session.commit()
+
+        monkeypatch.setattr("app.jobs.camera_health.tcp_check", _reachable)
+        monkeypatch.setattr("app.jobs.camera_health.peek_cached_frame", lambda _url: b"jpeg")
+
+        await run_camera_health_sweep_once(db_session)
+        await db_session.refresh(camera)
+        assert camera.last_seen_at is not None
+        assert camera.last_frame_at is not None
+
+    async def test_a_reachable_camera_without_a_frame_is_not_stamped(
+        self, db_session, a_building, monkeypatch
+    ):
+        """This is the case the whole change exists for: the ping
+        succeeds, so last_seen_at advances and the camera reads as live,
+        while no picture ever arrives."""
+        camera = Camera(
+            name="Tasvirsiz", ip="10.0.0.62", building_id=a_building.id, zone="Z",
+            resolution="1080p", status="faol", stream_url="rtsp://fake/b",
+        )
+        db_session.add(camera)
+        await db_session.commit()
+
+        monkeypatch.setattr("app.jobs.camera_health.tcp_check", _reachable)
+        monkeypatch.setattr("app.jobs.camera_health.peek_cached_frame", lambda _url: None)
+
+        await run_camera_health_sweep_once(db_session)
+        await db_session.refresh(camera)
+        assert camera.last_seen_at is not None
+        assert camera.last_frame_at is None
+        assert is_reachable(camera.last_seen_at) is True
+        assert is_video_flowing(camera.last_frame_at) is False
+
+
+async def _reachable(_ip, _port):
+    return True, 1.0

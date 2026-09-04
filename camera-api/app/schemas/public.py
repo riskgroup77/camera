@@ -12,6 +12,13 @@ class PublicCameraOut(CamelModel):
     zone: str
     status: str
     stream_url: str | None = None
+    has_video: bool = True
+    """Kamera tarmoqda javob beryapti, LEKIN tasvir kelyaptimi.
+
+    `status` bilan qo'shilmaydi ataylab: "erishib bo'lmaydi" va
+    "erishiladi, lekin tasvir yo'q" — bu ikki xil nosozlik va operator
+    uchun bir xil emas. Ikkinchisini oddiy OFLAYN qilib qo'yish
+    kamerani devordan yashirar, sababini esa aytmasdi."""
 
 
 class PublicStatsOut(CamelModel):

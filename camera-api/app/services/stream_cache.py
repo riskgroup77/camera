@@ -292,6 +292,18 @@ class StreamCache:
         await reader.ensure_started()
         return reader.get_frame()
 
+    def peek_frame(self, stream_url: str) -> bytes | None:
+        """The reader's latest usable frame, WITHOUT starting one.
+
+        get_frame() is the right call for anything that needs a picture:
+        it starts a reader and waits for one. This is for asking "is this
+        camera actually producing video right now?" — a question that
+        must not itself create the reader whose output it is judging, and
+        must not keep an unwatched camera's ffmpeg alive by touching it.
+        """
+        reader = self._readers.get(stream_url)
+        return reader.get_frame() if reader else None
+
     async def _get_or_create_reader(self, stream_url: str) -> _StreamReader:
         async with self._lock:
             reader = self._readers.get(stream_url)
@@ -324,6 +336,11 @@ _cache = StreamCache()
 
 async def get_cached_frame(stream_url: str) -> bytes | None:
     return await _cache.get_frame(stream_url)
+
+
+def peek_cached_frame(stream_url: str) -> bytes | None:
+    """See StreamCache.peek_frame."""
+    return _cache.peek_frame(stream_url)
 
 
 def is_stream_known_broken(stream_url: str) -> bool:
