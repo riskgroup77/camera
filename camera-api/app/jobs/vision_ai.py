@@ -57,7 +57,7 @@ from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_burst_for_camera
-from app.services.sleep_detection import is_asleep
+from app.services.sleep_detection import is_asleep, is_face_measurable
 
 logger = logging.getLogger("app.vision_ai")
 
@@ -125,11 +125,11 @@ def _tally_votes(
                     continue
                 known_seen_this_frame.add(identity)
                 appearances[identity] += 1
-                if is_asleep(face.landmarks_68):
+                if is_face_measurable(face.bbox) and is_asleep(face.landmarks_68):
                     asleep_votes[identity] += 1
             else:
                 unidentified_present = True
-                if is_asleep(face.landmarks_68):
+                if is_face_measurable(face.bbox) and is_asleep(face.landmarks_68):
                     unidentified_asleep = True
 
         if unidentified_present:

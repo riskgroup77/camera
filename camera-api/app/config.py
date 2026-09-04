@@ -187,6 +187,26 @@ class Settings(BaseSettings):
     sleep_confirmation_gap_seconds: float = 1.0
     sleep_confirmation_majority_ratio: float = 0.75
 
+    # Ko'z holatini o'lchash uchun yuzning eng kichik balandligi (piksel).
+    #
+    # Nega piksel, kadr ulushi emas: talab ko'z sohasidagi haqiqiy
+    # aniqlikka bog'liq, kadr 4K yoki 432p bo'lishiga emas.
+    #
+    # 80 qayerdan olindi — production'dagi 89 ta "uxlab qolish"
+    # signalining rasmlari o'lchandi:
+    #
+    #   19 tasida kadrda yuz umuman yo'q edi
+    #   qolgan 70 tasida: min=8px, mediana=28px, 75%=70px, max=188px
+    #
+    # Ochiq ko'z yuz balandligining taxminan 1/25 qismi. 28 piksellik
+    # yuzda bu ~1 piksel: bitta landmark xatosi hukmni teskarisiga
+    # o'zgartiradi. 80 pikselda ~3 piksel bo'ladi — bu ham ko'p emas,
+    # lekin o'lchov ma'noga ega bo'ladigan quyi chegara.
+    #
+    # Bu modulni "aniq" qilmaydi. U shunchaki mumkin bo'lmagan
+    # o'lchovlarni to'xtatadi — ular 89 tadan 58 tasi edi.
+    sleep_min_face_height_px: int = 80
+
     # TT kriteriya 23 ("Yong'in / tutun aniqlash") — app/jobs/fire_ai.py.
     # Its own interval (not shared with vision_ai_interval_seconds) since
     # each fire sweep tick costs two ffmpeg frame grabs per camera

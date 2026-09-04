@@ -29,7 +29,7 @@ from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera
 from app.services.image_size import jpeg_dimensions
-from app.services.sleep_detection import is_asleep
+from app.services.sleep_detection import is_asleep, is_face_measurable
 from app.services.sweep_result_cache import get_camera_sweep
 
 logger = logging.getLogger("app.public")
@@ -248,7 +248,7 @@ async def get_live_detection(
                 DetectedFaceOut(
                     bbox=[float(x) for x in face.bbox],
                     person_name=person_name,
-                    asleep=is_asleep(face.landmarks_68),
+                    asleep=is_face_measurable(face.bbox) and is_asleep(face.landmarks_68),
                 )
             )
 

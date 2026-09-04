@@ -43,6 +43,8 @@ vote in vision_ai.py.
 
 import numpy as np
 
+from app.config import settings
+
 EAR_CLOSED_THRESHOLD = 0.21
 
 RIGHT_EYE_INDICES = [36, 37, 38, 39, 40, 41]
@@ -98,6 +100,28 @@ def frontality_ratio(landmarks_68: np.ndarray) -> float:
 
 def is_plausible_frontal(landmarks_68: np.ndarray) -> bool:
     return _FRONTALITY_MIN <= frontality_ratio(landmarks_68) <= _FRONTALITY_MAX
+
+
+def is_face_measurable(bbox) -> bool:
+    """Whether this face is big enough for eye geometry to mean anything.
+
+    Eye-aspect-ratio compares distances of a few pixels. InsightFace
+    returns 68 landmarks for a face of ANY size — it resamples the crop
+    to 192x192 first — so the numbers keep arriving long after they stop
+    describing the eyes, and nothing here noticed.
+
+    Measured over the sleep alerts stored in production, the faces being
+    judged were a few percent of frame height. The eye opening on a face
+    that small spans a couple of pixels: one pixel of landmark error
+    flips the verdict, which is why people plainly awake in the snapshots
+    were being reported asleep at confidence 95.
+
+    In pixels, not a fraction of the frame: the requirement is real
+    resolution across the eye, and it does not change because the frame
+    around it happens to be 4K or 432p.
+    """
+    height = bbox[3] - bbox[1]
+    return height >= settings.sleep_min_face_height_px
 
 
 def is_asleep(landmarks_68: np.ndarray) -> bool:

@@ -4,7 +4,9 @@ import insightface
 import numpy as np
 
 from app.services.face_recognition import detect_faces
+from app.config import settings
 from app.services.sleep_detection import (
+    is_face_measurable,
     EAR_CLOSED_THRESHOLD,
     average_eye_aspect_ratio,
     frontality_ratio,
@@ -93,3 +95,33 @@ class TestIsAsleep:
         oblique = _flat_eye_landmarks(nose_x=0.5)
         assert average_eye_aspect_ratio(oblique) < EAR_CLOSED_THRESHOLD  # the raw EAR still reads "closed"
         assert is_asleep(oblique) is False  # but the pose gate rejects it before that matters
+
+
+class TestFaceMeasurability:
+    """Eye-aspect-ratio compares distances of a few pixels, and
+    InsightFace happily returns 68 landmarks for a face of any size — it
+    resamples the crop to 192x192 first, so the numbers keep arriving
+    long after they stop describing anything.
+
+    Measured over the sleep alerts stored in production: 19 of 89 had no
+    face in the snapshot at all, and of the remaining 70 the MEDIAN face
+    was 28 pixels tall. The eye opening on a face that small is about one
+    pixel."""
+
+    def test_a_face_below_the_floor_is_not_measurable(self):
+        assert is_face_measurable([0, 0, 40, 28]) is False
+
+    def test_a_face_at_the_floor_is(self):
+        assert is_face_measurable([0, 0, 60, 80]) is True
+
+    def test_the_floor_is_configurable(self, monkeypatch):
+        monkeypatch.setattr(settings, "sleep_min_face_height_px", 20)
+        assert is_face_measurable([0, 0, 40, 28]) is True
+
+    def test_it_measures_height_not_width(self):
+        """A wide, short box is not a large face — reading the wrong axis
+        would let exactly the flat detections through."""
+        assert is_face_measurable([0, 0, 400, 30]) is False
+
+    def test_the_production_median_would_have_been_rejected(self):
+        assert is_face_measurable([0, 0, 30, 28]) is False
