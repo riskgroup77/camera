@@ -1,9 +1,12 @@
-import { ListChecks, Loader2, LogIn } from 'lucide-react';
+import { useState } from 'react';
+import { Eye, ListChecks, Loader2, LogIn } from 'lucide-react';
 import Badge from '../Badge';
+import EventDetailModal from '../admin/EventDetailModal';
+import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useLiveEvents } from '../../lib/realtime';
 import { useServerPage } from '../../lib/useServerPage';
-import type { AIEvent } from '../../types';
+import type { AIEvent, EventStatus } from '../../types';
 
 const SEVERITY_TONE: Record<AIEvent['severity'], 'green' | 'amber' | 'red'> = {
   past: 'green',
@@ -13,15 +16,45 @@ const SEVERITY_TONE: Record<AIEvent['severity'], 'green' | 'amber' | 'red'> = {
 
 const PAGE_SIZE = 6;
 
-/** O'ng panelning o'rta qismi — Hodisalar jurnalidagi kabi so'nggi
- * hodisalarni ixcham ro'yxatda ko'rsatadi, jonli (WebSocket) yangilanadi. */
+/** Devor jurnali KO'RSATMAYDIGAN modullar.
+ *
+ * #25 ("Hovlida transport harakati") — modul o'z ta'rifida yozilganidek,
+ * qaysi kamera hovliga qaraganini bilmaydi va barcha kameralarda
+ * ishlaydi. Tekshirilgan namunasi ichkaridagi laboratoriya edi. Modul
+ * o'chirilmagan — hodisalari bazada va Hodisalar sahifasida qoladi,
+ * faqat operator kuzatib turadigan bu ro'yxatga chiqmaydi. */
+const HIDDEN_MODULE_CODES = [25];
+
+/** O'ng panelning o'rta qismi — so'nggi hodisalarni ixcham ro'yxatda
+ * ko'rsatadi, jonli (WebSocket) yangilanadi.
+ *
+ * Bu ro'yxat operator diqqatini talab qiladigan signallar uchun,
+ * shuning uchun u to'liq arxiv EMAS: yolg'on deb belgilangan hodisalar
+ * va yuqoridagi modullar bu yerga chiqmaydi. To'liq ro'yxat Hodisalar
+ * sahifasida qoladi. */
 export default function EventsLogPanel() {
   const { token } = useAuth();
-  const { items: events, page, loading, error, reload } = useServerPage<AIEvent>('/api/events', {}, PAGE_SIZE);
+  const [selected, setSelected] = useState<AIEvent | null>(null);
+  const { items: events, page, loading, error, reload } = useServerPage<AIEvent>(
+    '/api/events',
+    { excludeModules: HIDDEN_MODULE_CODES.join(','), hideRejected: 'true' },
+    PAGE_SIZE,
+  );
 
   useLiveEvents(() => {
     if (page === 1) reload();
   }, !!token);
+
+  // Yolg'on deb belgilangan hodisa darhol ro'yxatdan chiqadi (hideRejected)
+  // — operator uni ikkinchi marta ko'rib chiqmasligi uchun.
+  async function review(id: string, status: EventStatus) {
+    try {
+      await api.patch(`/api/events/${id}`, { status }, token);
+    } finally {
+      setSelected(null);
+      reload();
+    }
+  }
 
   return (
     <div className="glass p-4">
@@ -33,7 +66,7 @@ export default function EventsLogPanel() {
       {!token ? (
         <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400">
           <LogIn size={13} />
-          Ko'rish uchun tizimga kiring
+          Ko&apos;rish uchun tizimga kiring
         </p>
       ) : loading && events.length === 0 ? (
         <div className="flex items-center justify-center py-6 text-slate-400">
@@ -53,13 +86,29 @@ export default function EventsLogPanel() {
                 <span className="truncate font-semibold text-slate-800 dark:text-slate-200">{e.moduleName}</span>
                 <Badge tone={SEVERITY_TONE[e.severity]}>{e.confidence}%</Badge>
               </div>
-              <p className="truncate text-slate-500 dark:text-slate-400">
-                {e.cameraName} · {e.timestamp}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-slate-500 dark:text-slate-400">
+                  {e.cameraName} · {e.timestamp}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSelected(e)}
+                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-500/10"
+                >
+                  <Eye size={12} />
+                  Ko&apos;rish
+                </button>
+              </div>
             </li>
           ))}
         </ul>
       )}
+
+      {/* Hodisalar sahifasidagi bilan AYNAN bir xil oyna — dalil rasm,
+          kamera, vaqt va tasdiqlash tugmalari. Alohida nusxa yozish
+          ikkalasining vaqt o'tib bir-biridan farq qilishiga olib
+          kelardi. */}
+      <EventDetailModal event={selected} onClose={() => setSelected(null)} onReview={review} />
     </div>
   );
 }

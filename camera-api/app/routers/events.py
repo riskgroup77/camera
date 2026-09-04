@@ -81,6 +81,8 @@ async def list_events(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     search: Annotated[str | None, Query()] = None,
     today: Annotated[bool, Query()] = False,
+    exclude_modules: Annotated[str | None, Query(alias="excludeModules")] = None,
+    hide_rejected: Annotated[bool, Query(alias="hideRejected")] = False,
 ) -> Page[EventOut]:
     stmt = select(Event).order_by(Event.occurred_at.desc())
     if severity:
@@ -89,6 +91,21 @@ async def list_events(
         stmt = stmt.where(Event.status == status_filter)
     if search:
         stmt = stmt.where(Event.module_name.ilike(f"%{search}%"))
+    if exclude_modules:
+        # Vergul bilan ajratilgan modul kodlari. Monitoring devoridagi
+        # jurnal buni ishlatadi: u operator diqqatini talab qiladigan
+        # signallar uchun, ma'lum bir modul esa hozircha faqat shovqin
+        # bergani uchun (masalan #25 — u qaysi kamera hovliga qaraganini
+        # bilmaydi) uni butun tizimdan o'chirmasdan shu ro'yxatdan
+        # olib tashlash kerak bo'ladi.
+        codes = [int(c) for c in exclude_modules.split(",") if c.strip().isdigit()]
+        if codes:
+            stmt = stmt.where(Event.module_code.notin_(codes))
+    if hide_rejected:
+        # Operator "yolg'on signal" deb belgilagan hodisa devorga qayta
+        # chiqmasligi kerak — aks holda uni har safar qaytadan ko'rib
+        # chiqishga to'g'ri keladi.
+        stmt = stmt.where(Event.status != "rad_etilgan")
     if today:
         # "Today" means the institute's local calendar day, not UTC's —
         # see app/timezone.py's module docstring for why that distinction
