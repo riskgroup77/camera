@@ -84,26 +84,43 @@ class TestStreamReaderFreshness:
         reader._latest_frame_at = time.monotonic()
         assert reader.get_frame() == frame
 
-    def test_a_corrupted_frame_is_withheld(self):
+    def test_a_slab_that_appears_from_nowhere_is_withheld(self):
         """Decode damage reaches this cache looking like an ordinary
         frame. Handing it out means handing it to the detectors, which is
-        how an empty classroom at 23:54 became a "disorder" alert."""
+        how an empty classroom at 23:54 became a "disorder" alert.
+
+        It takes two frames to tell: the clean one establishes what the
+        room looks like, and the slab is new against it."""
         reader = _StreamReader("rtsp://fake")
+        reader._latest_frame = _real_jpeg()
+        reader._latest_frame_at = time.monotonic()
+        assert reader.get_frame() is not None  # baseline
+
         reader._latest_frame = _real_jpeg(flat=True)
         reader._latest_frame_at = time.monotonic()
         assert reader.get_frame() is None
+
+    def test_a_camera_pointed_at_a_bright_window_keeps_working(self):
+        """The same slab in the same place every frame is the room, not
+        damage. Getting this wrong took 29 of 107 cameras off the AI on
+        the first sunny morning."""
+        reader = _StreamReader("rtsp://fake")
+        for _ in range(3):
+            reader._latest_frame = _real_jpeg(flat=True)
+            reader._latest_frame_at = time.monotonic()
+            assert reader.get_frame() is not None
 
     def test_the_verdict_is_reused_for_the_same_frame(self, monkeypatch):
         """grab_frame_for_camera re-reads every 0.5s while it waits, so a
         frame that is judged once must not be decoded again on each poll."""
         calls = {"n": 0}
-        real = stream_cache.is_frame_corrupt
+        real = stream_cache.measure_frame
 
         def counting(frame):
             calls["n"] += 1
             return real(frame)
 
-        monkeypatch.setattr(stream_cache, "is_frame_corrupt", counting)
+        monkeypatch.setattr(stream_cache, "measure_frame", counting)
         reader = _StreamReader("rtsp://fake")
         reader._latest_frame = _real_jpeg()
         reader._latest_frame_at = time.monotonic()

@@ -31,7 +31,7 @@ import re
 import time
 
 from app.config import settings
-from app.services.frame_quality import is_frame_corrupt
+from app.services.frame_quality import FlatBlock, looks_like_decode_damage, measure_frame
 
 logger = logging.getLogger("app.stream_cache")
 
@@ -95,6 +95,10 @@ class _StreamReader:
         # kadrni o'nlab marta dekodlab o'tirish behuda bo'lardi.
         self._last_judged: bytes | None = None
         self._last_judged_corrupt = False
+        # Oxirgi QABUL QILINGAN kadrdagi blok — solishtirish uchun tayanch.
+        # Rad etilgan kadr tayanchni yangilamaydi, aks holda bitta
+        # shikastlangan kadr keyingisini "turg'un" ko'rsatib qo'yardi.
+        self._previous_block: FlatBlock | None = None
         self._consecutive_rejected = 0
 
     def touch(self) -> None:
@@ -113,16 +117,18 @@ class _StreamReader:
         frame = self._latest_frame
         if frame is not self._last_judged:
             self._last_judged = frame
-            self._last_judged_corrupt = is_frame_corrupt(frame)
+            block = measure_frame(frame)
+            self._last_judged_corrupt = looks_like_decode_damage(block, self._previous_block)
+            if not self._last_judged_corrupt:
+                self._previous_block = block
             if self._last_judged_corrupt:
                 self._consecutive_rejected += 1
                 # Bir-ikkita shikastlangan kadr — tarmoqda odatiy hol,
                 # jimgina tashlab yuboriladi. Ketma-ket ko'p rad etilishi
-                # esa boshqa narsani anglatadi: yo kamera doimiy buzuq
-                # oqim beryapti, yo chegara shu manzara uchun juda qattiq
-                # (masalan kadrning katta qismi oqarib ketgan deraza).
-                # Ikkala holatda ham kamera AI uchun ko'r bo'lib qoladi,
-                # va bu jimgina sodir bo'lmasligi kerak.
+                # esa kamera AI uchun ko'r bo'lib qolgani demakdir, va bu
+                # jimgina sodir bo'lmasligi kerak — birinchi versiyada
+                # aynan shu holat 107 kameradan 29 tasida bir tongda yuz
+                # bergan va faqat loglar tufayli aniqlangan.
                 if self._consecutive_rejected % 20 == 0:
                     logger.warning(
                         "stream keeps yielding corrupted frames; this camera is invisible to the AI sweeps",

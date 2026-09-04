@@ -493,6 +493,11 @@ class Settings(BaseSettings):
     # kerak, shuning uchun stream_cache rad etishlar ketma-ket
     # takrorlansa ogohlantirish yozadi — jimgina yo'qolib qolmaydi.
     frame_corruption_max_flat_block_fraction: float = 0.04
+    # Bloklar bir xil joyda turgan deb hisoblanishi uchun kerakli
+    # kesishish darajasi (IoU). Deraza kadrdan kadrga deyarli
+    # qimirlamaydi, shuning uchun 0.5 ham yetarlicha bo'sh chegara;
+    # dekodlash shikasti esa har safar boshqa joyda paydo bo'ladi.
+    frame_corruption_persistence_overlap: float = 0.5
 
     # --- Xulq-atvor modullari uchun ish vaqti oynasi ---
     #

@@ -1,11 +1,14 @@
-"""A partially decoded keyframe is not a broken frame the decoder
-rejects — it is a normal-looking picture with a slab of garbage in it,
-and it reaches the detectors as if it were real footage. Measured on
-production: 4 of 23 sampled event snapshots carried that damage, and all
-four had produced a false event.
+"""A partially decoded keyframe is not a frame the decoder rejects — it
+is a normal-looking picture with a slab of garbage in it, and it reaches
+the detectors as if it were real footage.
 
-The numbers in these tests are the ones measured on that sample: intact
-frames peaked at a 1.8% largest flat block, damaged ones started at 6.6%.
+Telling that apart from a sunlit window is the whole difficulty, and no
+single-frame metric does it: measured across both populations the
+texture inside the block scored 69.7 on a corrupt frame and 67.5 on a
+sunlit classroom. A first version used block size alone and blinded 29
+of 107 cameras on the first sunny morning. What separates them is
+persistence — a window stays put, damage moves — so these tests are
+mostly about pairs of frames, not single ones.
 """
 
 import cv2
@@ -13,7 +16,12 @@ import numpy as np
 import pytest
 
 from app.config import settings
-from app.services.frame_quality import is_frame_corrupt, largest_flat_block_fraction
+from app.services.frame_quality import (
+    FlatBlock,
+    largest_flat_block,
+    looks_like_decode_damage,
+    measure_frame,
+)
 
 
 def encode(image: np.ndarray) -> bytes:
@@ -22,93 +30,107 @@ def encode(image: np.ndarray) -> bytes:
     return buffer.tobytes()
 
 
-def textured_scene(width: int = 640, height: int = 480) -> np.ndarray:
-    """Stand-in for a real room: varied, no large flat area."""
+def scene(*, block: tuple[int, int, int, int] | None = None) -> bytes:
+    """A textured room, optionally with a white slab at (x, y, w, h)."""
     rng = np.random.default_rng(1234)
-    return rng.integers(20, 200, size=(height, width, 3), dtype=np.uint8)
+    image = rng.integers(20, 200, size=(480, 640, 3), dtype=np.uint8)
+    if block:
+        x, y, w, h = block
+        image[y : y + h, x : x + w] = 255
+    return encode(image)
 
 
-class TestLargestFlatBlockFraction:
+class TestLargestFlatBlock:
     def test_a_textured_scene_has_no_large_flat_block(self):
-        assert largest_flat_block_fraction(encode(textured_scene())) < 0.01
+        assert largest_flat_block(scene()).fraction < 0.01
 
-    def test_a_pasted_white_slab_is_measured_by_its_area(self):
-        image = textured_scene()
-        image[:, 480:] = 255  # a quarter of the width, full height
-        fraction = largest_flat_block_fraction(encode(image))
-        assert 0.2 < fraction < 0.3
+    def test_a_slab_is_measured_by_area_and_located(self):
+        found = largest_flat_block(scene(block=(320, 0, 320, 480)))
+        assert 0.4 < found.fraction < 0.6
+        x, _y, w, _h = found.box
+        assert x > 30  # right-hand half, in the 1/8-scale grid (80 wide)
+        assert w > 20
 
-    def test_undecodable_bytes_report_nothing_rather_than_zero(self):
-        assert largest_flat_block_fraction(b"this is not a jpeg") is None
+    def test_undecodable_bytes_report_nothing(self):
+        assert largest_flat_block(b"this is not a jpeg") is None
 
 
-class TestIsFrameCorrupt:
+class TestLooksLikeDecodeDamage:
     def test_a_clean_frame_passes(self):
-        assert is_frame_corrupt(encode(textured_scene())) is False
+        block = measure_frame(scene())
+        assert looks_like_decode_damage(block, None) is False
 
-    def test_a_frame_with_a_quarter_width_slab_is_rejected(self):
-        image = textured_scene()
-        image[:, 480:] = 255
-        assert is_frame_corrupt(encode(image)) is True
+    def test_a_slab_that_was_not_there_before_is_damage(self):
+        clean = measure_frame(scene())
+        damaged = measure_frame(scene(block=(320, 0, 320, 480)))
+        assert looks_like_decode_damage(damaged, clean) is True
 
-    def test_scattered_bright_spots_are_not_damage(self):
-        """A sunlit room is bright in many places at once. Damage is one
-        solid slab — which is why the check measures the largest CONNECTED
-        region and not the total bright area."""
-        image = textured_scene()
-        for x in range(0, 640, 40):
-            image[100:140, x : x + 20] = 255
-        assert is_frame_corrupt(encode(image)) is False
+    def test_a_slab_in_the_same_place_as_before_is_the_room(self):
+        """A blown-out window is in every frame. Rejecting it means
+        rejecting every frame that camera will ever produce."""
+        window = (500, 0, 140, 480)
+        first = measure_frame(scene(block=window))
+        second = measure_frame(scene(block=window))
+        assert looks_like_decode_damage(second, first) is False
 
-    def test_a_narrow_full_height_white_band_passes(self):
-        """A white door frame or a curtain edge spans the full height
-        without covering much of the picture."""
-        image = textured_scene()
-        image[:, 300:315] = 255
-        assert is_frame_corrupt(encode(image)) is False
+    def test_a_slab_that_moved_is_damage(self):
+        left = measure_frame(scene(block=(0, 0, 200, 480)))
+        right = measure_frame(scene(block=(440, 0, 200, 480)))
+        assert looks_like_decode_damage(right, left) is True
+
+    def test_the_first_frame_is_never_rejected(self):
+        """Nothing to compare against yet. One possibly bad frame beats
+        blinding a camera every time its reader restarts."""
+        damaged = measure_frame(scene(block=(320, 0, 320, 480)))
+        assert looks_like_decode_damage(damaged, None) is False
+
+    def test_a_small_bright_patch_is_never_damage(self):
+        small = measure_frame(scene(block=(300, 200, 40, 40)))
+        clean = measure_frame(scene())
+        assert looks_like_decode_damage(small, clean) is False
 
     def test_undecodable_bytes_are_rejected(self):
-        assert is_frame_corrupt(b"not a jpeg at all") is True
+        assert looks_like_decode_damage(None, None) is True
 
-    def test_no_frame_is_not_treated_as_corrupt(self):
-        """Callers already distinguish "no frame available"; turning that
-        into "corrupt" would double-count the same condition."""
-        assert is_frame_corrupt(None) is False
-        assert is_frame_corrupt(b"") is False
-
-    def test_the_threshold_is_configurable(self, monkeypatch):
-        image = textured_scene()
-        image[:, 590:] = 255  # ~8% of the frame
-        frame = encode(image)
+    def test_the_size_threshold_is_configurable(self, monkeypatch):
+        clean = measure_frame(scene())
+        block = measure_frame(scene(block=(560, 0, 80, 480)))  # ~12%
         monkeypatch.setattr(settings, "frame_corruption_max_flat_block_fraction", 0.04)
-        assert is_frame_corrupt(frame) is True
+        assert looks_like_decode_damage(block, clean) is True
         monkeypatch.setattr(settings, "frame_corruption_max_flat_block_fraction", 0.5)
-        assert is_frame_corrupt(frame) is False
+        assert looks_like_decode_damage(block, clean) is False
 
-    def test_a_failing_check_lets_the_frame_through(self, monkeypatch):
-        """A quality gate that throws must not take a sweep down with it —
-        and must fail toward keeping footage, not discarding it."""
+
+class TestMeasureFrame:
+    def test_no_frame_measures_nothing(self):
+        assert measure_frame(None) is None
+        assert measure_frame(b"") is None
+
+    def test_a_failing_measurement_does_not_filter(self, monkeypatch):
+        """The check failing must not blind a camera — this filter has
+        already done that once by rejecting too much."""
 
         def boom(_frame):
             raise RuntimeError("decoder exploded")
 
-        monkeypatch.setattr("app.services.frame_quality.largest_flat_block_fraction", boom)
-        assert is_frame_corrupt(encode(textured_scene())) is False
+        monkeypatch.setattr("app.services.frame_quality.largest_flat_block", boom)
+        measured = measure_frame(scene(block=(320, 0, 320, 480)))
+        assert measured is not None
+        assert looks_like_decode_damage(measured, None) is False
 
 
 @pytest.mark.parametrize(
-    "measured_fraction, expected",
+    "fraction, expected",
     [
-        (0.000, False),  # empty corridor, night
-        (0.018, False),  # brightest intact frame in the sample (a lit window)
+        (0.000, False),  # empty corridor at night
+        (0.018, False),  # brightest intact frame in the sampled events
         (0.066, True),   # least damaged corrupt frame
-        (0.081, True),
-        (0.220, True),
         (0.288, True),   # worst measured
     ],
 )
-def test_threshold_separates_the_production_sample(measured_fraction, expected):
-    """Guards the gap the threshold sits in. If someone later moves
-    frame_corruption_max_flat_block_fraction past either side of the
-    measured spread, this is what says so."""
-    assert (measured_fraction >= settings.frame_corruption_max_flat_block_fraction) is expected
+def test_the_size_threshold_sits_in_the_measured_gap(fraction, expected):
+    """Size alone no longer decides, but it is still the first filter, and
+    it has to keep straddling the gap the production sample showed."""
+    clean = FlatBlock(0.0, (0, 0, 0, 0))
+    moved = FlatBlock(fraction, (0, 0, 40, 40))
+    assert looks_like_decode_damage(moved, clean) is expected
