@@ -25,19 +25,22 @@ const PAGE_SIZE = 6;
  * faqat operator kuzatib turadigan bu ro'yxatga chiqmaydi. */
 const HIDDEN_MODULE_CODES = [25];
 
-/** O'ng panelning o'rta qismi — so'nggi hodisalarni ixcham ro'yxatda
- * ko'rsatadi, jonli (WebSocket) yangilanadi.
+/** O'ng panelning o'rta qismi — devorda ko'rsatiladigan hodisalar.
  *
- * Bu ro'yxat operator diqqatini talab qiladigan signallar uchun,
- * shuning uchun u to'liq arxiv EMAS: yolg'on deb belgilangan hodisalar
- * va yuqoridagi modullar bu yerga chiqmaydi. To'liq ro'yxat Hodisalar
- * sahifasida qoladi. */
+ * Faqat operator TASDIQLAGAN hodisalar chiqadi. Bu ataylab: modullarning
+ * bir qismi hali ishonchli emas (o'lchangan holatlar — bo'sh xonadagi
+ * "tartib buzilishi", 28 piksellik yuzda "uxlab qolish"), va devor
+ * institutda ko'rsatiladigan joy. Tasdiqlanmagan signal shovqin bo'lishi
+ * mumkin, tasdiqlangani esa odam ko'rib chiqqan dalil.
+ *
+ * To'liq oqim — tasdiqlanmaganlar ham — Hodisalar sahifasida qoladi:
+ * operator aynan o'sha yerda ko'rib chiqadi va tasdiqlaydi. */
 export default function EventsLogPanel() {
   const { token } = useAuth();
   const [selected, setSelected] = useState<AIEvent | null>(null);
   const { items: events, page, loading, error, reload } = useServerPage<AIEvent>(
     '/api/events',
-    { excludeModules: HIDDEN_MODULE_CODES.join(','), hideRejected: 'true' },
+    { excludeModules: HIDDEN_MODULE_CODES.join(','), status: 'tasdiqlangan' },
     PAGE_SIZE,
   );
 
@@ -45,11 +48,11 @@ export default function EventsLogPanel() {
     if (page === 1) reload();
   }, !!token);
 
-  // Yolg'on deb belgilangan hodisa darhol ro'yxatdan chiqadi (hideRejected)
-  // — operator uni ikkinchi marta ko'rib chiqmasligi uchun.
+  // Bu yerdan ham tasdiqlash/rad etish mumkin: devorni kuzatib turgan
+  // operator hodisani ko'rib, o'sha zahoti hukm qila oladi.
   async function review(id: string, status: EventStatus) {
     try {
-      await api.patch(`/api/events/${id}`, { status }, token);
+      await api.patch(`/api/events/${id}/review`, { status }, token);
     } finally {
       setSelected(null);
       reload();
@@ -75,8 +78,10 @@ export default function EventsLogPanel() {
       ) : error ? (
         <p className="text-[11px] font-medium text-red-600 dark:text-red-400">{error}</p>
       ) : events.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-[11px] text-slate-400 dark:border-white/10 dark:text-slate-500">
-          Hodisa topilmadi
+        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-[11px] leading-relaxed text-slate-400 dark:border-white/10 dark:text-slate-500">
+          Tasdiqlangan hodisa yo&apos;q.
+          <br />
+          Yangi signallar Hodisalar sahifasida ko&apos;rib chiqiladi.
         </p>
       ) : (
         <ul className="space-y-2">
