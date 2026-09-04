@@ -16,6 +16,18 @@ interface LiveVideoPlayerProps {
    */
   streamUrl?: string;
   className?: string;
+  /** Video konteynerga qanday joylashtiriladi.
+   *
+   * 'cover' (standart) — konteynerni to'ldiradi va ortiqchasini QIRQADI.
+   * Miniatyuralar uchun to'g'ri: ular kichik va bir xil o'lchamli
+   * kataklar, bo'sh qora chekkalar u yerda faqat xunuk ko'rinadi.
+   *
+   * 'contain' — butun kadrni ko'rsatadi, kerak bo'lsa qora chekka
+   * qoldiradi. Asosiy ko'rinish uchun aynan shu kerak: u qolgan bo'sh
+   * joyni egallaydi, ya'ni nisbati 16:9 bo'lmaydi, va 'cover' bilan
+   * kadrning yuqori/quyi yoki chap/o'ng qismi ko'rinmay qolardi — aynan
+   * operator kuzatishi kerak bo'lgan joy. */
+  fit?: 'cover' | 'contain';
   /** Grid'da parallel HLS yukini kamaytirish — ms kechikish (navbat bilan) */
   startDelayMs?: number;
   /** Modal/yakka player — navbat cheklovisiz */
@@ -81,6 +93,7 @@ const TARGET_BEHIND_LIVE_S = 1;
 export default function LiveVideoPlayer({
   streamUrl,
   className = '',
+  fit = 'cover',
   startDelayMs = 0,
   priority = false,
   cameraId,
@@ -365,9 +378,9 @@ export default function LiveVideoPlayer({
         muted
         playsInline
         autoPlay
-        className={`absolute inset-0 h-full w-full object-cover ${className}`}
+        className={`absolute inset-0 h-full w-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} ${className}`}
       />
-      {showDetections && <FaceDetectionOverlay videoRef={videoRef} detection={detection.result} />}
+      {showDetections && <FaceDetectionOverlay videoRef={videoRef} detection={detection.result} fit={fit} />}
       {showDetections && detection.slotDenied && (
         <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] font-medium text-amber-200">
           Boshqa kamerada AI ko&apos;rsatkich yoqilgan — navbatda

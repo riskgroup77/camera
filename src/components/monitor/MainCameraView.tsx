@@ -14,8 +14,10 @@ import type { CameraFeed } from '../../types';
  * ekranga (scroll'siz) sig'ishi kerak bo'lgani uchun, bu komponent o'z
  * balandligini kenglikdan hisoblab chiqarish o'rniga MonitoringPage'dan
  * kelgan `className` (odatda flex-1) orqali qolgan bo'sh joyni egallaydi
- * — video elementning o'zi baribir object-cover bilan to'ldiriladi, shu
- * sababli nisbat qat'iy 16:9 bo'lmasa ham vizual jihatdan to'g'ri chiqadi. */
+ * Aynan shu sababli video `fit="contain"` bilan ko'rsatiladi: konteyner
+ * nisbati kadrnikiga mos kelmagani uchun `cover` kadrning yuqori/quyi
+ * yoki chap/o'ng qismini QIRQIB tashlardi — operator kuzatishi kerak
+ * bo'lgan joyni. Qora chekka qolgani kesilgan tasvirdan yaxshiroq. */
 export default function MainCameraView({
   camera,
   className = '',
@@ -59,7 +61,7 @@ export default function MainCameraView({
       )}
 
       {camera && isLive && (
-        <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections priority />
+        <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections priority fit="contain" />
       )}
 
       {camera && (

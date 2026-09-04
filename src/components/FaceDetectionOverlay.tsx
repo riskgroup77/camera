@@ -4,6 +4,9 @@ import type { LiveDetectionResult } from '../types';
 interface FaceDetectionOverlayProps {
   videoRef: RefObject<HTMLVideoElement | null>;
   detection: LiveDetectionResult | null;
+  /** Video elementning object-fit rejimi. Ramkalar aynan shu matematika
+      bo'yicha joylashtiriladi — computeBoxes izohiga qarang. */
+  fit?: 'cover' | 'contain';
 }
 
 interface BoxStyle {
@@ -17,20 +20,30 @@ interface BoxStyle {
   identified: boolean;
 }
 
-/** Draws a box + label over each detected face on top of a <video> that's
- * rendered with `object-cover` (fills its box, crops the overflow instead
- * of letterboxing) — so a face's [x1,y1,x2,y2] in the source frame's pixel
- * coordinates has to go through the same crop-and-scale math the browser
- * applies to the video itself, not a plain width-ratio scale, or the boxes
- * drift off the actual face as soon as the video's aspect ratio doesn't
- * match its container's. */
-function computeBoxes(video: HTMLVideoElement, detection: LiveDetectionResult): BoxStyle[] {
+/** Draws a box + label over each detected face on top of a <video>.
+ *
+ * A face's [x1,y1,x2,y2] is in the SOURCE frame's pixel coordinates, so
+ * it has to go through exactly the same fit-and-scale math the browser
+ * applied to the video itself — a plain width-ratio scale makes the
+ * boxes drift off the faces the moment the video's aspect ratio differs
+ * from its container's.
+ *
+ * Which math depends on object-fit, and getting it backwards is worse
+ * than useless: `cover` scales to the LARGER ratio and crops the
+ * overflow, `contain` scales to the SMALLER one and letterboxes. Using
+ * cover's math on a contained video puts every box outside the picture. */
+function computeBoxes(
+  video: HTMLVideoElement,
+  detection: LiveDetectionResult,
+  fit: 'cover' | 'contain',
+): BoxStyle[] {
   const containerW = video.clientWidth;
   const containerH = video.clientHeight;
   const { frameWidth, frameHeight, faces } = detection;
   if (!containerW || !containerH || !frameWidth || !frameHeight) return [];
 
-  const scale = Math.max(containerW / frameWidth, containerH / frameHeight);
+  const ratios = [containerW / frameWidth, containerH / frameHeight];
+  const scale = fit === 'contain' ? Math.min(...ratios) : Math.max(...ratios);
   const offsetX = (containerW - frameWidth * scale) / 2;
   const offsetY = (containerH - frameHeight * scale) / 2;
 
@@ -49,7 +62,7 @@ function computeBoxes(video: HTMLVideoElement, detection: LiveDetectionResult): 
   });
 }
 
-export default function FaceDetectionOverlay({ videoRef, detection }: FaceDetectionOverlayProps) {
+export default function FaceDetectionOverlay({ videoRef, detection, fit = 'cover' }: FaceDetectionOverlayProps) {
   const [boxes, setBoxes] = useState<BoxStyle[]>([]);
 
   useEffect(() => {
@@ -60,14 +73,14 @@ export default function FaceDetectionOverlay({ videoRef, detection }: FaceDetect
     }
 
     function recompute() {
-      if (video && detection) setBoxes(computeBoxes(video, detection));
+      if (video && detection) setBoxes(computeBoxes(video, detection, fit));
     }
 
     recompute();
     const observer = new ResizeObserver(recompute);
     observer.observe(video);
     return () => observer.disconnect();
-  }, [videoRef, detection]);
+  }, [videoRef, detection, fit]);
 
   if (boxes.length === 0) return null;
 
