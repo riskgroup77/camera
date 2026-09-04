@@ -73,6 +73,16 @@ class TestLooksLikeDecodeDamage:
         second = measure_frame(scene(block=window))
         assert looks_like_decode_damage(second, first) is False
 
+    def test_a_block_hovering_at_the_threshold_stays_accepted(self):
+        """Production cameras .91 and .93 sit at 4.6-4.8% against a 4%
+        threshold. If persistence also required the PREVIOUS block to
+        clear the threshold, one dip to 3.9% would make the next frame
+        look new and the camera would flicker in and out of the sweeps —
+        while nothing in the room had moved."""
+        below = FlatBlock(0.039, (10, 10, 20, 20))
+        above = FlatBlock(0.041, (10, 10, 20, 20))
+        assert looks_like_decode_damage(above, below) is False
+
     def test_a_slab_that_moved_is_damage(self):
         left = measure_frame(scene(block=(0, 0, 200, 480)))
         right = measure_frame(scene(block=(440, 0, 200, 480)))

@@ -116,9 +116,21 @@ def looks_like_decode_damage(current: FlatBlock | None, previous: FlatBlock | No
     if previous is None:
         return False  # no baseline — see the module docstring
 
-    was_there_before = previous.fraction >= settings.frame_corruption_max_flat_block_fraction
+    # Turg'unlik faqat JOY bo'yicha hukm qilinadi, oldingi blokning
+    # o'lchami chegaradan oshgan-oshmaganiga qaramasdan.
+    #
+    # Nega: production'da .91 va .93 kameralarida blok 4.6-4.8% da
+    # turadi, ya'ni 4% chegarasining aynan yonida. Oldingi kadr bir
+    # marta 3.9% ga tushsa, u "chegaradan past" bo'lib qolardi va
+    # keyingi 4.1% "yangi paydo bo'lgan" deb rad etilardi — o'sha
+    # qimirlamagan derazaning o'zi bo'lsa ham.
+    #
+    # Bu aniqlashni sezilarli zaiflashtirmaydi: IoU >= 0.5 bo'lishi
+    # uchun ikki blok ham joyi, ham O'LCHAMI bo'yicha o'xshash bo'lishi
+    # shart. Shikast slabi katta va tasodifiy joyda paydo bo'ladi —
+    # kadrdagi kichik yorug' dog' bilan bunday kesishish bermaydi.
     in_the_same_place = _overlap(current.box, previous.box) >= settings.frame_corruption_persistence_overlap
-    return not (was_there_before and in_the_same_place)
+    return not in_the_same_place
 
 
 _NO_BLOCK = FlatBlock(0.0, (0, 0, 0, 0))
