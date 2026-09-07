@@ -500,7 +500,12 @@ class Settings(BaseSettings):
     behaviour_hours_enabled: bool = True
     behaviour_hours_start: str = "07:00"
     behaviour_hours_end: str = "21:00"
-    behaviour_hours_module_codes: str = "5,16,17,20"
+    # 2026-09-07: ro'yxat qayta ko'rib chiqildi. #5 va #16 olib
+    # tashlangan kriteriyalar edi; ularning o'rniga #14 (jang) va #15
+    # (chekish) qo'shildi — ikkalasi ham yangi yoqildi va ikkalasi ham
+    # aynan shu himoyaga muhtoj: bo'sh binodagi harakat anomaliyasini
+    # "jang" deb, tungi soyani "chekish posturasi" deb o'qish mumkin.
+    behaviour_hours_module_codes: str = "14,15,17,20"
 
     @property
     def behaviour_hours_codes(self) -> set[int]:
