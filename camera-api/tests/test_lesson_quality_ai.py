@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.jobs import lesson_quality_ai
 from app.jobs.lesson_quality_ai import (
+    _match_enrolled,
     ATTENTION_MODULE_CODE,
     TEACHER_ACTIVITY_MODULE_CODE,
     _active_sessions,
@@ -168,7 +169,7 @@ class TestSampleAttention:
 
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
         candidates = CandidateMatrix(ids=["s1"], matrix=np.array([[1.0, 0.0]]))
-        assert await _sample_attention(b"frame", candidates) is None
+        assert await _sample_attention(b"frame", await _match_enrolled(b"frame", candidates)) is None
 
     async def test_no_matched_student_returns_none(self, db_session, monkeypatch):
         async def fake_detect_faces(frame_bytes):
@@ -176,7 +177,7 @@ class TestSampleAttention:
 
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
         candidates = CandidateMatrix(ids=["s1"], matrix=np.array([[1.0, 0.0]]))  # orthogonal -> no match
-        assert await _sample_attention(b"frame", candidates) is None
+        assert await _sample_attention(b"frame", await _match_enrolled(b"frame", candidates)) is None
 
     async def test_frontal_matched_student_no_phone_scores_high(self, db_session, monkeypatch):
         async def fake_detect_faces(frame_bytes):
@@ -188,7 +189,7 @@ class TestSampleAttention:
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
         monkeypatch.setattr(lesson_quality_ai, "detect_objects", fake_detect_objects)
         candidates = CandidateMatrix(ids=["s1"], matrix=np.array([[1.0, 0.0]]))
-        score = await _sample_attention(b"frame", candidates)
+        score = await _sample_attention(b"frame", await _match_enrolled(b"frame", candidates))
         assert score == 100.0
 
     async def test_phone_visible_overrides_frontal_and_scores_low(self, db_session, monkeypatch):
@@ -201,7 +202,7 @@ class TestSampleAttention:
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
         monkeypatch.setattr(lesson_quality_ai, "detect_objects", fake_detect_objects)
         candidates = CandidateMatrix(ids=["s1"], matrix=np.array([[1.0, 0.0]]))
-        score = await _sample_attention(b"frame", candidates)
+        score = await _sample_attention(b"frame", await _match_enrolled(b"frame", candidates))
         assert score == 20.0
 
     async def test_non_frontal_matched_student_scores_medium(self, db_session, monkeypatch):
@@ -214,7 +215,7 @@ class TestSampleAttention:
         monkeypatch.setattr(lesson_quality_ai, "detect_faces", fake_detect_faces)
         monkeypatch.setattr(lesson_quality_ai, "detect_objects", fake_detect_objects)
         candidates = CandidateMatrix(ids=["s1"], matrix=np.array([[1.0, 0.0]]))
-        score = await _sample_attention(b"frame", candidates)
+        score = await _sample_attention(b"frame", await _match_enrolled(b"frame", candidates))
         assert score == 40.0
 
 

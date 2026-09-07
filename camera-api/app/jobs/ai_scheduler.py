@@ -33,6 +33,7 @@ from app.jobs.disorder_ai import run_disorder_ai_sweep_once
 from app.jobs.dress_code_ai import run_dress_code_ai_sweep_once
 from app.jobs.fight_ai import run_fight_ai_sweep_once
 from app.jobs.fire_ai import run_fire_ai_sweep_once
+from app.jobs.lesson_attendance import run_lesson_attendance_finalization_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
 from app.jobs.ppe_ai import run_ppe_ai_sweep_once
 from app.jobs.smoking_ai import run_smoking_ai_sweep_once
@@ -100,6 +101,7 @@ def _build_registry() -> list[_SweepEntry]:
         ("ppe", settings.ppe_ai_interval_seconds, run_ppe_ai_sweep_once, "standard"),
         ("smoking", settings.smoking_ai_interval_seconds, run_smoking_ai_sweep_once, "standard"),
         ("lesson_quality", settings.lesson_quality_ai_interval_seconds, run_lesson_quality_ai_sweep_once, "standard"),
+        ("lesson_attendance", settings.lesson_attendance_finalize_interval_seconds, run_lesson_attendance_finalization_once, "standard"),
         # Kamera talab qilmaydi (faqat DB) — shuning uchun "standard"
         # qatorida va kamdan-kam bajariladi; o'zi ish kuni tugaguncha
         # hech narsa qilmaydi (app/jobs/absence_marker.py).

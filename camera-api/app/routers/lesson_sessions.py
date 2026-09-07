@@ -17,9 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
-from app.models import Camera, LessonSession, StudentStaff
+from app.models import Camera, LessonAttendance, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.lesson_session import (
+    LessonAttendanceOut,
+    LessonAttendanceRowOut,
     LessonSessionCreateIn,
     LessonSessionImportResultOut,
     LessonSessionOut,
@@ -182,6 +184,53 @@ async def import_lesson_sessions(
         )
         await db.commit()
     return result
+
+
+@router.get("/{session_id}/attendance", response_model=LessonAttendanceOut)
+async def lesson_attendance(
+    session_id: str, db: Annotated[AsyncSession, Depends(get_db)], _: Annotated[CurrentUser, Depends(get_current_user)]
+) -> LessonAttendanceOut:
+    """Bitta darsning davomat ro'yxati — TT kriteriya 7/8 ning dars
+    darajasidagi javobi (app/jobs/lesson_attendance.py to'ldiradi).
+
+    `finalized` alohida maydon sifatida qaytariladi, chunki bo'sh ro'yxat
+    ikki xil ma'noga ega bo'lishi mumkin: dars hali tugamagan, yoki dars
+    tugagan-u kamera hech kimni ko'rmagan. Ikkinchisi hisobotda "0%"
+    emas, "ma'lumot yo'q" bo'lib ko'rinishi kerak."""
+    lesson = await db.get(LessonSession, session_id)
+    if lesson is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dars topilmadi")
+
+    result = await db.execute(
+        select(LessonAttendance, StudentStaff)
+        .join(StudentStaff, StudentStaff.id == LessonAttendance.student_staff_id)
+        .where(LessonAttendance.lesson_session_id == lesson.id)
+        .order_by(StudentStaff.full_name)
+    )
+    pairs = result.all()
+
+    rows = [
+        LessonAttendanceRowOut(
+            student_id=str(student.id),
+            full_name=student.full_name,
+            status=row.status,
+            first_seen_at=row.first_seen_at.isoformat() if row.first_seen_at else None,
+            sightings=row.sightings,
+        )
+        for row, student in pairs
+    ]
+    statuses = [r.status for r in rows]
+    return LessonAttendanceOut(
+        lesson_session_id=str(lesson.id),
+        group=lesson.group_name,
+        subject=lesson.subject,
+        scheduled_start_time=lesson.scheduled_start_time.isoformat() if lesson.scheduled_start_time else None,
+        finalized=any(st is not None for st in statuses),
+        present=statuses.count("keldi"),
+        late=statuses.count("kech_keldi"),
+        absent=statuses.count("kelmadi"),
+        rows=rows,
+    )
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

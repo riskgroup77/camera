@@ -4,6 +4,7 @@ from app.models.attendance import AttendanceRecord
 from app.models.audit_log import AuditLog
 from app.models.camera import Camera
 from app.models.event import Event
+from app.models.lesson_attendance import LessonAttendance
 from app.models.lesson_session import LessonSession
 from app.models.org import Building, Department, Faculty, StudentGroup
 from app.models.password_reset_token import PasswordResetToken
@@ -28,6 +29,7 @@ __all__ = [
     "AIModuleConfig",
     "AttendanceRecord",
     "LessonSession",
+    "LessonAttendance",
     "Report",
     "RevokedToken",
     "PasswordResetToken",

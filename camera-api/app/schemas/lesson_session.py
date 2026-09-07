@@ -64,3 +64,27 @@ class LessonSessionImportResultOut(CamelModel):
     imported: int
     skipped: int
     errors: list[LessonSessionImportErrorOut]
+
+
+class LessonAttendanceRowOut(CamelModel):
+    """Bitta talabaning bitta darsdagi davomati."""
+
+    student_id: str
+    full_name: str
+    # None = dars hali yakunlanmagan. "kelmadi" dan qat'iy farq qiladi:
+    # birinchisi "hali bilmaymiz", ikkinchisi "bo'lmadi" degani.
+    status: str | None = None
+    first_seen_at: str | None = None
+    sightings: int = 0
+
+
+class LessonAttendanceOut(CamelModel):
+    lesson_session_id: str
+    group: str
+    subject: str
+    scheduled_start_time: str | None = None
+    finalized: bool
+    present: int
+    late: int
+    absent: int
+    rows: list[LessonAttendanceRowOut]

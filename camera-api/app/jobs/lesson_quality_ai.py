@@ -1,6 +1,6 @@
-"""TT kriteriya 19 ("Talabaning darsga diqqati") va 21 ("O'qituvchi
-faolligi") — combined into one sweep loop because both need the exact
-same thing: an ACTIVE LessonSession window (teacher_id/camera_id/
+"""TT kriteriya 19 ("Talabaning darsga diqqati"), 21 ("O'qituvchi
+faolligi") va 7 ning dars darajasidagi qismi (dars davomati) — combined
+into one sweep loop because all of them need the exact same thing: an ACTIVE LessonSession window (teacher_id/camera_id/
 scheduled_start_time set — see app/models/lesson_session.py — with "now"
 falling inside [scheduled_start_time, scheduled_start_time +
 settings.lesson_duration_minutes]) and frames grabbed from that
@@ -41,6 +41,18 @@ whatever's sampled right after a restart. A real deployment tracking
 this across restarts would need to persist the sample count, not just
 the score — noted, not built, since it's a real but secondary gap.
 
+Dars davomati (2026-09-07 dan). #19 uchun har bir faol darsning
+kadridagi yuzlar allaqachon ro'yxatdagi odamlar bilan solishtiriladi —
+ya'ni "shu darsda kim bor" degan savolga javob har bir tikda tekinga
+hisoblanib, keyin tashlab yuborilardi. Endi u saqlanadi
+(app/models/lesson_attendance.py), va dars tugagach
+app/jobs/lesson_attendance.py uni guruh ro'yxati bilan solishtirib
+yakunlaydi. Qo'shimcha kamera so'rovi ham, qo'shimcha inference ham
+yo'q: aynan o'sha bitta solishtiruv ikkinchi marta ishlatiladi.
+
+Shuning uchun bu sweep endi #19/#21 o'chirilgan bo'lsa ham ishlashi
+mumkin — #7 yoqilgan bo'lsa yetarli. Kadr baribir bittagina.
+
 Neither score is validated against real classroom footage or human-rated
 engagement/activity — both are geometric proxies (frontality, phone
 visibility, movement amount), not trained models, and should be read as
@@ -65,7 +77,8 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import any_module_active, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.models import LessonSession
+from app.jobs.lesson_attendance import STUDENT_ATTENDANCE_MODULE_CODE, record_sightings
+from app.models import LessonSession, StudentStaff
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
@@ -120,6 +133,21 @@ async def _active_sessions(db: AsyncSession) -> list[LessonSession]:
     return active
 
 
+async def _group_student_ids(db: AsyncSession, group_name: str) -> set[str]:
+    """Guruh talabalarining id lari.
+
+    Har tikda so'raladi va keshlanmaydi: faol darslar soni kichik (bir
+    vaqtda o'nlab), so'rov esa bitta indeksli ustun bo'yicha. Keshlash
+    yangi ro'yxatdan o'tgan talabani darsning oxirigacha ko'rinmas
+    qilardi — bu narxga arzimaydi."""
+    result = await db.execute(
+        select(StudentStaff.id)
+        .where(StudentStaff.type == "talaba")
+        .where(StudentStaff.group_or_position == group_name)
+    )
+    return {str(row) for row in result.scalars().all()}
+
+
 def _running_average_update(counts: dict[str, int], session_id: str, current_score: int, sample: float) -> int:
     count = counts.get(session_id, 0)
     new_count = count + 1
@@ -128,18 +156,28 @@ def _running_average_update(counts: dict[str, int], session_id: str, current_sco
     return round(new_avg)
 
 
-async def _sample_attention(frame_bytes: bytes, candidates) -> float | None:
+async def _match_enrolled(frame_bytes: bytes, candidates) -> list[tuple[object, tuple]]:
+    """Kadrdagi yuzlarni ro'yxat bilan solishtiradi va TANILGANLARNI
+    qaytaradi.
+
+    Alohida funksiya, chunki natijasi ikki joyda kerak: diqqat balli
+    (#19) va dars davomati (#7). Ilgari bu hisob _sample_attention
+    ichida edi va natijasi ballga aylantirilib, tashlab yuborilardi —
+    ya'ni "shu darsda kim bor" degan javob har tikda hisoblanib,
+    saqlanmasdi."""
+    faces = await detect_faces(frame_bytes)
+    if not faces:
+        return []
+    embeddings = np.stack([face.embedding for face in faces])
+    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+    return [(face, match) for face, match in zip(faces, matches, strict=True) if match is not None]
+
+
+async def _sample_attention(frame_bytes: bytes, matched: list[tuple[object, tuple]]) -> float | None:
     """None if no enrolled student was matched in this frame — nothing to
     sample this tick, not a zero score (a zero would incorrectly drag the
     running average down every time the classroom camera briefly sees no
     one)."""
-    faces = await detect_faces(frame_bytes)
-    if not faces:
-        return None
-
-    embeddings = np.stack([face.embedding for face in faces])
-    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
-    matched = [(face, match) for face, match in zip(faces, matches, strict=True) if match is not None]
     if not matched:
         return None
 
@@ -248,14 +286,32 @@ async def process_lesson_session(
     candidates,
     attention_module_active: bool = True,
     teacher_activity_module_active: bool = True,
+    lesson_attendance_active: bool = True,
 ) -> None:
     """Samples both scores for one active LessonSession and commits any
     update — either signal can independently be "nothing to sample this
     tick" (see _sample_attention/_sample_activity), in which case that
-    score is simply left unchanged."""
+    score is simply left unchanged. Dars davomati ham shu yerda qayd
+    etiladi, xuddi o'sha bitta yuz solishtiruvidan."""
     session_id = str(session_row.id)
 
-    attention_sample = await _sample_attention(frame_b, candidates) if attention_module_active else None
+    # Bitta solishtiruv, ikkita iste'molchi. Faqat kerak bo'lsa
+    # bajariladi — ikkala modul ham o'chirilgan bo'lsa, kadr umuman
+    # tahlil qilinmaydi.
+    matched: list[tuple[object, tuple]] = []
+    if attention_module_active or lesson_attendance_active:
+        matched = await _match_enrolled(frame_b, candidates)
+
+    if lesson_attendance_active and matched:
+        # Faqat SHU GURUH talabalari. Auditoriyaga kirgan o'qituvchi ham,
+        # boshqa guruh talabasi ham bu darsning davomat ro'yxatiga
+        # tegishli emas — ular bu yerda shunchaki mavjud odamlar.
+        roster_ids = await _group_student_ids(db, session_row.group_name)
+        seen = {match[0] for _face, match in matched if match[0] in roster_ids}
+        if seen:
+            await record_sightings(db, session_row, seen)
+
+    attention_sample = await _sample_attention(frame_b, matched) if attention_module_active else None
     if attention_sample is not None:
         session_row.attention_score = _running_average_update(
             _attention_sample_counts, session_id, session_row.attention_score, attention_sample
@@ -286,7 +342,8 @@ async def run_lesson_quality_ai_sweep_once(
     async with session_factory() as db:
         attention_module_active = await is_module_active(db, ATTENTION_MODULE_CODE)
         teacher_activity_module_active = await is_module_active(db, TEACHER_ACTIVITY_MODULE_CODE)
-        if not attention_module_active and not teacher_activity_module_active:
+        lesson_attendance_active = await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
+        if not attention_module_active and not teacher_activity_module_active and not lesson_attendance_active:
             return 0
         sessions = await _active_sessions(db)
         candidates = await load_candidate_matrix_for_sweep(db)
@@ -315,6 +372,7 @@ async def run_lesson_quality_ai_sweep_once(
                 candidates,
                 attention_module_active,
                 teacher_activity_module_active,
+                lesson_attendance_active,
             )
         return True
 

@@ -20,6 +20,7 @@ from app.jobs.dress_code_ai import dress_code_ai_loop
 from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
 from app.jobs.ai_scheduler import ai_scheduler_loop
+from app.jobs.lesson_attendance import lesson_attendance_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
 from app.jobs.ppe_ai import ppe_ai_loop
 from app.jobs.smoking_ai import smoking_ai_loop
@@ -131,6 +132,7 @@ async def lifespan(app: FastAPI):
                 smoking_ai_loop(),
                 zone_entry_ai_loop(),
                 lesson_quality_ai_loop(),
+                lesson_attendance_loop(),
                 fight_ai_loop(),
             ]
             tasks += [

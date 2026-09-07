@@ -308,6 +308,19 @@ class Settings(BaseSettings):
     # read from real schedule data.
     lesson_quality_ai_interval_seconds: int = 30
     lesson_duration_minutes: int = 90
+
+    # Dars jadvali asosidagi davomat — app/jobs/lesson_attendance.py.
+    #
+    # min_sightings: talaba dars davomida kamida shuncha marta
+    # ko'rinishi kerak. Bitta moslik yetarli emas — yonidan o'tib ketgan
+    # odam ham, yuz mosligining xatosi ham bitta kadrda ko'rinishi
+    # mumkin. 90 daqiqalik darsda sweep ~45 s da bir ishga tushadi, ya'ni
+    # haqiqatan o'tirgan talaba o'nlab marta ko'rinadi va bu chegara
+    # unga to'sqinlik qilmaydi; tasodifiy moslik esa takrorlanmaydi.
+    lesson_attendance_min_sightings: int = 3
+    # Yakunlash ishi tugagan darslarni qidiradi — tez-tez ishlashi shart
+    # emas, lekin dars tugagach hisobot uzoq kutmasligi kerak.
+    lesson_attendance_finalize_interval_seconds: int = 300
     attention_score_frontal: float = 100.0
     attention_score_not_frontal: float = 40.0
     attention_score_phone_visible: float = 20.0
