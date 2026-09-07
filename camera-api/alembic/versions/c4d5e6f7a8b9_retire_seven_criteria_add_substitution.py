@@ -13,11 +13,14 @@ ammo hech narsa qilmaydigan" modul har qanday o'chirilganidan yomonroq.
 
 Hodisalar (events) esa O'CHIRILMAYDI. Ular tarixiy yozuv: institut o'sha
 paytda haqiqatan shu signalni olgan va operator uni ko'rgan. Event jadvali
-module_code'ni matn sifatida saqlaydi (ai_module_configs ga foreign key
+module_code'ni matn sifatida saqlaydi (ai_modules ga foreign key
 yo'q), shuning uchun konfiguratsiya qatori ketgach ham hodisa o'z nomi
 bilan ko'rinaveradi. Yagona istisno — hech qachon operator ko'rmagan,
 "yangi" holatidagi signallar: ular endi hech kim ko'rib chiqmaydigan
-navbatda abadiy qolib ketardi, shuning uchun rad etilgan deb belgilanadi.
+navbatda abadiy qolib ketardi, shuning uchun rad_etilgan deb belgilanadi.
+(Qiymat AYNAN shunday — pastki chiziq bilan: events.ck_events_status
+cheklovi 'yangi', 'tasdiqlangan', 'rad_etilgan' dan boshqasini qabul
+qilmaydi.)
 
 Revision ID: c4d5e6f7a8b9
 Revises: e1f2a3b4c5d6
@@ -63,12 +66,12 @@ def upgrade() -> None:
     # Ko'rilmagan signallarni yopamiz — ularni ko'rib chiqadigan modul endi yo'q.
     op.execute(
         sa.text(
-            f"UPDATE events SET status = 'rad etilgan' "
+            f"UPDATE events SET status = 'rad_etilgan' "
             f"WHERE module_code IN ({codes}) AND status = 'yangi'"
         )
     )
 
-    op.execute(sa.text(f"DELETE FROM ai_module_configs WHERE code IN ({codes})"))
+    op.execute(sa.text(f"DELETE FROM ai_modules WHERE code IN ({codes})"))
 
     # Kameralarning modul-istisno ro'yxatidan ham tozalaymiz: mavjud
     # bo'lmagan kodni istisno qilib turish keyinchalik o'qiganni
@@ -88,7 +91,7 @@ def upgrade() -> None:
     # (bo'sh jadvalda), ikkalasi ham xatosiz o'tishi kerak.
     op.execute(
         sa.text(
-            "INSERT INTO ai_module_configs "
+            "INSERT INTO ai_modules "
             '(code, "group", name, description, method, accuracy, threshold, '
             "sensitivity, camera_count, active) "
             "VALUES (:code, :group, :name, :description, :method, :accuracy, "
@@ -106,4 +109,4 @@ def downgrade() -> None:
     "yoqilgan, ammo ortida kod yo'q" holatini yaratardi — aynan shu
     holatning oldini olish uchun bu migratsiya yozilgan.
     """
-    op.execute(sa.text("DELETE FROM ai_module_configs WHERE code = 26"))
+    op.execute(sa.text("DELETE FROM ai_modules WHERE code = 26"))
