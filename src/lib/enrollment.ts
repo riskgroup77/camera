@@ -14,6 +14,39 @@ export interface EnrollmentSubmitResult {
   biometricsStatus: string;
 }
 
+/** Tiriklik tekshiruvining bosqichlari — server bilan AYNAN bir xil
+ *  tartibda. Tartib muhim: /submit kadrlarni shu ketma-ketlikda kutadi
+ *  va har birini tegishli burilishga solishtiradi. */
+export const LIVENESS_STEPS = ['front', 'left', 'right'] as const;
+export type LivenessStep = (typeof LIVENESS_STEPS)[number];
+
+export interface PoseCheckResult {
+  faceFound: boolean;
+  faces: number;
+  direction: LivenessStep | null;
+  ratio: number | null;
+  closeEnough: boolean;
+  ok: boolean;
+  hint: string;
+}
+
+/** Jonli yo'naltirish: hozirgi kadrda yuz qaysi tomonga qaragan.
+ *
+ *  Javob faqat ekrandagi ko'rsatma uchun — yakuniy hukm serverda,
+ *  submitEnrollment ichida chiqariladi. Mijoz aytgan "ok" ga ishonilmaydi. */
+export async function checkPose(expected: LivenessStep, frame: Blob): Promise<PoseCheckResult> {
+  const form = new FormData();
+  form.append('expected', expected);
+  form.append('photo', frame, 'probe.jpg');
+
+  const res = await fetch(`${config.apiBaseUrl}/api/public/enrollment/pose-check`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new ApiError(res.status, `Tekshiruv bajarilmadi (${res.status})`);
+  return res.json() as Promise<PoseCheckResult>;
+}
+
 export interface EnrollmentFaculty {
   id: string;
   name: string;
@@ -60,9 +93,15 @@ export async function registerSelf(input: EnrollmentRegisterInput): Promise<Enro
 }
 
 /**
- * Yuz rasmlari. Bitta yuklangan rasm ham yetarli — backend birinchisini
- * saqlanadigan profil rasmi sifatida ishlatadi, bir nechtasi berilsa
- * ularning o'rtachasini oladi va bir xil odam ekanligini tekshiradi.
+ * Tiriklik tekshiruvining uchta kadri: to'g'riga qaragan, chapga va
+ * o'ngga burilgan — AYNAN shu tartibda.
+ *
+ * Server har bir kadrni tegishli burilishga solishtiradi va faqat
+ * hammasi mos kelganda yuzni saqlaydi. Kadrlar bir xil odamniki
+ * ekanligi ham alohida tekshiriladi, so'ng ularning o'rtacha vektori
+ * olinadi — bu kamera odamni keyinchalik qaysi tomondan ko'rishidan
+ * qat'i nazar tanishini aniqroq qiladi.
+ *
  * JWT talab qilinmaydi — /api/public/enrollment/* ochiq (parolsiz) yo'l.
  */
 export async function submitEnrollment(

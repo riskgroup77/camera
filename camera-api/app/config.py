@@ -207,6 +207,26 @@ class Settings(BaseSettings):
     # o'lchovlarni to'xtatadi — ular 89 tadan 58 tasi edi.
     sleep_min_face_height_px: int = 80
 
+    # Biometrik ro'yxatdan o'tishdagi tiriklik tekshiruvi
+    # (app/services/head_pose.py). Odam kameraga qarab boshini chapga va
+    # o'ngga buradi; har bir bosqich server tomonida tekshiriladi.
+    #
+    # front_tolerance — "to'g'riga qaragan" deb hisoblanadigan oraliq.
+    # 0,16 tabiiy: hech kim boshini ideal to'g'ri ushlab turmaydi, va
+    # juda tor oraliq odamni bir necha soniya qimirlatib qo'yardi.
+    enrollment_front_tolerance: float = 0.16
+    # turn_threshold — burilish tasdiqlanadigan chegara. Bundan past
+    # burilish "oraliq holat" deb qaytariladi: yetarli burmagan odam
+    # tasdiq olmasligi kerak, aks holda tekshiruv shunchaki bezak
+    # bo'lib qolardi.
+    enrollment_turn_threshold: float = 0.34
+    # Yuz shuncha pikseldan baland bo'lishi kerak. Kichik yuzda landmark
+    # nuqtalari orasidagi farq shovqindan ajralmaydi.
+    enrollment_min_face_height_px: int = 110
+    # Bosqich tasdiqlanishi uchun ketma-ket shuncha kadr mos kelishi
+    # kerak — bir lahzalik tasodifiy burilish hisobga olinmaydi.
+    enrollment_stable_frames: int = 2
+
     # TT kriteriya 23 ("Yong'in / tutun aniqlash") — app/jobs/fire_ai.py.
     # Its own interval (not shared with vision_ai_interval_seconds) since
     # each fire sweep tick costs two ffmpeg frame grabs per camera

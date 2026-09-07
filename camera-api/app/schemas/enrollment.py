@@ -100,3 +100,26 @@ class EnrollmentRegisterIn(CamelModel):
 class EnrollmentFacultyOut(CamelModel):
     id: str
     name: str
+
+
+class PoseCheckOut(CamelModel):
+    """Jonli yo'naltirish uchun bitta kadrning tahlili.
+
+    Bu yakuniy hukm emas — u faqat foydalanuvchiga «hozir to'g'ri
+    turibsizmi» deb ko'rsatadi. Haqiqiy tekshiruv /submit da, uch
+    kadrning hammasi birga kelganda bajariladi: mijozga ishonib
+    bo'lmaydi, u istalgan javobni o'zi yozib yuborishi mumkin.
+    """
+
+    face_found: bool
+    faces: int
+    #: "front" | "left" | "right" | None — oraliq holat
+    direction: str | None = None
+    #: -1 (o'ngga burilgan) dan +1 (chapga) gacha; 0 — to'g'ri
+    ratio: float | None = None
+    #: Yuz o'lchov uchun yetarlicha kattami
+    close_enough: bool = False
+    #: Kutilgan yo'nalish bilan mos keldimi
+    ok: bool = False
+    #: Foydalanuvchiga ko'rsatiladigan qisqa maslahat
+    hint: str = ""

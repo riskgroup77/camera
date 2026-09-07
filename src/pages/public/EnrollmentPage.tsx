@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, IdCard, ScanFace, UserCheck } from 'lucide-react';
-import EnrollmentPhotoUpload from '../../components/public/EnrollmentPhotoUpload';
+import EnrollmentFaceCapture from '../../components/public/EnrollmentFaceCapture';
 import EnrollmentRegisterForm from '../../components/public/EnrollmentRegisterForm';
 import { ApiError } from '../../lib/apiClient';
 import {
@@ -30,6 +30,7 @@ export default function EnrollmentPage() {
   const [number, setNumber] = useState('');
   const [found, setFound] = useState<EnrollmentLookupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const identity: EnrollmentIdentity =
@@ -73,18 +74,21 @@ export default function EnrollmentPage() {
     }
   }
 
-  async function handlePhotoSubmit(photo: Blob) {
+  async function handleFramesSubmit(frames: Blob[]) {
     if (!found) return;
     setError(null);
+    setCaptureError(null);
     setLoading(true);
     try {
-      await submitEnrollment(found.recordId, identity, [photo]);
+      await submitEnrollment(found.recordId, identity, frames);
       setStep('success');
     } catch (err) {
-      // Xato bo'lsa rasm qadamida qolamiz: eng ko'p uchraydigan sabab —
-      // rasmda yuz aniqlanmagani, va bunda odam DARHOL boshqa rasm
-      // yuklay olishi kerak, boshidan boshlashi emas.
-      setError(err instanceof ApiError ? err.message : "Yuzni saqlab bo'lmadi");
+      // Xato bo'lsa kamera qadamida qolamiz va bosqichlar boshidan
+      // boshlanadi. Server qaysi kadr o'tmaganini aytadi — bu xabar
+      // komponentga uzatiladi, chunki "tekshiruvdan o'tmadingiz" degan
+      // umumiy xabar odamni nima qilishni bilmay qoldirardi.
+      const message = err instanceof ApiError ? err.message : "Yuzni saqlab bo'lmadi";
+      setCaptureError(message);
     } finally {
       setLoading(false);
     }
@@ -250,7 +254,11 @@ export default function EnrollmentPage() {
         )}
 
         {step === 'photo' && (
-          <EnrollmentPhotoUpload onSubmit={handlePhotoSubmit} submitting={loading} />
+          <EnrollmentFaceCapture
+            onSubmit={handleFramesSubmit}
+            submitting={loading}
+            externalError={captureError}
+          />
         )}
 
         {step === 'success' && found && (

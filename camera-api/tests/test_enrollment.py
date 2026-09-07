@@ -16,6 +16,45 @@ OTHER_FACE_IMAGE_PATH = Path(insightface.__file__).parent / "data" / "images" / 
 
 
 @pytest.fixture
+def any_pose(monkeypatch):
+    """Burilish tekshiruvini o'tkazib yuboradi.
+
+    Bu yerdagi testlar identifikatsiya, takroriy ro'yxat va vektor
+    saqlash haqida — burilish burchagi haqida emas. Uni haqiqiy
+    fotosuratlar bilan sinash uchun uch xil burchakdan olingan bir xil
+    odamning rasmlari kerak bo'lardi; o'lchov mantig'ining o'zi
+    tests/test_head_pose.py da alohida va aniqroq tekshiriladi.
+    """
+    from app.routers import enrollment
+
+    def fake_direction(_landmarks):
+        return fake_direction.expected
+
+    fake_direction.expected = "front"
+
+    original = enrollment._verify_liveness
+
+    async def passthrough(frames):
+        # Kadrlar soni va yuz borligi baribir tekshiriladi — faqat
+        # burchak sharti olib tashlanadi.
+        monkeypatch.setattr(enrollment, "direction_of", lambda lm: None)
+        return None
+
+    monkeypatch.setattr(enrollment, "_verify_liveness", passthrough)
+    return original
+
+
+def three_frames():
+    """Tiriklik oqimi kutadigan uchta kadr (bir xil rasm)."""
+    data = FACE_IMAGE_PATH.read_bytes()
+    return [
+        ("photos", ("front.jpg", data, "image/jpeg")),
+        ("photos", ("left.jpg", data, "image/jpeg")),
+        ("photos", ("right.jpg", data, "image/jpeg")),
+    ]
+
+
+@pytest.fixture
 async def an_enrollable_record(db_session: AsyncSession, seeded) -> StudentStaff:
     faculty = (await db_session.execute(select(Faculty).limit(1))).scalar_one()
     record = StudentStaff(
@@ -59,33 +98,43 @@ class TestEnrollmentLookup:
 
 @pytest.mark.usefixtures("seeded")
 class TestEnrollmentSubmit:
-    async def test_submit_persists_averaged_embedding(self, client: AsyncClient, an_enrollable_record):
-        with open(FACE_IMAGE_PATH, "rb") as f1, open(FACE_IMAGE_PATH, "rb") as f2:
-            resp = await client.post(
-                f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-                data={"passportSeries": "AD", "passportNumber": "1234567"},
-                files=[("photos", ("a.jpg", f1, "image/jpeg")), ("photos", ("b.jpg", f2, "image/jpeg"))],
-            )
+    async def test_submit_persists_averaged_embedding(
+        self, client: AsyncClient, an_enrollable_record, any_pose
+    ):
+        resp = await client.post(
+            f"/api/public/enrollment/{an_enrollable_record.id}/submit",
+            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            files=three_frames(),
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["biometricsStatus"] == "tasdiqlangan"
 
     async def test_submit_rejects_mismatched_passport(self, client: AsyncClient, an_enrollable_record):
-        with open(FACE_IMAGE_PATH, "rb") as f1, open(FACE_IMAGE_PATH, "rb") as f2:
-            resp = await client.post(
-                f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-                data={"passportSeries": "AD", "passportNumber": "0000000"},
-                files=[("photos", ("a.jpg", f1, "image/jpeg")), ("photos", ("b.jpg", f2, "image/jpeg"))],
-            )
+        resp = await client.post(
+            f"/api/public/enrollment/{an_enrollable_record.id}/submit",
+            data={"passportSeries": "AD", "passportNumber": "0000000"},
+            files=three_frames(),
+        )
         assert resp.status_code == 403
 
-    async def test_submit_rejects_inconsistent_frames(self, client: AsyncClient, an_enrollable_record):
-        with open(FACE_IMAGE_PATH, "rb") as f1, open(OTHER_FACE_IMAGE_PATH, "rb") as f2:
-            resp = await client.post(
-                f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-                data={"passportSeries": "AD", "passportNumber": "1234567"},
-                files=[("photos", ("a.jpg", f1, "image/jpeg")), ("photos", ("b.png", f2, "image/png"))],
-            )
+    async def test_submit_rejects_inconsistent_frames(
+        self, client: AsyncClient, an_enrollable_record, any_pose
+    ):
+        """Uch kadr bir xil odamniki bo'lishi shart. Aks holda birinchi
+        kadrda bir odam, keyingisida boshqasi turib, o'rtacha vektor
+        ikkalasiga ham tegishli bo'lmagan yuzni tasvirlab qolardi."""
+        same = FACE_IMAGE_PATH.read_bytes()
+        other = OTHER_FACE_IMAGE_PATH.read_bytes()
+        resp = await client.post(
+            f"/api/public/enrollment/{an_enrollable_record.id}/submit",
+            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            files=[
+                ("photos", ("a.jpg", same, "image/jpeg")),
+                ("photos", ("b.png", other, "image/png")),
+                ("photos", ("c.jpg", same, "image/jpeg")),
+            ],
+        )
         assert resp.status_code == 422
 
     async def test_submit_blocks_already_confirmed(
@@ -94,37 +143,41 @@ class TestEnrollmentSubmit:
         an_enrollable_record.biometrics_status = "tasdiqlangan"
         await db_session.commit()
 
-        with open(FACE_IMAGE_PATH, "rb") as f1, open(FACE_IMAGE_PATH, "rb") as f2:
-            resp = await client.post(
-                f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-                data={"passportSeries": "AD", "passportNumber": "1234567"},
-                files=[("photos", ("a.jpg", f1, "image/jpeg")), ("photos", ("b.jpg", f2, "image/jpeg"))],
-            )
+        resp = await client.post(
+            f"/api/public/enrollment/{an_enrollable_record.id}/submit",
+            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            files=three_frames(),
+        )
         assert resp.status_code == 409
 
-    async def test_a_single_uploaded_photo_is_enough(self, client: AsyncClient, an_enrollable_record):
-        """This used to be rejected. The flow only knew how to capture
-        several angles from a camera, so two frames were the minimum;
-        now a person can upload one photo they already have, where a
-        "second angle" does not exist."""
-        with open(FACE_IMAGE_PATH, "rb") as f1:
-            resp = await client.post(
-                f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-                data={"passportSeries": "AD", "passportNumber": "1234567"},
-                files=[("photos", ("a.jpg", f1, "image/jpeg"))],
-            )
-        assert resp.status_code == 200
-        assert resp.json()["biometricsStatus"] == "tasdiqlangan"
+    async def test_a_single_photo_is_no_longer_accepted(
+        self, client: AsyncClient, an_enrollable_record
+    ):
+        """Bir muddat bitta yuklangan rasm yetarli edi. U bekor qilindi:
+        yuklangan rasmni boshqa odamning rasmi, telefon ekranidagi surat
+        yoki qog'ozga bosilgan fotosurat bilan almashtirib bo'lardi.
+        Endi kameradan uch burchak talab qilinadi."""
+        resp = await client.post(
+            f"/api/public/enrollment/{an_enrollable_record.id}/submit",
+            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            files=[("photos", ("a.jpg", FACE_IMAGE_PATH.read_bytes(), "image/jpeg"))],
+        )
+        assert resp.status_code == 422
+        assert "3 ta kadr" in resp.json()["detail"]
 
     async def test_a_photo_without_a_face_is_still_rejected(
         self, client: AsyncClient, an_enrollable_record
     ):
-        """Accepting one photo must not mean accepting any photo — the
-        whole point of the step is that a face goes into the database."""
+        """Bosqichning butun ma'nosi — bazaga YUZ tushishi."""
+        blank = b"not an image at all"
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
             data={"passportSeries": "AD", "passportNumber": "1234567"},
-            files=[("photos", ("blank.jpg", b"not an image at all", "image/jpeg"))],
+            files=[
+                ("photos", ("a.jpg", blank, "image/jpeg")),
+                ("photos", ("b.jpg", blank, "image/jpeg")),
+                ("photos", ("c.jpg", blank, "image/jpeg")),
+            ],
         )
         assert resp.status_code == 422
 
