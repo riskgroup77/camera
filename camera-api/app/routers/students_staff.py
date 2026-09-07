@@ -1,10 +1,13 @@
 import asyncio
+import csv
+import io
 import json
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from sqlalchemy import select
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,12 +16,19 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models import Faculty, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
-from app.schemas.student_staff import StudentStaffCreateIn, StudentStaffOut, StudentStaffUpdateIn
+from app.schemas.student_staff import (
+    BiometricsCoverageOut,
+    BiometricsFacultyRowOut,
+    StudentStaffCreateIn,
+    StudentStaffOut,
+    StudentStaffUpdateIn,
+)
 from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import invalidate_candidate_matrix_cache
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
 from app.services.student_import import import_students_staff_csv
 from app.storage import delete_files_quietly, presigned_url, upload_file
+from app.timezone import local_now
 from app.utils import compute_initials
 
 router = APIRouter(prefix="/api/students-staff", tags=["students-staff"])
@@ -49,6 +59,46 @@ def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
     )
 
 
+# "Fakultetsiz" — bu qiymat emas, qiymatning YO'QLIGI. Rektorat, texnik
+# va xo'jalik bo'limlari xodimlarining fakulteti bo'lmaydi, lekin ular
+# ham ro'yxatga kiradi va qamrov hisobiga qo'shiladi. Filtrda ularni
+# tanlash uchun alohida kalit kerak, chunki bo'sh satr "filtr yo'q"
+# degani.
+NO_FACULTY_KEY = "__none__"
+NO_FACULTY_LABEL = "Fakultetsiz"
+
+
+def _filtered_query(
+    type: str | None, faculty: str | None, search: str | None, biometrics: str | None
+):
+    """Ro'yxat va eksport AYNAN bir xil filtrdan foydalanadi.
+
+    Alohida yozilsa, ikkalasi vaqt o'tib bir-biridan farq qila boshlardi
+    va yuklab olingan fayl ekranda ko'rinayotgan ro'yxatga mos
+    kelmasdi — bu hisobot uchun jiddiy nuqson."""
+    stmt = (
+        select(StudentStaff)
+        .options(selectinload(StudentStaff.faculty))
+        .order_by(StudentStaff.full_name)
+    )
+    if type:
+        stmt = stmt.where(StudentStaff.type == type)
+    if faculty == NO_FACULTY_KEY:
+        stmt = stmt.where(StudentStaff.faculty_id.is_(None))
+    elif faculty:
+        stmt = stmt.join(Faculty).where(Faculty.name == faculty)
+    if search:
+        # JSHSHIR bo'yicha ham qidiriladi: kadrlar bo'limi odamni
+        # ko'pincha aynan raqami bilan izlaydi.
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(StudentStaff.full_name.ilike(term), StudentStaff.pinfl.ilike(term))
+        )
+    if biometrics:
+        stmt = stmt.where(StudentStaff.biometrics_status == biometrics)
+    return stmt
+
+
 @router.get("", response_model=Page[StudentStaffOut])
 async def list_students_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -57,18 +107,120 @@ async def list_students_staff(
     type: Annotated[str | None, Query()] = None,
     faculty: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
+    biometrics: Annotated[str | None, Query(alias="biometricsStatus")] = None,
 ) -> Page[StudentStaffOut]:
-    stmt = select(StudentStaff).options(selectinload(StudentStaff.faculty)).order_by(StudentStaff.created_at.desc())
-    if type:
-        stmt = stmt.where(StudentStaff.type == type)
-    if faculty:
-        stmt = stmt.join(Faculty).where(Faculty.name == faculty)
-    if search:
-        stmt = stmt.where(StudentStaff.full_name.ilike(f"%{search}%"))
+    stmt = _filtered_query(type, faculty, search, biometrics)
 
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
     return build_page(items, total, page_params)
+
+
+@router.get("/biometrics-coverage", response_model=BiometricsCoverageOut)
+async def biometrics_coverage(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    type: Annotated[str | None, Query()] = None,
+) -> BiometricsCoverageOut:
+    """Yuzni kim tasdiqlagani va kim tasdiqlamagani — fakultetlar kesimida.
+
+    Bu savol tizim ishga tushgandan keyin eng ko'p beriladigan savol:
+    ro'yxatdagi 688 xodimdan nechtasi haqiqatan yuzini yuklagan. Uni
+    ro'yxatni varaqlab sanab bo'lmaydi, shuning uchun alohida
+    hisoblanadi."""
+    stmt = select(
+        Faculty.name,
+        StudentStaff.biometrics_status,
+        func.count(StudentStaff.id),
+    ).select_from(StudentStaff).outerjoin(Faculty, StudentStaff.faculty_id == Faculty.id)
+    if type:
+        stmt = stmt.where(StudentStaff.type == type)
+    stmt = stmt.group_by(Faculty.name, StudentStaff.biometrics_status)
+
+    buckets: dict[str, dict[str, int]] = {}
+    for faculty_name, bio_status, count in (await db.execute(stmt)).all():
+        key = faculty_name or NO_FACULTY_LABEL
+        buckets.setdefault(key, {}).update({bio_status: count})
+
+    rows: list[BiometricsFacultyRowOut] = []
+    totals = {"tasdiqlangan": 0, "kutilmoqda": 0, "yoq": 0}
+    for name in sorted(buckets, key=lambda n: (n == NO_FACULTY_LABEL, n)):
+        counts = buckets[name]
+        confirmed = counts.get("tasdiqlangan", 0)
+        pending = counts.get("kutilmoqda", 0)
+        missing = counts.get("yoq", 0)
+        total = confirmed + pending + missing
+        for k, v in (("tasdiqlangan", confirmed), ("kutilmoqda", pending), ("yoq", missing)):
+            totals[k] += v
+        rows.append(
+            BiometricsFacultyRowOut(
+                faculty=name,
+                total=total,
+                confirmed=confirmed,
+                pending=pending,
+                missing=missing,
+                percent=round(confirmed * 100 / total, 1) if total else None,
+            )
+        )
+
+    grand = sum(totals.values())
+    return BiometricsCoverageOut(
+        total=grand,
+        confirmed=totals["tasdiqlangan"],
+        pending=totals["kutilmoqda"],
+        missing=totals["yoq"],
+        percent=round(totals["tasdiqlangan"] * 100 / grand, 1) if grand else None,
+        by_faculty=rows,
+    )
+
+
+@router.get("/export")
+async def export_students_staff(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    type: Annotated[str | None, Query()] = None,
+    faculty: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    biometrics: Annotated[str | None, Query(alias="biometricsStatus")] = None,
+) -> StreamingResponse:
+    """Ro'yxatni ismlari bilan CSV qilib yuklab olish.
+
+    Ekrandagi filtr AYNAN saqlanadi: "Pediatriya fakulteti, yuzi
+    tasdiqlanmaganlar" tanlangan bo'lsa, faylga ham aynan o'shalar
+    tushadi. Bu hisobot uchun printsipial — yuklab olingan fayl
+    ekranda ko'rilgan narsaning nusxasi bo'lishi kerak.
+
+    Excel uchun BOM qo'shiladi: usiz o'zbek harflari (o', g', sh)
+    Excel da buzilib ochiladi va fayl yaroqsiz bo'lib qoladi."""
+    records = (await db.execute(_filtered_query(type, faculty, search, biometrics))).scalars().all()
+
+    status_labels = {
+        "tasdiqlangan": "Tasdiqlangan",
+        "kutilmoqda": "Kutilmoqda",
+        "yoq": "Tasdiqlanmagan",
+    }
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kafedra / Bo'lim", "Yuz holati"])
+    for i, r in enumerate(records, 1):
+        writer.writerow([
+            i,
+            r.full_name,
+            r.pinfl or "",
+            "Talaba" if r.type == "talaba" else "Xodim",
+            r.faculty.name if r.faculty else NO_FACULTY_LABEL,
+            r.group_or_position,
+            status_labels.get(r.biometrics_status, r.biometrics_status),
+        ])
+
+    payload = "\ufeff" + buffer.getvalue()
+    filename = f"xodimlar-{local_now().strftime('%Y-%m-%d')}.csv"
+    return StreamingResponse(
+        iter([payload.encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("", response_model=StudentStaffOut, status_code=status.HTTP_201_CREATED)

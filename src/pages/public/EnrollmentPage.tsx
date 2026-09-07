@@ -6,27 +6,43 @@ import { ApiError } from '../../lib/apiClient';
 import {
   type EnrollmentLookupResult,
   type EnrollmentRegisterInput,
-  lookupByPassport,
+  type EnrollmentIdentity,
+  lookupPerson,
   registerSelf,
   submitEnrollment,
 } from '../../lib/enrollment';
 
-type Step = 'passport' | 'register' | 'confirm' | 'photo' | 'success';
+type Step = 'identify' | 'register' | 'confirm' | 'photo' | 'success';
+
+/** Shaxsni aniqlash usuli.
+ *
+ *  JSHSHIR standart tanlov: institut kadrlar ro'yxati aynan shu raqam
+ *  bilan yuritiladi va ommaviy kiritilgan xodimlarda pasport ma'lumoti
+ *  umuman yo'q. Pasport yo'li ilgari shu tarzda ro'yxatdan o'tganlar
+ *  uchun qoldirilgan. */
+type Method = 'pinfl' | 'passport';
 
 export default function EnrollmentPage() {
-  const [step, setStep] = useState<Step>('passport');
+  const [step, setStep] = useState<Step>('identify');
+  const [method, setMethod] = useState<Method>('pinfl');
+  const [pinfl, setPinfl] = useState('');
   const [series, setSeries] = useState('');
   const [number, setNumber] = useState('');
   const [found, setFound] = useState<EnrollmentLookupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const identity: EnrollmentIdentity =
+    method === 'pinfl'
+      ? { kind: 'pinfl', pinfl }
+      : { kind: 'passport', passportSeries: series, passportNumber: number };
+
   async function handleLookup(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const result = await lookupByPassport(series, number);
+      const result = await lookupPerson(identity);
       setFound(result);
       setStep('confirm');
     } catch (err) {
@@ -62,7 +78,7 @@ export default function EnrollmentPage() {
     setError(null);
     setLoading(true);
     try {
-      await submitEnrollment(found.recordId, series, number, [photo]);
+      await submitEnrollment(found.recordId, identity, [photo]);
       setStep('success');
     } catch (err) {
       // Xato bo'lsa rasm qadamida qolamiz: eng ko'p uchraydigan sabab —
@@ -89,35 +105,81 @@ export default function EnrollmentPage() {
           </div>
         )}
 
-        {step === 'passport' && (
+        {step === 'identify' && (
           <form onSubmit={handleLookup} className="flex flex-col gap-4">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Tizimda mavjud yozuvingizni topish uchun pasport seriyasi va raqamingizni kiriting.
+            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+              Tizimda mavjud yozuvingizni topish uchun JSHSHIR raqamingizni kiriting. U pasportingizning
+              ma&apos;lumot sahifasida, 14 raqamdan iborat.
             </p>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-1">
-                <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Seriya</label>
-                <input
-                  value={series}
-                  onChange={(e) => setSeries(e.target.value.toUpperCase())}
-                  placeholder="AD"
-                  maxLength={4}
-                  required
-                  className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm uppercase text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Raqam</label>
-                <input
-                  value={number}
-                  onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
-                  placeholder="1234567"
-                  maxLength={10}
-                  required
-                  className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
-                />
-              </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ['pinfl', 'JSHSHIR'],
+                ['passport', 'Pasport'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setMethod(value);
+                    setError(null);
+                  }}
+                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
+                    method === value
+                      ? 'bg-indigo-600 text-white shadow-btn'
+                      : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+
+            {method === 'pinfl' ? (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  JSHSHIR (14 raqam)
+                </label>
+                <input
+                  value={pinfl}
+                  onChange={(e) => setPinfl(e.target.value.replace(/\D/g, '').slice(0, 14))}
+                  placeholder="30302654150047"
+                  inputMode="numeric"
+                  required
+                  minLength={13}
+                  className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 font-mono text-sm tracking-wide text-slate-900 outline-none transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+                />
+                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                  Kiritilgan: {pinfl.length}/14 raqam
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-1">
+                  <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Seriya</label>
+                  <input
+                    value={series}
+                    onChange={(e) => setSeries(e.target.value.toUpperCase())}
+                    placeholder="AD"
+                    maxLength={4}
+                    required
+                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm uppercase text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Raqam</label>
+                  <input
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
+                    placeholder="1234567"
+                    maxLength={10}
+                    required
+                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -163,7 +225,7 @@ export default function EnrollmentPage() {
             <button
               type="button"
               onClick={() => {
-                setStep('passport');
+                setStep('identify');
                 setFound(null);
               }}
               className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
@@ -175,11 +237,12 @@ export default function EnrollmentPage() {
 
         {step === 'register' && (
           <EnrollmentRegisterForm
-            passportSeries={series}
-            passportNumber={number}
+            pinfl={method === 'pinfl' ? pinfl : undefined}
+            passportSeries={method === 'passport' ? series : undefined}
+            passportNumber={method === 'passport' ? number : undefined}
             onSubmit={handleRegister}
             onCancel={() => {
-              setStep('passport');
+              setStep('identify');
               setError(null);
             }}
             submitting={loading}

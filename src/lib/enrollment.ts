@@ -24,12 +24,28 @@ export interface EnrollmentRegisterInput {
   type: 'talaba' | 'xodim';
   groupOrPosition: string;
   facultyId?: string;
-  passportSeries: string;
-  passportNumber: string;
+  pinfl?: string;
+  passportSeries?: string;
+  passportNumber?: string;
 }
 
-export async function lookupByPassport(passportSeries: string, passportNumber: string): Promise<EnrollmentLookupResult> {
-  return api.post<EnrollmentLookupResult>('/api/public/enrollment/lookup', { passportSeries, passportNumber });
+/** Shaxsni aniqlash uchun kiritilgan ma'lumot.
+ *
+ *  Ikki yo'l bor va ular bir-birini almashtiradi: JSHSHIR (institut
+ *  kadrlar ro'yxatidagi asosiy raqam) yoki pasport seriyasi va raqami.
+ *  Ommaviy import qilingan xodimlarda faqat JSHSHIR bor. */
+export type EnrollmentIdentity =
+  | { kind: 'pinfl'; pinfl: string }
+  | { kind: 'passport'; passportSeries: string; passportNumber: string };
+
+function identityPayload(identity: EnrollmentIdentity) {
+  return identity.kind === 'pinfl'
+    ? { pinfl: identity.pinfl }
+    : { passportSeries: identity.passportSeries, passportNumber: identity.passportNumber };
+}
+
+export async function lookupPerson(identity: EnrollmentIdentity): Promise<EnrollmentLookupResult> {
+  return api.post<EnrollmentLookupResult>('/api/public/enrollment/lookup', identityPayload(identity));
 }
 
 export async function listEnrollmentFaculties(): Promise<EnrollmentFaculty[]> {
@@ -51,13 +67,15 @@ export async function registerSelf(input: EnrollmentRegisterInput): Promise<Enro
  */
 export async function submitEnrollment(
   recordId: string,
-  passportSeries: string,
-  passportNumber: string,
+  identity: EnrollmentIdentity,
   frames: Blob[],
 ): Promise<EnrollmentSubmitResult> {
   const form = new FormData();
-  form.append('passportSeries', passportSeries);
-  form.append('passportNumber', passportNumber);
+  // Server /lookup dagi bilan AYNAN bir xil tekshiruvni qayta bajaradi —
+  // shuning uchun bu yerda ham o'sha ma'lumot yuboriladi.
+  Object.entries(identityPayload(identity)).forEach(([key, value]) => {
+    if (value) form.append(key, value);
+  });
   frames.forEach((frame, i) => form.append('photos', frame, `frame-${i}.jpg`));
 
   const res = await fetch(`${config.apiBaseUrl}/api/public/enrollment/${recordId}/submit`, {

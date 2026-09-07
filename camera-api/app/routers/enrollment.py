@@ -3,11 +3,19 @@ member whose record was bulk-imported without a photo (see the Excel import
 this backs) attach their own face, instead of every person needing an
 admin operator to run them through AddStudentStaffModal.tsx by hand.
 
-Identity is proven with passport series+number (StudentStaff.passport_series/
-passport_number) since these records have no login/password of their own —
-this is NOT a JWT session, just enough to answer "which existing row is
-this". Both endpoints are IP rate-limited (see app/rate_limit.py) since
-passport series+number is a guessable-in-bulk secret, not a strong one.
+Shaxs ikki yo'ldan biri bilan aniqlanadi: JSHSHIR (14 raqam) yoki
+pasport seriyasi va raqami. Bu yozuvlarning o'z logini va paroli yo'q,
+ya'ni bu JWT sessiya emas — shunchaki "qaysi mavjud qator bu odam" degan
+savolga javob.
+
+JSHSHIR asosiy yo'l: institut kadrlar ro'yxati aynan shu raqam bilan
+yuritiladi va ommaviy import qilingan xodimlarda pasport ma'lumotlari
+umuman yo'q. Pasport yo'li ilgari shu tarzda ro'yxatdan o'tganlar uchun
+saqlanadi.
+
+Ikkala endpoint ham IP bo'yicha cheklangan (app/rate_limit.py): bu
+raqamlar kuchli sir emas va ommaviy taxmin qilishga yo'l qo'yib
+bo'lmaydi.
 
 /submit re-checks passport_series/passport_number itself (not just
 record_id) so a client can't skip /lookup and brute-force record ids
@@ -65,8 +73,23 @@ qabul qilingan."""
 MAX_FRAMES = 6
 
 
-def _normalize(series: str, number: str) -> tuple[str, str]:
-    return series.strip().upper(), number.strip()
+def _normalize(series: str | None, number: str | None) -> tuple[str, str]:
+    return (series or "").strip().upper(), (number or "").strip()
+
+
+def _normalize_pinfl(value: str | None) -> str:
+    """JSHSHIR dan raqamdan boshqa hamma narsani olib tashlaymiz.
+
+    Odam uni ko'chirib qo'yganda bo'sh joy, chiziqcha yoki ko'rinmas
+    belgilar qo'shilib qolishi juda tez-tez uchraydi. Bu yerda ularni
+    tashlab yubormasak, raqami to'g'ri bo'lgan odam "topilmadi" degan
+    javob olardi va sababini tushunmasdi."""
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+async def _find_by_pinfl(db: AsyncSession, pinfl: str) -> StudentStaff | None:
+    result = await db.execute(select(StudentStaff).where(StudentStaff.pinfl == pinfl))
+    return result.scalar_one_or_none()
 
 
 async def _find_by_passport(db: AsyncSession, series: str, number: str) -> StudentStaff | None:
@@ -78,18 +101,20 @@ async def _find_by_passport(db: AsyncSession, series: str, number: str) -> Stude
     return result.scalar_one_or_none()
 
 
-@router.post("/lookup", response_model=EnrollmentLookupOut)
-@limiter.limit("5/minute")
-async def lookup_by_passport(
-    request: Request,
-    body: EnrollmentLookupIn,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> EnrollmentLookupOut:
-    series, number = _normalize(body.passport_series, body.passport_number)
-    record = await _find_by_passport(db, series, number)
-    if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bunday pasport ma'lumotlari bilan yozuv topilmadi")
+async def _find_person(
+    db: AsyncSession, pinfl: str | None, series: str | None, number: str | None
+) -> StudentStaff | None:
+    """JSHSHIR yoki pasport bo'yicha qidiradi — qaysi biri berilgan bo'lsa."""
+    clean_pinfl = _normalize_pinfl(pinfl)
+    if clean_pinfl:
+        return await _find_by_pinfl(db, clean_pinfl)
+    s, n = _normalize(series, number)
+    if s and n:
+        return await _find_by_passport(db, s, n)
+    return None
 
+
+def _lookup_out(record: StudentStaff) -> EnrollmentLookupOut:
     return EnrollmentLookupOut(
         record_id=str(record.id),
         full_name=record.full_name,
@@ -97,6 +122,24 @@ async def lookup_by_passport(
         group_or_position=record.group_or_position,
         already_enrolled=record.biometrics_status == "tasdiqlangan",
     )
+
+
+@router.post("/lookup", response_model=EnrollmentLookupOut)
+@limiter.limit("5/minute")
+async def lookup_person(
+    request: Request,
+    body: EnrollmentLookupIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> EnrollmentLookupOut:
+    record = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
+    if record is None:
+        detail = (
+            "Bunday JSHSHIR bilan yozuv topilmadi"
+            if body.pinfl
+            else "Bunday pasport ma'lumotlari bilan yozuv topilmadi"
+        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail)
+    return _lookup_out(record)
 
 
 @router.get("/faculties", response_model=list[EnrollmentFacultyOut])
@@ -130,20 +173,15 @@ async def register_self(
     Cheklov (3/minute) va pasport takrorlanmasligi tekshiruvi ataylab:
     endpoint ochiq, ya'ni uni bazani to'ldirish uchun ishlatib bo'lmasligi
     kerak."""
+    pinfl = _normalize_pinfl(body.pinfl)
     series, number = _normalize(body.passport_series, body.passport_number)
 
-    existing = await _find_by_passport(db, series, number)
+    existing = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
     if existing is not None:
         # Yozuv allaqachon bor — yangisini yaratmaymiz, borini qaytaramiz.
         # Aks holda bitta odam uchun ikkita yozuv paydo bo'lardi va
         # davomat ikkiga bo'linib ketardi.
-        return EnrollmentLookupOut(
-            record_id=str(existing.id),
-            full_name=existing.full_name,
-            type_label="Talaba" if existing.type == "talaba" else "Xodim",
-            group_or_position=existing.group_or_position,
-            already_enrolled=existing.biometrics_status == "tasdiqlangan",
-        )
+        return _lookup_out(existing)
 
     faculty_id = None
     if body.faculty_id:
@@ -157,8 +195,9 @@ async def register_self(
         type=body.type,
         group_or_position=body.group_or_position.strip(),
         faculty_id=faculty_id,
-        passport_series=series,
-        passport_number=number,
+        pinfl=pinfl or None,
+        passport_series=series or None,
+        passport_number=number or None,
         biometrics_status="yoq",
     )
     db.add(record)
@@ -166,13 +205,7 @@ async def register_self(
     await db.refresh(record)
     logger.info("self-service registration created", extra={"record_id": str(record.id)})
 
-    return EnrollmentLookupOut(
-        record_id=str(record.id),
-        full_name=record.full_name,
-        type_label="Talaba" if record.type == "talaba" else "Xodim",
-        group_or_position=record.group_or_position,
-        already_enrolled=False,
-    )
+    return _lookup_out(record)
 
 
 @router.post("/{record_id}/submit", response_model=EnrollmentSubmitOut)
@@ -181,12 +214,13 @@ async def submit_enrollment(
     request: Request,
     record_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    passport_series: Annotated[str, Form(alias="passportSeries")],
-    passport_number: Annotated[str, Form(alias="passportNumber")],
     photos: Annotated[
         list[UploadFile],
         File(description="Turli burchaklardan olingan yuz kadrlari — birinchisi to'g'ridan qaragan holat"),
     ],
+    pinfl: Annotated[str | None, Form(alias="pinfl")] = None,
+    passport_series: Annotated[str | None, Form(alias="passportSeries")] = None,
+    passport_number: Annotated[str | None, Form(alias="passportNumber")] = None,
 ) -> EnrollmentSubmitOut:
     result = await db.execute(
         select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_id)
@@ -195,9 +229,23 @@ async def submit_enrollment(
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
 
+    # Identifikatsiya /lookup dagi bilan AYNAN bir xil tekshiriladi.
+    # Bu ataylab: aks holda /lookup ni chetlab o'tib, to'g'ridan-to'g'ri
+    # yozuv identifikatorini taxmin qilish orqali begona yozuvga rasm
+    # yuklab bo'lardi.
+    clean_pinfl = _normalize_pinfl(pinfl)
     series, number = _normalize(passport_series, passport_number)
-    if record.passport_series != series or record.passport_number != number:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Pasport ma'lumotlari mos kelmadi")
+    if clean_pinfl:
+        if not record.pinfl or record.pinfl != clean_pinfl:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "JSHSHIR mos kelmadi")
+    elif series and number:
+        if record.passport_series != series or record.passport_number != number:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Pasport ma'lumotlari mos kelmadi")
+    else:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "JSHSHIR yoki pasport ma'lumotlari yuborilishi kerak",
+        )
 
     if record.biometrics_status == "tasdiqlangan":
         raise HTTPException(

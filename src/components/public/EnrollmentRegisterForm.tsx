@@ -7,9 +7,10 @@ import {
 } from '../../lib/enrollment';
 
 interface EnrollmentRegisterFormProps {
-  /** Qidiruvda kiritilgan pasport — qayta so'ralmaydi. */
-  passportSeries: string;
-  passportNumber: string;
+  /** Qidiruvda kiritilgan identifikator — qayta so'ralmaydi. */
+  pinfl?: string;
+  passportSeries?: string;
+  passportNumber?: string;
   onSubmit: (input: EnrollmentRegisterInput) => void;
   onCancel: () => void;
   submitting?: boolean;
@@ -27,6 +28,7 @@ interface EnrollmentRegisterFormProps {
  * kiritish ehtimolini oshirardi.
  */
 export default function EnrollmentRegisterForm({
+  pinfl,
   passportSeries,
   passportNumber,
   onSubmit,
@@ -68,6 +70,7 @@ export default function EnrollmentRegisterForm({
           type,
           groupOrPosition: groupOrPosition.trim(),
           facultyId: facultyId || undefined,
+          pinfl,
           passportSeries,
           passportNumber,
         });
@@ -75,7 +78,7 @@ export default function EnrollmentRegisterForm({
       className="flex flex-col gap-4"
     >
       <div className="rounded-xl bg-amber-50 p-3 text-sm leading-relaxed text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-        Bu pasport bo&apos;yicha tizimda yozuv topilmadi. Ma&apos;lumotlaringizni kiriting — ro&apos;yxatdan
+        Bu raqam bo&apos;yicha tizimda yozuv topilmadi. Ma&apos;lumotlaringizni kiriting — ro&apos;yxatdan
         o&apos;tkazamiz.
       </div>
 
@@ -141,7 +144,10 @@ export default function EnrollmentRegisterForm({
       )}
 
       <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400">
-        Pasport: <span className="font-semibold text-slate-700 dark:text-slate-200">{passportSeries} {passportNumber}</span>
+        {pinfl ? 'JSHSHIR: ' : 'Pasport: '}
+        <span className="font-semibold text-slate-700 dark:text-slate-200">
+          {pinfl || `${passportSeries} ${passportNumber}`}
+        </span>
       </div>
 
       <button
@@ -158,7 +164,7 @@ export default function EnrollmentRegisterForm({
         onClick={onCancel}
         className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
       >
-        Boshqa pasport bilan qayta urinish
+        Boshqa raqam bilan qayta urinish
       </button>
     </form>
   );

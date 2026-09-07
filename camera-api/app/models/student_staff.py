@@ -31,6 +31,18 @@ class StudentStaff(Base):
     # the Excel import that populates it is run.
     passport_series: Mapped[str | None] = mapped_column(String(4), nullable=True)
     passport_number: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # JSHSHIR (PINFL) — 14 raqamli shaxsiy identifikatsiya raqami.
+    #
+    # Institutning kadrlar ro'yxati aynan shu raqam bilan yuritiladi va
+    # pasport seriyasi u yerda umuman yo'q. Ya'ni ommaviy import qilingan
+    # xodim uchun "bu qator menman" degan savolga javob beradigan yagona
+    # ma'lumot — shu. Pasport maydonlari o'z holicha qoldirildi: ular
+    # ilgari ro'yxatdan o'tganlar uchun ishlashda davom etadi.
+    #
+    # UNIKAL: bir xil raqamli ikkita xodim bo'lishi mumkin emas, va bu
+    # import skriptining takroriy ishga tushirilishidan ham himoya qiladi
+    # — u mavjud qatorni yangilaydi, ikkinchisini yaratmaydi.
+    pinfl: Mapped[str | None] = mapped_column(String(14), nullable=True, unique=True, index=True)
     faculty_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("faculties.id", ondelete="SET NULL"), nullable=True, index=True
     )

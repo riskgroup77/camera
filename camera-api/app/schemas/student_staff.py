@@ -36,3 +36,30 @@ class StudentStaffUpdateIn(CamelModel):
     type: Literal["talaba", "xodim"]
     faculty: str
     group_or_position: str = Field(min_length=1)
+
+
+class BiometricsFacultyRowOut(CamelModel):
+    """Bitta fakultet (yoki fakultetsizlar guruhi) bo'yicha qamrov."""
+
+    faculty: str
+    total: int
+    confirmed: int
+    pending: int
+    missing: int
+    percent: float | None = None
+    """Qamrov foizi. None — guruhda umuman odam yo'q.
+
+    Nol bilan aralashtirmaslik uchun ataylab: "0%" hech kim
+    tasdiqlamagani, "ma'lumot yo'q" esa hisoblash uchun hech narsa
+    yo'qligi. Ikkalasi turli xulosaga olib keladi."""
+
+
+class BiometricsCoverageOut(CamelModel):
+    """Yuzni tasdiqlash qamrovi — kim tasdiqladi, kim yo'q."""
+
+    total: int
+    confirmed: int
+    pending: int
+    missing: int
+    percent: float | None = None
+    by_faculty: list[BiometricsFacultyRowOut]

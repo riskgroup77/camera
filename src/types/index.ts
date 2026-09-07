@@ -93,6 +93,26 @@ export interface StudentGroup {
   studentCount: number;
 }
 
+/** Yuzni tasdiqlash qamrovi — bitta fakultet kesimida. */
+export interface BiometricsFacultyRow {
+  faculty: string;
+  total: number;
+  confirmed: number;
+  pending: number;
+  missing: number;
+  /** null — guruhda odam yo'q. "0%" bilan aralashtirmaslik uchun ataylab. */
+  percent: number | null;
+}
+
+export interface BiometricsCoverage {
+  total: number;
+  confirmed: number;
+  pending: number;
+  missing: number;
+  percent: number | null;
+  byFaculty: BiometricsFacultyRow[];
+}
+
 export interface Building {
   id: string;
   name: string;
