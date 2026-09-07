@@ -28,9 +28,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import StudentStaff
+from app.models import Faculty, StudentStaff
 from app.rate_limit import limiter
-from app.schemas.enrollment import EnrollmentLookupIn, EnrollmentLookupOut, EnrollmentSubmitOut
+from app.schemas.enrollment import (
+    EnrollmentFacultyOut,
+    EnrollmentLookupIn,
+    EnrollmentLookupOut,
+    EnrollmentRegisterIn,
+    EnrollmentSubmitOut,
+)
 from app.services.face_matching import invalidate_candidate_matrix_cache
 from app.services.face_recognition import (
     InconsistentFacesError,
@@ -44,7 +50,18 @@ logger = logging.getLogger("app.enrollment")
 router = APIRouter(prefix="/api/public/enrollment", tags=["enrollment"])
 
 MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
-MIN_FRAMES = 2
+MIN_FRAMES = 1
+"""Bitta rasm ham yetarli.
+
+Avval 2 ta talab qilinardi, chunki oqim faqat kameradan ko'p burchakli
+suratga olishni bilardi va bir nechta kadr o'rtachasi bitta kadrdan
+ishonchliroq. Endi odam tayyor rasmini yuklashi mumkin, va u yerda
+"ikkinchi burchak" degan tushuncha yo'q.
+
+E'tiborga loyiq narsa: yuklangan rasm jonli suratga olishdan ZAIFROQ
+dalil — uni boshqa odamning rasmi bilan almashtirib bo'ladi. Bu mahsulot
+qarori, xavfsizlik jihatidan emas: jarayonni oddiylashtirish uchun
+qabul qilingan."""
 MAX_FRAMES = 6
 
 
@@ -79,6 +96,82 @@ async def lookup_by_passport(
         type_label="Talaba" if record.type == "talaba" else "Xodim",
         group_or_position=record.group_or_position,
         already_enrolled=record.biometrics_status == "tasdiqlangan",
+    )
+
+
+@router.get("/faculties", response_model=list[EnrollmentFacultyOut])
+async def list_faculties(db: Annotated[AsyncSession, Depends(get_db)]) -> list[EnrollmentFacultyOut]:
+    """Ro'yxatdan o'tish formasidagi fakultet ro'yxati.
+
+    Ochiq, chunki forma ham ochiq — hisobi yo'q odam aynan shu yerda
+    ro'yxatdan o'tadi. Faqat id va nom qaytariladi: talabalar soni kabi
+    ichki ko'rsatkichlar bu yerga kerak emas."""
+    result = await db.execute(select(Faculty).order_by(Faculty.name))
+    return [EnrollmentFacultyOut(id=str(f.id), name=f.name) for f in result.scalars().all()]
+
+
+@router.post("/register", response_model=EnrollmentLookupOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
+async def register_self(
+    request: Request,
+    body: EnrollmentRegisterIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> EnrollmentLookupOut:
+    """Tizimda yozuvi yo'q odam o'zini o'zi ro'yxatdan o'tkazadi.
+
+    Ilgari bunday odam uchun yo'l yo'q edi: pasport topilmasa 404 qaytardi
+    va jarayon shu yerda tugardi — administrator qo'lda kiritishi kerak
+    edi.
+
+    Yaratilgan yozuv biometrics_status='yoq' bilan boshlanadi: bu faqat
+    shaxs ma'lumoti, hali yuz emas. Yuz keyingi qadamda qo'shiladi va
+    aynan o'sha yerda 'tasdiqlangan' bo'ladi.
+
+    Cheklov (3/minute) va pasport takrorlanmasligi tekshiruvi ataylab:
+    endpoint ochiq, ya'ni uni bazani to'ldirish uchun ishlatib bo'lmasligi
+    kerak."""
+    series, number = _normalize(body.passport_series, body.passport_number)
+
+    existing = await _find_by_passport(db, series, number)
+    if existing is not None:
+        # Yozuv allaqachon bor — yangisini yaratmaymiz, borini qaytaramiz.
+        # Aks holda bitta odam uchun ikkita yozuv paydo bo'lardi va
+        # davomat ikkiga bo'linib ketardi.
+        return EnrollmentLookupOut(
+            record_id=str(existing.id),
+            full_name=existing.full_name,
+            type_label="Talaba" if existing.type == "talaba" else "Xodim",
+            group_or_position=existing.group_or_position,
+            already_enrolled=existing.biometrics_status == "tasdiqlangan",
+        )
+
+    faculty_id = None
+    if body.faculty_id:
+        faculty = await db.get(Faculty, body.faculty_id)
+        if faculty is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bunday fakultet topilmadi")
+        faculty_id = faculty.id
+
+    record = StudentStaff(
+        full_name=body.full_name.strip(),
+        type=body.type,
+        group_or_position=body.group_or_position.strip(),
+        faculty_id=faculty_id,
+        passport_series=series,
+        passport_number=number,
+        biometrics_status="yoq",
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    logger.info("self-service registration created", extra={"record_id": str(record.id)})
+
+    return EnrollmentLookupOut(
+        record_id=str(record.id),
+        full_name=record.full_name,
+        type_label="Talaba" if record.type == "talaba" else "Xodim",
+        group_or_position=record.group_or_position,
+        already_enrolled=False,
     )
 
 

@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, IdCard, ScanFace, UserCheck } from 'lucide-react';
-import EnrollmentFaceScan from '../../components/public/EnrollmentFaceScan';
+import EnrollmentPhotoUpload from '../../components/public/EnrollmentPhotoUpload';
+import EnrollmentRegisterForm from '../../components/public/EnrollmentRegisterForm';
 import { ApiError } from '../../lib/apiClient';
-import { type EnrollmentLookupResult, lookupByPassport, submitEnrollment } from '../../lib/enrollment';
+import {
+  type EnrollmentLookupResult,
+  type EnrollmentRegisterInput,
+  lookupByPassport,
+  registerSelf,
+  submitEnrollment,
+} from '../../lib/enrollment';
 
-type Step = 'passport' | 'confirm' | 'scan' | 'success';
+type Step = 'passport' | 'register' | 'confirm' | 'photo' | 'success';
 
 export default function EnrollmentPage() {
   const [step, setStep] = useState<Step>('passport');
@@ -23,22 +30,45 @@ export default function EnrollmentPage() {
       setFound(result);
       setStep('confirm');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "So'rovni bajarib bo'lmadi");
+      // 404 — bu xato emas, oqimning ikkinchi yo'li: tizimda yozuvi yo'q
+      // odam shu yerdan o'zini ro'yxatdan o'tkazadi. Ilgari jarayon
+      // aynan shu nuqtada "yozuv topilmadi" bilan tugardi.
+      if (err instanceof ApiError && err.status === 404) {
+        setStep('register');
+      } else {
+        setError(err instanceof ApiError ? err.message : "So'rovni bajarib bo'lmadi");
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleScanComplete(frames: Blob[]) {
+  async function handleRegister(input: EnrollmentRegisterInput) {
+    setError(null);
+    setLoading(true);
+    try {
+      const created = await registerSelf(input);
+      setFound(created);
+      setStep('confirm');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Ro'yxatdan o'tkazib bo'lmadi");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePhotoSubmit(photo: Blob) {
     if (!found) return;
     setError(null);
     setLoading(true);
     try {
-      await submitEnrollment(found.recordId, series, number, frames);
+      await submitEnrollment(found.recordId, series, number, [photo]);
       setStep('success');
     } catch (err) {
+      // Xato bo'lsa rasm qadamida qolamiz: eng ko'p uchraydigan sabab —
+      // rasmda yuz aniqlanmagani, va bunda odam DARHOL boshqa rasm
+      // yuklay olishi kerak, boshidan boshlashi emas.
       setError(err instanceof ApiError ? err.message : "Yuzni saqlab bo'lmadi");
-      setStep('confirm');
     } finally {
       setLoading(false);
     }
@@ -122,7 +152,7 @@ export default function EnrollmentPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setStep('scan')}
+                  onClick={() => setStep('photo')}
                   className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
                 >
                   <ScanFace size={16} />
@@ -143,16 +173,21 @@ export default function EnrollmentPage() {
           </div>
         )}
 
-        {step === 'scan' && (
-          <div className="flex flex-col gap-4">
-            {loading ? (
-              <div className="flex flex-col items-center gap-2 py-10 text-sm text-slate-500 dark:text-slate-400">
-                Saqlanmoqda...
-              </div>
-            ) : (
-              <EnrollmentFaceScan onComplete={handleScanComplete} />
-            )}
-          </div>
+        {step === 'register' && (
+          <EnrollmentRegisterForm
+            passportSeries={series}
+            passportNumber={number}
+            onSubmit={handleRegister}
+            onCancel={() => {
+              setStep('passport');
+              setError(null);
+            }}
+            submitting={loading}
+          />
+        )}
+
+        {step === 'photo' && (
+          <EnrollmentPhotoUpload onSubmit={handlePhotoSubmit} submitting={loading} />
         )}
 
         {step === 'success' && found && (
