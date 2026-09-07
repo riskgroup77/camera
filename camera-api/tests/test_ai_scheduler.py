@@ -98,11 +98,11 @@ class TestBuildRegistry:
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
         registry = ai_scheduler._build_registry()
         critical_names = {e.name for e in registry if e.tier == "critical"}
-        assert {"unified_face", "fire", "fall", "zone_entry", "fight"} <= critical_names
+        assert {"unified_face", "fire", "zone_entry", "fight"} <= critical_names
 
     def test_face_path_splits_when_unified_disabled(self, monkeypatch):
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", False)
         registry = ai_scheduler._build_registry()
         names = {e.name for e in registry}
         assert "unified_face" not in names
-        assert {"attendance", "vision_sleep", "unauthorized", "crowd"} <= names
+        assert {"attendance", "vision_sleep", "unauthorized"} <= names

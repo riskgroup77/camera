@@ -25,7 +25,7 @@ class TestAiModules:
         assert module_12["hasDetector"] is True
 
     async def test_p3_modules_have_detectors_and_can_activate(self, client: AsyncClient, db_session: AsyncSession):
-        for code in (12, 13, 15, 18):
+        for code in (12, 13, 15):
             module = await _get_module(db_session, code)
             assert module.has_detector is True
         headers = await auth_headers(client, "admin", "admin123")

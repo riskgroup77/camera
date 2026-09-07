@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.jobs import teacher_punctuality_ai
 from app.jobs.teacher_punctuality_ai import (
     PUNCTUALITY_MODULE_CODE,
+    SUBSTITUTION_MODULE_CODE,
     _due_sessions,
     check_lesson_session,
     run_teacher_punctuality_sweep_once,
@@ -94,7 +95,7 @@ class TestDueSessions:
         assert await _due_sessions(db_session) == []
 
     async def test_camera_excluding_a_different_module_is_still_due(self, db_session, a_teacher, a_camera):
-        a_camera.excluded_module_codes = [25]  # vehicle detection, unrelated
+        a_camera.excluded_module_codes = [17]  # tartib-intizom, unrelated
         await db_session.commit()
         row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
         due = await _due_sessions(db_session)
@@ -122,10 +123,11 @@ class TestCheckLessonSession:
         assert len(events) == 0
 
     async def test_teacher_seen_marks_on_time_no_event(self, db_session, a_teacher, a_camera, monkeypatch):
-        async def fake_grab_frame(stream_url):
-            return FACE_IMAGE_PATH.read_bytes()
+        async def fake_grab_pair(camera, gap_seconds=1.0):
+            frame = FACE_IMAGE_PATH.read_bytes()
+            return frame, frame
 
-        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_for_camera", fake_grab_frame)
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", fake_grab_pair)
         row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
 
         raised = await check_lesson_session(row, db_session)
@@ -140,7 +142,7 @@ class TestCheckLessonSession:
 
         from PIL import Image
 
-        async def fake_grab_frame(stream_url):
+        async def fake_grab_pair(camera, gap_seconds=1.0):
             # A real detectable face that is NOT the enrolled teacher (t1.jpg
             # has 6 faces; the teacher's embedding came from the largest one
             # via extract_embedding — a blank frame guarantees zero match
@@ -148,9 +150,10 @@ class TestCheckLessonSession:
             blank = Image.frombytes("RGB", (200, 200), bytes([200] * 200 * 200 * 3))
             buf = io.BytesIO()
             blank.save(buf, format="JPEG")
-            return buf.getvalue()
+            frame = buf.getvalue()
+            return frame, frame
 
-        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_for_camera", fake_grab_frame)
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", fake_grab_pair)
         row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
 
         raised = await check_lesson_session(row, db_session)
@@ -181,13 +184,204 @@ class TestSweepConcurrency:
 
         calls = {"n": 0}
 
-        async def flaky_grab_frame(stream_url):
+        async def flaky_grab_pair(camera, gap_seconds=1.0):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("simulated grab failure")
-            return FACE_IMAGE_PATH.read_bytes()
+            frame = FACE_IMAGE_PATH.read_bytes()
+            return frame, frame
 
-        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_for_camera", flaky_grab_frame)
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", flaky_grab_pair)
 
         await run_teacher_punctuality_sweep_once(session_factory=TestSessionLocal)
         assert calls["n"] == 2  # both sessions were attempted despite the first one failing
+
+
+class _FakeFace:
+    """detect_faces() qaytaradigan obyektning shu job ishlatadigan yagona
+    qismi — embedding. Haqiqiy InsightFace chaqiruvi sekin va bu yerda
+    tekshirilayotgan narsa aniqlash emas, QAROR mantig'i."""
+
+    def __init__(self, embedding):
+        import numpy as np
+
+        self.embedding = np.array(embedding, dtype=np.float64)
+
+
+@pytest.mark.usefixtures("seeded")
+class TestTwoFrameConfirmation:
+    """Ilgari bitta kadr yetarli edi: o'qituvchi aynan o'sha lahzada
+    doskaga o'girilgan bo'lsa, u "kelmadi" deb yozilardi."""
+
+    async def _frames(self, monkeypatch):
+        blank = b"kadr-a", b"kadr-b"
+
+        async def fake_grab_pair(camera, gap_seconds=1.0):
+            return blank
+
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", fake_grab_pair)
+        return blank
+
+    async def test_teacher_missed_in_one_frame_but_seen_in_the_other_is_on_time(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        frame_a, frame_b = await self._frames(monkeypatch)
+        teacher_embedding = json.loads(a_teacher.biometric_embedding)
+
+        async def fake_detect_faces(frame):
+            # b: o'qituvchi o'girilgan (yuz yo'q); a: qaragan
+            return [] if frame is frame_b else [_FakeFace(teacher_embedding)]
+
+        monkeypatch.setattr(teacher_punctuality_ai, "detect_faces", fake_detect_faces)
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
+
+        assert await check_lesson_session(row, db_session) is False
+        assert row.teacher_on_time is True
+        assert (await db_session.execute(select(Event))).scalars().all() == []
+
+    async def test_the_second_frame_is_not_analysed_when_the_first_one_finds_the_teacher(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        """Odatiy holat bitta tahlilga tushishi kerak — aks holda har bir
+        dars kamera va inference yukini ikki barobar oshirardi."""
+        await self._frames(monkeypatch)
+        teacher_embedding = json.loads(a_teacher.biometric_embedding)
+        calls = {"n": 0}
+
+        async def fake_detect_faces(frame):
+            calls["n"] += 1
+            return [_FakeFace(teacher_embedding)]
+
+        monkeypatch.setattr(teacher_punctuality_ai, "detect_faces", fake_detect_faces)
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
+
+        await check_lesson_session(row, db_session)
+        assert calls["n"] == 1
+
+
+@pytest.mark.usefixtures("seeded")
+class TestSubstitution:
+    """TT kriteriya 26 — rejadagi o'qituvchi o'rniga boshqa xodim."""
+
+    @pytest.fixture
+    async def another_staff_member(self, db_session, a_teacher):
+        """Boshqa embedding: o'qituvchinikini teskarisiga aylantiramiz, bu
+        kosinus o'xshashligini -1 ga olib boradi, ya'ni kafolatlangan
+        farqli shaxs."""
+        import numpy as np
+
+        embedding = (-np.array(json.loads(a_teacher.biometric_embedding))).tolist()
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        staff = StudentStaff(
+            full_name="Anvar Qodirov", type="xodim", faculty_id=faculty.id,
+            group_or_position="Assistent", biometric_embedding=json.dumps(embedding),
+        )
+        db_session.add(staff)
+        await db_session.commit()
+        await db_session.refresh(staff)
+        from app.services.face_matching import invalidate_candidate_matrix_cache
+
+        invalidate_candidate_matrix_cache()
+        return staff
+
+    async def _run(self, db_session, a_teacher, a_camera, monkeypatch, faces_a, faces_b):
+        frame_a, frame_b = b"kadr-a", b"kadr-b"
+
+        async def fake_grab_pair(camera, gap_seconds=1.0):
+            return frame_a, frame_b
+
+        async def fake_detect_faces(frame):
+            return faces_b if frame is frame_b else faces_a
+
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", fake_grab_pair)
+        monkeypatch.setattr(teacher_punctuality_ai, "detect_faces", fake_detect_faces)
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
+        raised = await check_lesson_session(row, db_session)
+        events = (await db_session.execute(select(Event))).scalars().all()
+        return row, raised, events
+
+    async def test_another_staff_member_in_both_frames_raises_a_substitution_event(
+        self, db_session, a_teacher, a_camera, another_staff_member, monkeypatch
+    ):
+        face = _FakeFace(json.loads(another_staff_member.biometric_embedding))
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[face], faces_b=[face]
+        )
+
+        assert raised is True
+        assert row.teacher_on_time is False
+        assert len(events) == 1
+        assert events[0].module_code == SUBSTITUTION_MODULE_CODE
+        assert "Anvar Qodirov" in events[0].person_name
+        assert "Dilnoza Yusupova" in events[0].person_name  # kim o'rniga
+
+    async def test_another_staff_member_in_only_one_frame_is_a_plain_absence(
+        self, db_session, a_teacher, a_camera, another_staff_member, monkeypatch
+    ):
+        """Kolleganing bir lahzaga ko'rinib o'tishi almashinuv emas."""
+        face = _FakeFace(json.loads(another_staff_member.biometric_embedding))
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[], faces_b=[face]
+        )
+
+        assert raised is True
+        assert len(events) == 1
+        assert events[0].module_code == PUNCTUALITY_MODULE_CODE  # #26 emas
+
+    async def test_an_unknown_face_is_a_plain_absence_not_a_substitution(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        import numpy as np
+
+        stranger = _FakeFace((-np.array(json.loads(a_teacher.biometric_embedding))).tolist())
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[stranger], faces_b=[stranger]
+        )
+
+        assert raised is True
+        assert len(events) == 1
+        assert events[0].module_code == PUNCTUALITY_MODULE_CODE
+
+    async def test_a_student_in_the_room_is_never_a_substitute(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        """Auditoriyada talaba bo'lishi tabiiy — uni "o'qituvchi o'rniga
+        kirgan" deb e'lon qilish har bir darsni yolg'on signalga
+        aylantirardi."""
+        import numpy as np
+
+        from app.services.face_matching import invalidate_candidate_matrix_cache
+
+        embedding = (-np.array(json.loads(a_teacher.biometric_embedding))).tolist()
+        student = StudentStaff(
+            full_name="Sardor Yusupov", type="talaba", group_or_position="IT-21",
+            biometric_embedding=json.dumps(embedding),
+        )
+        db_session.add(student)
+        await db_session.commit()
+        invalidate_candidate_matrix_cache()
+
+        face = _FakeFace(embedding)
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[face], faces_b=[face]
+        )
+
+        assert len(events) == 1
+        assert events[0].module_code == PUNCTUALITY_MODULE_CODE
+
+    async def test_the_teacher_being_present_never_looks_for_a_substitute(
+        self, db_session, a_teacher, a_camera, another_staff_member, monkeypatch
+    ):
+        """O'qituvchi joyida bo'lsa, yonida turgan kolleg hech qanday
+        hodisa keltirib chiqarmasligi kerak."""
+        faces = [
+            _FakeFace(json.loads(a_teacher.biometric_embedding)),
+            _FakeFace(json.loads(another_staff_member.biometric_embedding)),
+        ]
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=faces, faces_b=faces
+        )
+
+        assert raised is False
+        assert row.teacher_on_time is True
+        assert events == []

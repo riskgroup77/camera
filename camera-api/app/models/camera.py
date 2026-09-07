@@ -29,6 +29,12 @@ class Camera(Base):
         UUID(as_uuid=True), ForeignKey("buildings.id", ondelete="SET NULL"), nullable=True, index=True
     )
     zone: Mapped[str] = mapped_column(String, nullable=False)
+    # Kafedra — binodan mustaqil saqlanadi (Department izohiga qarang).
+    # Nullable: mavjud 107 kameraning hech biriga kafedra biriktirilmagan
+    # va biriktirilmaguncha ular bino bo'yicha filtrlanaveradi.
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # Populated by app/services/camera_import.py (SADP/onvif-style discovery
     # export) — stable across DHCP/manual IP reassignment, so re-running an
     # import dedupes by this instead of by `ip`. Null for cameras added by
@@ -71,8 +77,8 @@ class Camera(Base):
     # inclusion, so every existing camera (this column is nullable, no
     # migration backfill needed) keeps its current behavior — every active
     # module still runs on it — until an admin deliberately opts a camera
-    # out of specific modules (e.g. no vehicle detection (#25) on an
-    # indoor classroom camera). See app/jobs/module_status.py's
+    # out of specific modules (e.g. no white-coat check (#10) on an
+    # administrative-corridor camera). See app/jobs/module_status.py's
     # camera_allows_module() for the query-side filter every sweep loop
     # applies alongside AIModuleConfig.active.
     excluded_module_codes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
@@ -91,9 +97,12 @@ class Camera(Base):
     # Hovli, bino oldi, avtoturargoh. is_entrance (piyoda kirish) bilan
     # birga yoki alohida belgilanadi.
     #
-    # app/jobs/vehicle_ai.py ONLY runs on cameras flagged this way — a
-    # vehicle inside a classroom/hallway is nonsensical, so every other
-    # camera is excluded outright (not just module-deactivated).
+    # 2026-09-07 gacha app/jobs/vehicle_ai.py (#25 "Hovlida transport
+    # harakati") FAQAT shu bayroqli kameralarda ishlardi. O'sha kriteriya
+    # olib tashlangandan keyin bayroq hech qanday sweepni cheklamaydi —
+    # u ustunda qoldirildi, chunki kameraning qayerda turgani (hovli,
+    # bino oldi, avtoturargoh) inventarizatsiya ma'lumoti sifatida
+    # qimmatli va admin uni allaqachon to'ldirgan.
     #
     # Deliberately NOT used to restrict TT kriteriya 1 (begona shaxs/
     # unauthorized-person) coverage, despite this field's name: an
@@ -116,3 +125,4 @@ class Camera(Base):
     is_exit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
+    department: Mapped["Department | None"] = relationship("Department", lazy="joined")

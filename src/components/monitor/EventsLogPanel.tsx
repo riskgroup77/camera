@@ -16,15 +16,6 @@ const SEVERITY_TONE: Record<AIEvent['severity'], 'green' | 'amber' | 'red'> = {
 
 const PAGE_SIZE = 6;
 
-/** Devor jurnali KO'RSATMAYDIGAN modullar.
- *
- * #25 ("Hovlida transport harakati") — modul o'z ta'rifida yozilganidek,
- * qaysi kamera hovliga qaraganini bilmaydi va barcha kameralarda
- * ishlaydi. Tekshirilgan namunasi ichkaridagi laboratoriya edi. Modul
- * o'chirilmagan — hodisalari bazada va Hodisalar sahifasida qoladi,
- * faqat operator kuzatib turadigan bu ro'yxatga chiqmaydi. */
-const HIDDEN_MODULE_CODES = [25];
-
 /** O'ng panelning o'rta qismi — devorda ko'rsatiladigan hodisalar.
  *
  * Faqat operator TASDIQLAGAN hodisalar chiqadi. Bu ataylab: modullarning
@@ -40,7 +31,7 @@ export default function EventsLogPanel() {
   const [selected, setSelected] = useState<AIEvent | null>(null);
   const { items: events, page, loading, error, reload } = useServerPage<AIEvent>(
     '/api/events',
-    { excludeModules: HIDDEN_MODULE_CODES.join(','), status: 'tasdiqlangan' },
+    { status: 'tasdiqlangan' },
     PAGE_SIZE,
   );
 

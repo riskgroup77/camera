@@ -46,6 +46,22 @@ async def _resolve_building(db: AsyncSession, name: str) -> Building:
     return building
 
 
+async def _resolve_department(db: AsyncSession, name: str | None) -> Department | None:
+    """Kafedra ixtiyoriy — bo'sh nom kafedrasiz kamerani bildiradi.
+
+    Binodan farqli o'laroq, topilmagan nom xato QAYTARADI, jimgina
+    bo'sh qoldirilmaydi: admin kafedra yozgan bo'lsa, u saqlanganini
+    kutadi, va imlo xatosi natijasida kamera jimgina kafedrasiz qolib
+    ketishi keyinchalik tushunarsiz bo'lardi."""
+    if not name or not name.strip():
+        return None
+    result = await db.execute(select(Department).where(Department.name == name.strip()))
+    department = result.scalar_one_or_none()
+    if department is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"'{name}' nomli kafedra topilmadi")
+    return department
+
+
 async def _sync_stream(db: AsyncSession, camera: Camera) -> None:
     """Keeps the video gateway's registration in sync with the camera's
     status. Only 'faol' cameras get a live HLS URL — this is the piece
@@ -62,6 +78,7 @@ def _to_out(camera: Camera) -> CameraOut:
         port=camera.port,
         rtsp_path=camera.rtsp_path,
         building=camera.building.name if camera.building else "",
+        department=camera.department.name if camera.department else "",
         zone=camera.zone,
         resolution=camera.resolution,
         fps=camera.fps,
@@ -215,6 +232,7 @@ async def create_camera(
     current_user: PermDep,
 ) -> CameraOut:
     building = await _resolve_building(db, body.building)
+    department = await _resolve_department(db, body.department)
     camera = Camera(
         name=body.name,
         ip=body.ip,
@@ -223,6 +241,7 @@ async def create_camera(
         rtsp_username=encrypt(body.rtsp_username) if body.rtsp_username else None,
         rtsp_password=encrypt(body.rtsp_password) if body.rtsp_password else None,
         building_id=building.id,
+        department_id=department.id if department else None,
         zone=body.zone,
         resolution=body.resolution,
         fps=body.fps,
@@ -288,6 +307,8 @@ async def update_camera(
     if body.rtsp_password is not None:
         camera.rtsp_password = encrypt(body.rtsp_password)
     camera.building_id = building.id
+    department = await _resolve_department(db, body.department)
+    camera.department_id = department.id if department else None
     camera.zone = body.zone
     camera.resolution = body.resolution
     camera.fps = body.fps

@@ -22,6 +22,7 @@ const EMPTY_STATS: AttendanceStats = {
   liveCameras: 0,
   offlineCameras: 0,
   buildings: [],
+  departments: [],
 };
 
 export default function MonitoringPage() {
@@ -83,7 +84,7 @@ export default function MonitoringPage() {
   // Qidiruv yoki filtr o'zgarsa — birinchi sahifadan qayta boshlaymiz.
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, filters.building, statusFilter]);
+  }, [debouncedSearch, filters.building, filters.department, statusFilter]);
 
   // Joriy 8 talik sahifani serverdan yuklaydi — javob chegaralangan
   // Page<T> (app/pagination.py), shuning uchun kameralar soni ortsa ham
@@ -91,7 +92,7 @@ export default function MonitoringPage() {
   // borish ("load more") o'rniga endi har sahifa avvalgisini almashtiradi
   // — kichik miniatyuralar panelida haqiqiy oldingi/keyingi navigatsiya
   // kutiladi.
-  const queryKey = `${debouncedSearch}|${filters.building}|${statusFilter ?? ''}`;
+  const queryKey = `${debouncedSearch}|${filters.building}|${filters.department}|${statusFilter ?? ''}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +117,7 @@ export default function MonitoringPage() {
         pageSize: PAGE_SIZE,
         search: debouncedSearch || undefined,
         building: filters.building || undefined,
+        department: filters.department || undefined,
         status: statusFilter,
       });
     }
@@ -182,7 +184,7 @@ export default function MonitoringPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, debouncedSearch, filters.building, statusFilter, queryKey]);
+  }, [page, debouncedSearch, filters.building, filters.department, statusFilter, queryKey]);
 
   function resetFilters(next: CameraFilters) {
     setFilters(next);
@@ -213,7 +215,12 @@ export default function MonitoringPage() {
                 <SlidersHorizontal size={13} className="text-indigo-500" />
                 Smart Filtr
               </span>
-              <CameraFilterBar filters={filters} onChange={resetFilters} buildings={stats.buildings} />
+              <CameraFilterBar
+                filters={filters}
+                onChange={resetFilters}
+                buildings={stats.buildings}
+                departments={stats.departments ?? []}
+              />
             </div>
 
             <div className="relative w-full max-w-xs">

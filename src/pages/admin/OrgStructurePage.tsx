@@ -1,26 +1,29 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Building2, Camera, Loader2, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
+import { BookOpen, Building2, Camera, Landmark, Loader2, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import AddBuildingModal from '../../components/admin/AddBuildingModal';
+import AddDepartmentModal from '../../components/admin/AddDepartmentModal';
 import AddFacultyModal from '../../components/admin/AddFacultyModal';
 import AddGroupModal from '../../components/admin/AddGroupModal';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import type { Building, Faculty, StudentGroup } from '../../types';
+import type { Building, Department, Faculty, StudentGroup } from '../../types';
 
-const TABS = ["O'quv korpuslari", 'Fakultetlar va Kurslar', "Guruhlar ro'yxati"] as const;
+const TABS = ["O'quv korpuslari", 'Kafedralar', 'Fakultetlar va Kurslar', "Guruhlar ro'yxati"] as const;
 
 export default function OrgStructurePage() {
   const { token } = useAuth();
   const [tab, setTab] = useState<(typeof TABS)[number]>(TABS[0]);
 
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [groups, setGroups] = useState<StudentGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [buildingModalOpen, setBuildingModalOpen] = useState(false);
+  const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
   const [facultyModalOpen, setFacultyModalOpen] = useState(false);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
@@ -31,12 +34,14 @@ export default function OrgStructurePage() {
     setLoading(true);
     Promise.all([
       api.get<Building[]>('/api/buildings', token),
+      api.get<Department[]>('/api/departments', token),
       api.get<Faculty[]>('/api/faculties', token),
       api.get<StudentGroup[]>('/api/student-groups', token),
     ])
-      .then(([b, f, g]) => {
+      .then(([b, d, f, g]) => {
         if (cancelled) return;
         setBuildings(b);
+        setDepartments(d);
         setFaculties(f);
         setGroups(g);
         setError(null);
@@ -58,6 +63,15 @@ export default function OrgStructurePage() {
       setBuildings((prev) => prev.filter((b) => b.id !== id));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Binoni o'chirib bo'lmadi");
+    }
+  }
+
+  async function handleDeleteDepartment(id: string) {
+    try {
+      await api.del(`/api/departments/${id}`, token);
+      setDepartments((prev) => prev.filter((d) => d.id !== id));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Kafedrani o'chirib bo'lmadi");
     }
   }
 
@@ -83,7 +97,7 @@ export default function OrgStructurePage() {
     <section className="glass p-6">
       <PageHeader
         title="Tashkiliy tuzilma"
-        subtitle="Binolar, fakultetlar, kurslar va guruhlar boshqaruvi"
+        subtitle="Binolar, kafedralar, fakultetlar, kurslar va guruhlar boshqaruvi"
       />
 
       {error && (
@@ -153,6 +167,64 @@ export default function OrgStructurePage() {
               >
                 <Plus size={20} />
                 Yangi korpus qo'shish
+              </button>
+            </div>
+          )}
+
+          {tab === 'Kafedralar' && (
+            <div className="space-y-4">
+              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                Kafedra — bino ichidagi tashkiliy birlik. Monitoring sahifasida kameralar avval bino,
+                so&apos;ngra kafedra bo&apos;yicha filtrlanadi, shuning uchun har bir kafedra o&apos;z
+                binosiga biriktirilgani ma&apos;qul.
+              </p>
+              <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      <th className="px-4 py-3">Kafedra</th>
+                      <th className="px-4 py-3">Bino</th>
+                      <th className="px-4 py-3">Kameralar</th>
+                      <th className="px-4 py-3">Amallar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/60 dark:divide-white/5">
+                    {departments.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                          Hozircha kafedra qo&apos;shilmagan.
+                        </td>
+                      </tr>
+                    )}
+                    {departments.map((d) => (
+                      <tr key={d.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
+                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                          <span className="flex items-center gap-2">
+                            <Landmark size={14} className="text-indigo-500" />
+                            {d.name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                          {d.buildingName || <span className="text-slate-400">— ko&apos;rsatilmagan</span>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{d.cameraCount}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => handleDeleteDepartment(d.id)}
+                            className="flex items-center gap-1 text-xs font-semibold text-red-500 dark:text-red-400 hover:underline"
+                          >
+                            <Trash2 size={12} />
+                            O&apos;chirish
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button onClick={() => setDepartmentModalOpen(true)} className="btn-glass flex items-center gap-1.5">
+                <Plus size={14} />
+                Yangi kafedra qo&apos;shish
               </button>
             </div>
           )}
@@ -270,6 +342,12 @@ export default function OrgStructurePage() {
           setBuildings((prev) => prev.map((b) => (b.id === building.id ? building : b)));
           setEditingBuilding(null);
         }}
+      />
+      <AddDepartmentModal
+        open={departmentModalOpen}
+        buildings={buildings}
+        onClose={() => setDepartmentModalOpen(false)}
+        onAdd={(department) => setDepartments((prev) => [...prev, department])}
       />
       <AddFacultyModal
         open={facultyModalOpen}

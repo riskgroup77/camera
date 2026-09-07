@@ -36,3 +36,16 @@ class BuildingOut(CamelModel):
 class BuildingCreateIn(CamelModel):
     name: str
     camera_count: int = 0
+
+
+class DepartmentOut(CamelModel):
+    id: str
+    name: str
+    building_id: str | None
+    building_name: str
+    camera_count: int
+
+
+class DepartmentCreateIn(CamelModel):
+    name: str
+    building_id: str | None = None

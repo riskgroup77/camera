@@ -13,6 +13,8 @@ export interface CameraFeed {
   status: CameraStatus;
   /** Backend video-gateway tomonidan beriladigan HLS (.m3u8) yoki MP4/WebM manzil. Bo'sh bo'lsa — placeholder ko'rsatiladi. */
   streamUrl?: string;
+  /** Kafedra nomi; biriktirilmagan bo'lsa bo'sh satr. */
+  department?: string;
   /** Kamera tarmoqda javob beryapti, lekin tasvir kelyaptimi. `status`
       bilan qo'shilmaydi: "erishib bo'lmaydi" va "erishiladi, lekin
       tasvirsiz" — operator uchun ikki xil nosozlik. */
@@ -53,6 +55,9 @@ export interface AttendanceStats {
   liveCameras: number;
   offlineCameras: number;
   buildings: string[];
+  /** Kafedralar, har biri o'z binosi bilan — filtr bosqichma-bosqich
+      ishlashi uchun (CameraFilterBar izohiga qarang). */
+  departments?: { name: string; building: string }[];
 }
 
 export interface TopStudent {
@@ -91,6 +96,20 @@ export interface StudentGroup {
 export interface Building {
   id: string;
   name: string;
+  cameraCount: number;
+}
+
+/** Kafedra — bino ichidagi tashkiliy birlik.
+ *
+ * Kameralar bino bo'yicha ham, kafedra bo'yicha ham filtrlanadi:
+ * "2-Bino" 18 ta kamera degani, "Anatomiya kafedrasi" esa o'sha binodagi
+ * 4 tasi. buildingId null bo'lishi mumkin — kafedra binoga biriktirilishi
+ * shart emas, lekin kaskadli filtr aynan shu bog'lanishga tayanadi. */
+export interface Department {
+  id: string;
+  name: string;
+  buildingId: string | null;
+  buildingName: string;
   cameraCount: number;
 }
 

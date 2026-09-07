@@ -20,10 +20,18 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import require_monitoring_access
 from app.jobs.camera_health import is_reachable, is_video_flowing
-from app.models import AttendanceRecord, Building, Camera, Event, LessonSession, StudentStaff
+from app.models import AttendanceRecord, Building, Camera, Department, Event, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.rate_limit import limiter
-from app.schemas.public import CameraAnalysisStatusOut, DetectedFaceOut, LiveDetectionOut, PublicCameraOut, PublicStatsOut, PublicTopStudentOut
+from app.schemas.public import (
+    CameraAnalysisStatusOut,
+    DetectedFaceOut,
+    LiveDetectionOut,
+    PublicCameraOut,
+    PublicDepartmentOut,
+    PublicStatsOut,
+    PublicTopStudentOut,
+)
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
@@ -68,6 +76,7 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
         name=camera.name,
         building=camera.building.name if camera.building else "",
         zone=camera.zone,
+        department=camera.department.name if camera.department else "",
         status="live" if live else "offline",
         has_video=has_video,
         stream_url=camera.stream_url,
@@ -80,18 +89,27 @@ async def list_public_cameras(
     params: Annotated[PageParams, Depends()],
     search: str | None = None,
     building: str | None = None,
+    department: str | None = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
 ) -> Page[PublicCameraOut]:
     """Paginated (see app/pagination.py's Page/PageParams) so the response
     stays bounded as the institute's camera count grows — search/building/
     status are applied in SQL rather than over the full table so filtering
     still only pulls back one page's worth of rows."""
-    stmt = select(Camera).options(selectinload(Camera.building)).order_by(Camera.name)
+    stmt = (
+        select(Camera)
+        .options(selectinload(Camera.building), selectinload(Camera.department))
+        .order_by(Camera.name)
+    )
     if search:
         like = f"%{search}%"
         stmt = stmt.where(or_(Camera.name.ilike(like), Camera.zone.ilike(like)))
     if building:
         stmt = stmt.where(Camera.building.has(Building.name == building))
+    if department:
+        # Kafedra bino ichida joylashadi, lekin filtr mustaqil: bino
+        # tanlanmagan holda ham kafedra bo'yicha izlash mumkin.
+        stmt = stmt.where(Camera.department.has(Department.name == department))
     if status_filter == "live":
         stmt = stmt.where(_is_live_expr())
     elif status_filter == "offline":
@@ -143,6 +161,13 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
     buildings = (
         await db.execute(select(Building.name).distinct().order_by(Building.name))
     ).scalars().all()
+    department_rows = (
+        await db.execute(
+            select(Department.name, Building.name)
+            .outerjoin(Building, Department.building_id == Building.id)
+            .order_by(Building.name, Department.name)
+        )
+    ).all()
 
     return PublicStatsOut(
         total_students=total_students,
@@ -154,6 +179,10 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
         live_cameras=live_cameras,
         offline_cameras=total_cameras - live_cameras,
         buildings=list(buildings),
+        departments=[
+            PublicDepartmentOut(name=name, building=building or "")
+            for name, building in department_rows
+        ],
     )
 
 

@@ -26,27 +26,21 @@ from typing import Any, Literal
 
 from app.config import settings
 from app.database import SessionLocal
-from app.jobs.abandoned_object_ai import run_abandoned_object_ai_sweep_once
 from app.jobs.absence_marker import run_absence_marking_once
 from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_sweep_once
 from app.jobs.badge_ai import run_badge_ai_sweep_once
-from app.jobs.crowd_density_ai import run_crowd_density_ai_sweep_once
 from app.jobs.disorder_ai import run_disorder_ai_sweep_once
 from app.jobs.dress_code_ai import run_dress_code_ai_sweep_once
-from app.jobs.fall_ai import run_fall_ai_sweep_once
 from app.jobs.fight_ai import run_fight_ai_sweep_once
 from app.jobs.fire_ai import run_fire_ai_sweep_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
-from app.jobs.phone_ai import run_phone_ai_sweep_once
 from app.jobs.ppe_ai import run_ppe_ai_sweep_once
 from app.jobs.smoking_ai import run_smoking_ai_sweep_once
-from app.jobs.student_dress_code_ai import run_student_dress_code_ai_sweep_once
 from app.jobs.scheduler_metrics import record_scheduler_skip, record_scheduler_tick
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
 from app.jobs.unified_face_sweep import run_unified_face_sweep_once
-from app.jobs.vehicle_ai import run_vehicle_ai_sweep_once
 from app.jobs.vision_ai import run_vision_ai_sweep_once
 from app.jobs.zone_entry_ai import run_zone_entry_ai_sweep_once
 
@@ -91,26 +85,20 @@ def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]
             run_unauthorized_person_ai_sweep_once,
             "critical",
         ),
-        ("crowd", settings.crowd_ai_interval_seconds, run_crowd_density_ai_sweep_once, "critical"),
     ]
 
 
 def _build_registry() -> list[_SweepEntry]:
     rest: list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]] = [
         ("fire", settings.fire_ai_interval_seconds, run_fire_ai_sweep_once, "critical"),
-        ("fall", settings.fall_ai_interval_seconds, run_fall_ai_sweep_once, "critical"),
         ("zone_entry", settings.zone_ai_interval_seconds, run_zone_entry_ai_sweep_once, "critical"),
         ("fight", settings.fight_ai_interval_seconds, run_fight_ai_sweep_once, "critical"),
         ("teacher_punctuality", settings.teacher_punctuality_interval_seconds, run_teacher_punctuality_sweep_once, "standard"),
-        ("abandoned_object", settings.abandoned_object_ai_interval_seconds, run_abandoned_object_ai_sweep_once, "standard"),
         ("disorder", settings.disorder_ai_interval_seconds, run_disorder_ai_sweep_once, "standard"),
         ("dress_code", settings.dress_code_ai_interval_seconds, run_dress_code_ai_sweep_once, "standard"),
-        ("phone", settings.phone_ai_interval_seconds, run_phone_ai_sweep_once, "standard"),
         ("badge", settings.badge_ai_interval_seconds, run_badge_ai_sweep_once, "standard"),
         ("ppe", settings.ppe_ai_interval_seconds, run_ppe_ai_sweep_once, "standard"),
         ("smoking", settings.smoking_ai_interval_seconds, run_smoking_ai_sweep_once, "standard"),
-        ("student_dress", settings.student_uniform_ai_interval_seconds, run_student_dress_code_ai_sweep_once, "standard"),
-        ("vehicle", settings.vehicle_ai_interval_seconds, run_vehicle_ai_sweep_once, "standard"),
         ("lesson_quality", settings.lesson_quality_ai_interval_seconds, run_lesson_quality_ai_sweep_once, "standard"),
         # Kamera talab qilmaydi (faqat DB) — shuning uchun "standard"
         # qatorida va kamdan-kam bajariladi; o'zi ish kuni tugaguncha

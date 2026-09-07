@@ -1,17 +1,25 @@
 export interface CameraFilters {
   building: string;
+  department: string;
   status: string;
 }
 
 export const EMPTY_FILTERS: CameraFilters = {
   building: '',
+  department: '',
   status: '',
 };
+
+export interface DepartmentOption {
+  name: string;
+  building: string;
+}
 
 interface CameraFilterBarProps {
   filters: CameraFilters;
   onChange: (filters: CameraFilters) => void;
   buildings: string[];
+  departments: DepartmentOption[];
 }
 
 function Select({
@@ -45,19 +53,43 @@ function Select({
 }
 
 /** Kameralar ro'yxatini filtrlaydigan boshqaruvlar — MonitoringPage'dagi
- * "Smart Filtr" bloki shu komponentdan iborat. Faqat haqiqatan
- * ko'rsatilayotgan kameralarni filtrlaydi (bino, holat); ular bilan
- * bevosita bog'liq bo'lmagan alohida statistik ko'rsatkichlar endi
- * bu yerda yo'q. */
-export default function CameraFilterBar({ filters, onChange, buildings }: CameraFilterBarProps) {
+ * "Smart Filtr" bloki shu komponentdan iborat.
+ *
+ * Bino va kafedra bosqichma-bosqich ishlaydi: bino tanlanganda kafedra
+ * ro'yxati faqat o'sha binonikiga qisqaradi. Bitta binoda o'nlab kafedra
+ * bo'lgani uchun to'liq ro'yxat foydasiz uzun bo'lardi. */
+export default function CameraFilterBar({
+  filters,
+  onChange,
+  buildings,
+  departments,
+}: CameraFilterBarProps) {
   const set = (key: keyof CameraFilters) => (value: string) =>
     onChange({ ...filters, [key]: value });
+
+  // Bino almashtirilganda kafedra tozalanadi: boshqa binoning kafedrasi
+  // tanlangan holida qolsa, natija doim bo'sh chiqardi va foydalanuvchi
+  // sababini ko'rmasdi.
+  const setBuilding = (value: string) =>
+    onChange({ ...filters, building: value, department: '' });
+
+  const visibleDepartments = filters.building
+    ? departments.filter((d) => d.building === filters.building)
+    : departments;
 
   const hasActiveFilters = Object.values(filters).some(Boolean);
 
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <Select label="O'quv korpusi" value={filters.building} options={buildings} onChange={set('building')} />
+      <Select label="O'quv korpusi" value={filters.building} options={buildings} onChange={setBuilding} />
+      {visibleDepartments.length > 0 && (
+        <Select
+          label="Kafedra"
+          value={filters.department}
+          options={visibleDepartments.map((d) => d.name)}
+          onChange={set('department')}
+        />
+      )}
       <Select label="Kamera holati" value={filters.status} options={['JONLI', 'OFLAYN']} onChange={set('status')} />
 
       {hasActiveFilters && (

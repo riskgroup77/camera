@@ -11,7 +11,7 @@ class TestAISchedulerRegistry:
         registry = _build_registry()
         names = {e.name for e in registry}
         assert "fire" in names
-        assert "phone" in names
+        assert "dress_code" in names
         if __import__("app.config", fromlist=["settings"]).settings.unified_face_sweep_enabled:
             assert "unified_face" in names
         else:

@@ -8,8 +8,10 @@ from sqlalchemy.orm import selectinload
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
-from app.models import Building, Camera, Faculty, StudentGroup
+from app.models import Building, Camera, Department, Faculty, StudentGroup
 from app.schemas.org import (
+    DepartmentCreateIn,
+    DepartmentOut,
     BuildingCreateIn,
     BuildingOut,
     FacultyCreateIn,
@@ -164,4 +166,74 @@ async def delete_student_group(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Guruh topilmadi")
     await log_action(db, request, current_user.id, f"Guruhni o'chirdi: {group.name}", "Tashkilot")
     await db.delete(group)
+    await db.commit()
+
+
+# --- Kafedralar ---
+#
+# Kameralar avval faqat bino bo'yicha guruhlanardi. Bitta binoda o'nlab
+# kafedra bo'lgani uchun operator "shu kafedraning kameralari" ni
+# ko'rmoqchi bo'lganda butun binoni varaqlashiga to'g'ri kelardi.
+
+
+@router.get("/departments", response_model=list[DepartmentOut])
+async def list_departments(db: Annotated[AsyncSession, Depends(get_db)], _: AuthDep) -> list[DepartmentOut]:
+    """camera_count binolardagi kabi haqiqiy Camera qatorlaridan
+    hisoblanadi, alohida saqlanadigan raqamdan emas — saqlangan raqam
+    vaqt o'tib haqiqatdan uzoqlashadi."""
+    result = await db.execute(
+        select(Department, func.count(Camera.id))
+        .outerjoin(Camera, Camera.department_id == Department.id)
+        .options(selectinload(Department.building))
+        .group_by(Department.id)
+        .order_by(Department.name)
+    )
+    return [
+        DepartmentOut(
+            id=str(d.id),
+            name=d.name,
+            building_id=str(d.building_id) if d.building_id else None,
+            building_name=d.building.name if d.building else "",
+            camera_count=count,
+        )
+        for d, count in result.all()
+    ]
+
+
+@router.post("/departments", response_model=DepartmentOut, status_code=status.HTTP_201_CREATED)
+async def create_department(
+    body: DepartmentCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+) -> DepartmentOut:
+    building = None
+    if body.building_id:
+        building = await db.get(Building, body.building_id)
+        if building is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Bino topilmadi")
+
+    department = Department(name=body.name.strip(), building_id=building.id if building else None)
+    db.add(department)
+    await log_action(db, request, current_user.id, f"Yangi kafedra qo'shdi: {body.name}", "Tashkilot")
+    await db.commit()
+    await db.refresh(department)
+    return DepartmentOut(
+        id=str(department.id),
+        name=department.name,
+        building_id=str(department.building_id) if department.building_id else None,
+        building_name=building.name if building else "",
+        camera_count=0,
+    )
+
+
+@router.delete("/departments/{department_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_department(
+    department_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+) -> None:
+    """Kameralar o'chirilmaydi — ular kafedrasiz qoladi va bino bo'yicha
+    filtrlanaveradi (Camera.department_id ON DELETE SET NULL)."""
+    department = await db.get(Department, department_id)
+    if department is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kafedra topilmadi")
+    name = department.name
+    await db.delete(department)
+    await log_action(db, request, current_user.id, f"Kafedrani o'chirdi: {name}", "Tashkilot")
     await db.commit()

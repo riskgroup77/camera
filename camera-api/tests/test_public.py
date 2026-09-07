@@ -115,7 +115,7 @@ class TestPublicEndpoints:
         body = resp.json()
         assert set(body.keys()) == {
             "totalStudents", "present", "absent", "late", "sleepIncidents", "violations",
-            "liveCameras", "offlineCameras", "buildings",
+            "liveCameras", "offlineCameras", "buildings", "departments",
         }
 
     async def test_public_stats_reflects_real_attendance(self, client: AsyncClient):

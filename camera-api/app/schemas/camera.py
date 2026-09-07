@@ -22,6 +22,7 @@ class CameraOut(CamelModel):
     port: int
     rtsp_path: str | None = None
     building: str  # full Building.name
+    department: str = ""  # Department.name; biriktirilmagan bo'lsa bo'sh
     zone: str
     resolution: str
     fps: int | None
@@ -46,8 +47,8 @@ class CameraOut(CamelModel):
     # app/jobs/attendance_ai.py grabs a multi-frame burst from this
     # camera instead of a single frame.
     is_entrance: bool = False
-    # See app/models/camera.py's Camera.is_perimeter docstring —
-    # app/jobs/vehicle_ai.py only runs on cameras flagged this way.
+    # See app/models/camera.py's Camera.is_perimeter docstring — hovli/
+    # tashqi hudud belgisi (endi hech qanday sweepni cheklamaydi).
     is_perimeter: bool = False
     # See app/models/camera.py's Camera.is_exit docstring — only a sighting
     # on a camera flagged this way ever advances AttendanceRecord.check_out.
@@ -64,6 +65,11 @@ class CameraCreateIn(CamelModel):
     rtsp_username: str | None = None
     rtsp_password: str | None = None
     building: str  # building NAME, resolved server-side like StudentStaff.faculty
+    department: str | None = None
+    """Kafedra NOMI — bino kabi serverda yechiladi.
+
+    Bo'sh qoldirilsa kamera kafedrasiz qoladi va faqat bino bo'yicha
+    filtrlanadi. Mavjud 107 kameraning barchasi shu holatda."""
     zone: str = Field(min_length=1)
     resolution: str = Field(min_length=2)
     fps: int | None = None

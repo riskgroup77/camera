@@ -36,7 +36,6 @@ _ALL_FLAGS = {
     "staff_attendance": True,
     "student_attendance": True,
     "off_hours": True,
-    "crowd": True,
     "unauthorized": True,
     "sleep": True,
 }
@@ -82,10 +81,6 @@ class TestProcessCameraConcurrentFaceDetection:
 
         received: dict[str, object] = {}
 
-        async def fake_process_camera_frame_for_crowd(frame, db, camera, faces):
-            received["crowd_faces"] = faces
-            return False
-
         async def fake_process_camera_frame(frame, db, camera, **kwargs):
             received["attendance_faces"] = kwargs["faces"]
             return []
@@ -103,7 +98,6 @@ class TestProcessCameraConcurrentFaceDetection:
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "grab_frame_for_camera", fake_grab_frame_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_crowd", fake_process_camera_frame_for_crowd)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(
             unified_face_sweep,
@@ -131,7 +125,6 @@ class TestProcessCameraConcurrentFaceDetection:
         assert in_flight["peak"] > 1
 
         # Every consumer got the right faces for the right frame.
-        assert received["crowd_faces"] == [f"face-for-{sleep_frames[0]!r}"]
         assert received["attendance_faces"] == [f"face-for-{sleep_frames[0]!r}"]
         assert received["unauthorized_faces_a"] == [f"face-for-{sleep_frames[0]!r}"]
         assert received["unauthorized_faces_b"] == [f"face-for-{sleep_frames[-1]!r}"]
@@ -186,7 +179,6 @@ class TestProcessCameraConcurrentFaceDetection:
         monkeypatch.setattr(unified_face_sweep, "grab_frame_burst_for_camera", fake_grab_frame_burst_for_camera)
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_crowd", fake_noop)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_unauthorized)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_sleep", fake_sleep_noop)
@@ -229,7 +221,6 @@ class TestProcessCameraConcurrentFaceDetection:
 
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_crowd", fake_noop)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_noop)
 
@@ -265,7 +256,6 @@ class TestProcessCameraConcurrentFaceDetection:
 
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_crowd", fake_noop)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_noop)
 

@@ -243,40 +243,6 @@ class Settings(BaseSettings):
     # for attendance elsewhere, where a false match just costs nothing).
     unauthorized_min_face_height_fraction: float = 0.08
 
-    # TT kriteriya 5 ("Olomon zichligi anomaliyasi") —
-    # app/jobs/crowd_density_ai.py. baseline_window/min_samples control the
-    # per-camera rolling face-count history; spike_multiplier/min_absolute
-    # control what counts as an anomaly relative to that baseline.
-    crowd_ai_interval_seconds: int = 30
-    crowd_dedup_minutes: int = 10
-    crowd_baseline_window: int = 20
-    crowd_baseline_min_samples: int = 5
-    crowd_spike_multiplier: float = 2.0
-    crowd_min_absolute: int = 4
-
-    # TT kriteriya 4 ("Egasiz qoldirilgan buyum") —
-    # app/jobs/abandoned_object_ai.py. min_area/max_area_fraction filter
-    # obviously-wrong blob sizes (noise vs. a lighting-change covering
-    # most of the frame); match_distance_px is how close two ticks'
-    # largest blob centroids must be to count as "the same" static
-    # region; min_consecutive_ticks approximates how long it must stay
-    # put (in sweep ticks, not exact wall-clock — see module docstring).
-    abandoned_object_ai_interval_seconds: int = 30
-    abandoned_object_dedup_minutes: int = 15
-    abandoned_object_min_area: int = 800
-    abandoned_object_max_area_fraction: float = 0.5
-    abandoned_object_match_distance_px: float = 40.0
-    abandoned_object_min_consecutive_ticks: int = 4
-    # MOG2's default AUTOMATIC learning rate adapts fast enough (tuned for
-    # real ~30fps video) that a genuinely static new object gets absorbed
-    # into the background model after just 1-2 sweep ticks when ticks are
-    # ~30s apart — found from real testing (see
-    # tests/test_abandoned_object_ai.py), not assumed. An explicit, much
-    # lower learning rate keeps a new static region classified as
-    # foreground for several ticks, which is what min_consecutive_ticks
-    # above actually needs to be able to observe.
-    abandoned_object_learning_rate: float = 0.02
-
     # TT kriteriya 17 ("Tartib-intizom buzilishi") —
     # app/jobs/disorder_ai.py. min_absolute_magnitude/spike_multiplier are
     # calibrated against real Farneback optical-flow numbers (see the
@@ -289,8 +255,8 @@ class Settings(BaseSettings):
     disorder_spike_multiplier: float = 3.0
     disorder_min_absolute_magnitude: float = 1.5
 
-    # YOLOv8 object detection (app/services/object_detection.py) — shared
-    # by TT kriteriya 16 (telefon) and 25 (transport). See
+    # YOLOv8 object detection (app/services/object_detection.py) — TT
+    # kriteriya 19 (dars diqqati) telefon signali uchun ishlatiladi. See
     # face_recognition_gpu_enabled/inference_concurrency for the same
     # pattern applied to InsightFace; this is the object-detection
     # equivalent, a separate knob since the two models have independent
@@ -299,36 +265,21 @@ class Settings(BaseSettings):
     object_detection_gpu_enabled: bool = False
     object_detection_inference_concurrency: int = 2
 
-    # TT kriteriya 16 ("Imtihonda telefondan foydalanish") —
-    # app/jobs/phone_ai.py.
-    phone_ai_interval_seconds: int = 30
-    phone_dedup_minutes: int = 10
+    # Telefon aniqlash ishonchi. #16 ("Imtihonda telefondan foydalanish")
+    # olib tashlangandan keyin uni ishlatadigan yagona joy — #19
+    # ("Talabaning darsga diqqati"), u yerda telefon ko'rinishi diqqat
+    # ballini pasaytiruvchi signal sifatida qoladi.
     phone_detection_confidence: float = 0.5
 
-    # TT kriteriya 25 ("Hovlida transport harakati") —
-    # app/jobs/vehicle_ai.py.
-    vehicle_ai_interval_seconds: int = 30
-    vehicle_dedup_minutes: int = 10
-    vehicle_detection_confidence: float = 0.5
 
     # mediapipe Pose Landmarker (app/services/pose_detection.py) — shared
-    # by TT kriteriya 24 (yiqilish), 2 (taqiqlangan zona), 21 (o'qituvchi
+    # by TT kriteriya 2 (taqiqlangan zona), 10 (oq xalat), 21 (o'qituvchi
     # faolligi). Same pattern as object_detection_*/face_recognition_*
     # above, a separate knob since each model has independent resource
     # costs.
     pose_detection_model_path: str = "pose_landmarker_lite.task"
     pose_detection_inference_concurrency: int = 2
     pose_detection_max_poses: int = 5
-
-    # TT kriteriya 24 ("Yiqilib tushish") — app/jobs/fall_ai.py /
-    # app/services/fall_detection.py. dedup_minutes is deliberately
-    # shorter than other criteria's — a real fall is safety-critical and
-    # worth re-confirming sooner than, say, a sustained sleep Event.
-    fall_ai_interval_seconds: int = 30
-    fall_dedup_minutes: int = 5
-    fall_min_landmark_visibility: float = 0.5
-    fall_torso_angle_threshold: float = 60.0
-    fall_aspect_ratio_threshold: float = 1.4
 
     # TT kriteriya 10 ("Oq xalat kiyilganligi") — app/jobs/dress_code_ai.py
     # / app/services/coat_detection.py. Classical HSV heuristic, not a
@@ -342,15 +293,6 @@ class Settings(BaseSettings):
     coat_white_saturation_max: int = 60
     coat_white_value_min: int = 170
     coat_white_fraction_threshold: float = 0.60
-
-    # TT kriteriya 11 ("Bosh kiyim (kalpakcha) borligi") —
-    # app/jobs/dress_code_ai.py / app/services/head_covering_detection.py.
-    # Classical color-uniformity heuristic — see that module's docstring.
-    head_covering_min_landmark_visibility: float = 0.5
-    head_covering_width_factor: float = 0.9
-    head_covering_height_factor: float = 1.1
-    head_covering_top_margin_factor: float = 0.25
-    head_covering_uniformity_threshold: float = 0.55
 
     # TT kriteriya 2 ("Taqiqlangan zonaga kirish") —
     # app/jobs/zone_entry_ai.py / app/services/zone_detection.py.
@@ -711,11 +653,6 @@ class Settings(BaseSettings):
     smoking_min_landmark_visibility: float = 0.5
     smoking_wrist_mouth_distance: float = 0.12
 
-    # TT kriteriya 18 — talaba dress code
-    student_uniform_ai_interval_seconds: int = 45
-    student_uniform_dedup_minutes: int = 30
-    student_uniform_min_landmark_visibility: float = 0.5
-    student_uniform_contrast_min: float = 15.0
 
     frontend_base_url: str = "http://localhost:5173"
     smtp_host: str = ""

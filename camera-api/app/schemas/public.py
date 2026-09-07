@@ -10,6 +10,8 @@ class PublicCameraOut(CamelModel):
     name: str
     building: str
     zone: str
+    department: str = ""
+    """Kafedra nomi; biriktirilmagan bo'lsa bo'sh satr."""
     status: str
     stream_url: str | None = None
     has_video: bool = True
@@ -19,6 +21,11 @@ class PublicCameraOut(CamelModel):
     "erishiladi, lekin tasvir yo'q" — bu ikki xil nosozlik va operator
     uchun bir xil emas. Ikkinchisini oddiy OFLAYN qilib qo'yish
     kamerani devordan yashirar, sababini esa aytmasdi."""
+
+
+class PublicDepartmentOut(CamelModel):
+    name: str
+    building: str
 
 
 class PublicStatsOut(CamelModel):
@@ -31,6 +38,13 @@ class PublicStatsOut(CamelModel):
     live_cameras: int
     offline_cameras: int
     buildings: list[str]
+    departments: list["PublicDepartmentOut"] = []
+    """Kafedralar, har biri o'z binosi nomi bilan.
+
+    Bino nomi shu yerda qaytariladi, chunki filtr bosqichma-bosqich
+    ishlaydi: bino tanlanganda faqat o'sha binoning kafedralari
+    ko'rsatilishi kerak. Aks holda mijoz har bino uchun alohida so'rov
+    yuborishi kerak bo'lardi."""
 
 
 class PublicTopStudentOut(CamelModel):

@@ -14,24 +14,18 @@ from app.jobs.attendance_ai import attendance_ai_loop
 from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.fire_ai import fire_ai_loop
-from app.jobs.abandoned_object_ai import abandoned_object_ai_loop
 from app.jobs.badge_ai import badge_ai_loop
-from app.jobs.crowd_density_ai import crowd_density_ai_loop
 from app.jobs.disorder_ai import disorder_ai_loop
 from app.jobs.dress_code_ai import dress_code_ai_loop
-from app.jobs.fall_ai import fall_ai_loop
 from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
 from app.jobs.ai_scheduler import ai_scheduler_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
-from app.jobs.phone_ai import phone_ai_loop
 from app.jobs.ppe_ai import ppe_ai_loop
 from app.jobs.smoking_ai import smoking_ai_loop
-from app.jobs.student_dress_code_ai import student_dress_code_ai_loop
 from app.jobs.teacher_punctuality_ai import teacher_punctuality_ai_loop
 from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
 from app.jobs.unified_face_sweep import unified_face_sweep_loop
-from app.jobs.vehicle_ai import vehicle_ai_loop
 from app.jobs.vision_ai import vision_ai_loop
 from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.logging_config import configure_logging
@@ -123,7 +117,6 @@ async def lifespan(app: FastAPI):
                     attendance_ai_loop(),
                     vision_ai_loop(),
                     unauthorized_person_ai_loop(),
-                    crowd_density_ai_loop(),
                 ]
             )
             ai_loops = [
@@ -131,16 +124,11 @@ async def lifespan(app: FastAPI):
                 *face_loops,
                 fire_ai_loop(),
                 teacher_punctuality_ai_loop(),
-                abandoned_object_ai_loop(),
                 disorder_ai_loop(),
                 dress_code_ai_loop(),
-                phone_ai_loop(),
                 badge_ai_loop(),
                 ppe_ai_loop(),
                 smoking_ai_loop(),
-                student_dress_code_ai_loop(),
-                vehicle_ai_loop(),
-                fall_ai_loop(),
                 zone_entry_ai_loop(),
                 lesson_quality_ai_loop(),
                 fight_ai_loop(),

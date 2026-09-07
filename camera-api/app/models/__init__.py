@@ -5,7 +5,7 @@ from app.models.audit_log import AuditLog
 from app.models.camera import Camera
 from app.models.event import Event
 from app.models.lesson_session import LessonSession
-from app.models.org import Building, Faculty, StudentGroup
+from app.models.org import Building, Department, Faculty, StudentGroup
 from app.models.password_reset_token import PasswordResetToken
 from app.models.permission import Permission
 from app.models.report import Report
@@ -20,6 +20,7 @@ __all__ = [
     "Faculty",
     "StudentGroup",
     "Building",
+    "Department",
     "StudentStaff",
     "AuditLog",
     "Camera",

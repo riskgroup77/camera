@@ -14,8 +14,7 @@ Kriteriya 19 (student attention/diqqat): combines two EXISTING signals
 rather than building a dedicated gaze-estimation model — head orientation
 (reused from app/services/sleep_detection.py's frontality logic, the same
 "is this face oriented toward the camera" proxy already validated there)
-and phone visibility (reused from app/jobs/phone_ai.py's YOLO "cell
-phone" detection — a real distraction signal, not a proxy). Honest scope
+and phone visibility (YOLO "cell phone" detection — a real distraction signal, not a proxy). Honest scope
 note: phone-visible is a FRAME-WIDE signal here, not attributed to a
 specific student — associating a detected phone with a specific face
 would need hand/proximity tracking this doesn't do, so every matched
@@ -66,7 +65,6 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import any_module_active, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.jobs.phone_ai import PHONE_CLASS_ID
 from app.models import LessonSession
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
@@ -75,6 +73,12 @@ from app.services.object_detection import detect_objects
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
 from app.services.sleep_detection import is_plausible_frontal
 from app.timezone import local_now
+
+# COCO "cell phone" klassi — app/services/object_detection.py dagi aynan
+# shu model bilan tekshirilgan. Ilgari bu konstanta phone_ai.py da edi;
+# #16 ("Imtihonda telefondan foydalanish") olib tashlangandan keyin
+# telefon signalini ishlatadigan yagona joy shu modul bo'lib qoldi.
+PHONE_CLASS_ID = 67
 
 logger = logging.getLogger("app.lesson_quality_ai")
 
