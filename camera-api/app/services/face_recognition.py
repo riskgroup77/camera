@@ -112,12 +112,33 @@ class FaceCompareResult:
     faces_detected_b: int
 
 
-def _embed(image_bytes: bytes) -> tuple[np.ndarray | None, int]:
+def _decode_image(image_bytes: bytes) -> np.ndarray:
+    """JPEG baytlarini rasmga aylantiradi yoki NoFaceDetectedError tashlaydi.
+
+    Nima uchun alohida funksiya: cv2.imdecode buzuq bufer uchun None
+    qaytaradi, lekin BO'SH bufer uchun cv2.error TASHLAYDI. Ikkala holat
+    ham "kadrni o'qib bo'lmadi" degani, lekin ikkinchisi tutilmasa
+    ishlov beruvchini butunlay yiqitadi.
+
+    Bu ochiq sahifadagi jonli yo'naltirishda aniqlandi: brauzer video
+    hali tayyor bo'lmaganda nol baytli kadr yuborishi mumkin, va u har
+    safar 500 xatosini berardi. Kamera oqimida ham xuddi shu bo'lishi
+    mumkin — ffmpeg uzilish paytida bo'sh kadr qaytaradi.
+    """
+    if not image_bytes:
+        raise NoFaceDetectedError("Rasm bo'sh")
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    try:
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    except cv2.error as exc:
+        raise NoFaceDetectedError("Rasm formatini o'qib bo'lmadi") from exc
     if img is None:
         raise NoFaceDetectedError("Rasm formatini o'qib bo'lmadi")
+    return img
 
+
+def _embed(image_bytes: bytes) -> tuple[np.ndarray | None, int]:
+    img = _decode_image(image_bytes)
     faces = _get_app().get(img)
     if not faces:
         return None, 0
@@ -227,11 +248,7 @@ def _detect_faces_sync(image_bytes: bytes) -> list[DetectedFace]:
     classroom camera sees, not just the most prominent one, and by
     app/routers/cameras.py's live-detection endpoint, which needs the
     bbox to draw an overlay on the video."""
-    arr = np.frombuffer(image_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None:
-        raise NoFaceDetectedError("Rasm formatini o'qib bo'lmadi")
-
+    img = _decode_image(image_bytes)
     faces = _get_app().get(img)
     return [
         DetectedFace(embedding=f.normed_embedding, landmarks_68=f.landmark_3d_68, bbox=f.bbox)

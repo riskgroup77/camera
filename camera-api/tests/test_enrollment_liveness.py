@@ -241,3 +241,44 @@ class TestPoseCheckEndpoint:
             files={"photo": ("probe.jpg", b"kadr", "image/jpeg")},
         )
         assert resp.json()["ratio"] < 0  # o'ngga burilgan — manfiy
+
+
+@pytest.mark.usefixtures("seeded")
+class TestBrokenFramesDoNotCrash:
+    """Jonli yo'naltirish sekundiga bir marta chaqiriladi.
+
+    Brauzer video hali tayyor bo'lmaganda nol baytli kadr yuborishi
+    mumkin, va bunday kadr server xatosini bermasligi kerak: bu
+    jurnalni to'ldirar va odam sababini bilmasdan qolardi.
+
+    Serverda haqiqatan shunday bo'lgan: bo'sh bufer uchun OpenCV None
+    qaytarmaydi, balki xato TASHLAYDI, va u tutilmagan edi.
+    """
+
+    @pytest.mark.parametrize(
+        "payload",
+        [pytest.param(b"", id="bo'sh"),
+         pytest.param(b"not an image", id="axlat"),
+         pytest.param(b"\xff\xd8", id="yarim-jpeg")],
+    )
+    async def test_pose_check_answers_instead_of_failing(self, client: AsyncClient, payload):
+        resp = await client.post(
+            "/api/public/enrollment/pose-check",
+            data={"expected": "front"},
+            files={"photo": ("probe.jpg", payload, "image/jpeg")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["faceFound"] is False
+
+    async def test_submit_reports_which_frame_could_not_be_read(
+        self, client: AsyncClient, a_record
+    ):
+        """Yakuniy yuborishda esa jim o'tib ketish mumkin emas — odam
+        qaysi kadr o'qilmaganini bilishi kerak."""
+        resp = await client.post(
+            f"/api/public/enrollment/{a_record.id}/submit",
+            data={"pinfl": "31111111111111"},
+            files=[("photos", (f"{i}.jpg", b"", "image/jpeg")) for i in range(3)],
+        )
+        assert resp.status_code == 422
+        assert "1-kadr" in resp.json()["detail"]
