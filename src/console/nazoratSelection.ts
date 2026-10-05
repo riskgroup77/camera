@@ -13,8 +13,6 @@ export const STATUS_PARAM = 'holat';
 export const WHO_PARAM = 'toifa';
 /** Guruh ichida: davomat (standart) yoki kriteriyalar jadvali. */
 export const VIEW_PARAM = 'korinish';
-/** Kriteriyalar: to'qima namuna ma'lumot (taqdimot uchun, src/lib/criteriaSample.ts). */
-export const SAMPLE_PARAM = 'namuna';
 
 export type Who = 'talaba' | 'xodim';
 export type GroupView = 'davomat' | 'kriteriyalar';
@@ -38,9 +36,6 @@ export interface NazoratSelection {
   /** Guruh jadvali: davomat yoki 9 kriteriya (har talaba qatorida). */
   view: GroupView;
   setView: (view: GroupView) => void;
-  /** Kriteriyalarda namuna (to'qima) ma'lumot ko'rsatilsinmi. */
-  sample: boolean;
-  setSample: (sample: boolean) => void;
 }
 
 export function useNazoratSelection(): NazoratSelection {
@@ -49,7 +44,6 @@ export function useNazoratSelection(): NazoratSelection {
   const status = parseCounter(params.get(STATUS_PARAM));
   const who: Who = params.get(WHO_PARAM) === 'xodim' ? 'xodim' : 'talaba';
   const view: GroupView = params.get(VIEW_PARAM) === 'kriteriyalar' ? 'kriteriyalar' : 'davomat';
-  const sample = params.get(SAMPLE_PARAM) === '1';
 
   const setWho = useCallback(
     (next: Who) =>
@@ -110,19 +104,5 @@ export function useNazoratSelection(): NazoratSelection {
     [setParams],
   );
 
-  const setSample = useCallback(
-    (next: boolean) =>
-      setParams(
-        (current) => {
-          const out = new URLSearchParams(current);
-          if (next) out.set(SAMPLE_PARAM, '1');
-          else out.delete(SAMPLE_PARAM);
-          return out;
-        },
-        { replace: true },
-      ),
-    [setParams],
-  );
-
-  return { who, group, status, view, sample, setWho, setGroup, setStatus, setView, setSample };
+  return { who, group, status, view, setWho, setGroup, setStatus, setView };
 }

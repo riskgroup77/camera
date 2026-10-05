@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CalendarCheck, GraduationCap, ListChecks, Sparkles, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, GraduationCap, ListChecks, Users } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import {
   POSITION_GROUP_LABEL,
@@ -19,7 +19,6 @@ import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import PdfButton from '../../components/situation/PdfButton';
 import GroupCriteriaTable from '../../components/situation/GroupCriteriaTable';
-import { SAMPLE_LABEL } from '../../lib/criteriaSample';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { GroupCriteriaState } from '../useGroupCriteria';
@@ -122,7 +121,7 @@ export default function GroupTablePanel({
   onExpand: (id: string | null) => void;
   area?: string;
 }) {
-  const { who, group, status, view, sample, setWho, setGroup, setStatus, setView, setSample } = selection;
+  const { who, group, status, view, setWho, setGroup, setStatus, setView } = selection;
   const students = who === 'talaba';
   const criteriaMode = students && Boolean(group) && canCriteria && view === 'kriteriyalar';
   const [groups, setGroups] = useState<GroupStat[] | null>(null);
@@ -345,18 +344,6 @@ export default function GroupTablePanel({
         {students && group && canCriteria && (
           <Tabs<GroupView> tabs={VIEW_TABS} value={view} onChange={setView} variant="segmented" size="sm" ariaLabel="Guruh jadvali" />
         )}
-        {criteriaMode && (
-          <Button
-            size="sm"
-            icon={Sparkles}
-            variant={sample ? 'primary' : 'secondary'}
-            aria-pressed={sample}
-            title="Taqdimot uchun to‘qima ma’lumot (ismlar ham to‘qima). Bazaga yozilmaydi."
-            onClick={() => setSample(!sample)}
-          >
-            Namuna
-          </Button>
-        )}
         {students ? (
           <>
             {!group && (
@@ -410,11 +397,6 @@ export default function GroupTablePanel({
   if (criteriaMode) {
     body = (
       <>
-        {sample && (
-          <p className="shrink-0 rounded-control bg-warning-soft px-2.5 py-1.5 text-[12px] font-semibold text-fg" role="note">
-            {SAMPLE_LABEL}. Ismlar ham to‘qima; bazaga yozilmaydi va hisobotlarga tushmaydi.
-          </p>
-        )}
         <div className="min-h-0 flex-1">
           <GroupCriteriaTable data={criteriaRows} loading={criteria.loading} error={criteria.error} />
         </div>

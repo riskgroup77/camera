@@ -64,10 +64,7 @@ export default function GroupCriteriaTable({
       key: 'name',
       header: 'F.I.Sh.',
       sortValue: (r) => r.full_name,
-      cell: (r) => r.id.startsWith('namuna-') ? (
-        // Namuna (to'qima) qatori — shaxs sahifasi yo'q.
-        <span className="whitespace-nowrap font-medium text-fg">{r.full_name}</span>
-      ) : (
+      cell: (r) => (
         // Ism bir qatorda: ustunlar ko'p — jadval yonga suriladi, ism esa uzilmaydi.
         <Link to={`/shaxs/${encodeURIComponent(r.id)}`} className="whitespace-nowrap font-medium text-fg hover:text-primary">
           {r.full_name}
