@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../lib/apiClient';
 import {
   getOverview,
@@ -13,7 +13,7 @@ import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/
 import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import PdfButton from '../../components/situation/PdfButton';
 import ArrivalsChart from '../../components/situation/ArrivalsChart';
-import { hourRange } from '../../lib/arrivals';
+import { bucketsFromPeople, hourRange } from '../../lib/arrivals';
 import { TONE_TEXT, criterionShort, workingCriteria } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
@@ -166,10 +166,10 @@ export default function GroupStatsPanel({
   // Kelish grafigidagi bosilgan ustun (soat) — shu soatda kelganlar ro'yxati.
   const [arrivalHour, setArrivalHour] = useState<number | null>(null);
 
-  // Institut bo'yicha — faqat kelish grafigi (overview); kafedra/bo'linma
-  // tanlanganda soatlik sanoq unga mos kelmaydi — o'rniga uning sanoqlari.
+  // Institut va guruh — kelish grafigi (overview: kechikish chegarasi va
+  // institut ustunlari; guruh ustunlari — guruh talabalaridan); kafedra/
+  // bo'linma tanlanganda soatlik sanoq unga mos kelmaydi — o'rniga sanoqlari.
   useEffect(() => {
-    if (groupView) return;
     const controller = new AbortController();
     const request = orgUnitId
       ? getPeopleStatus({ date, type: who, orgUnitId, pageSize: 1 }, { signal: controller.signal }).then((page) => {
@@ -186,6 +186,8 @@ export default function GroupStatsPanel({
 
   const seen = lessonSeenIds(live);
   const info = live.detail?.group;
+  // Guruh tanlanganda grafik yo'qolmaydi — o'sha guruh talabalarining kelishi.
+  const groupArrivals = useMemo(() => bucketsFromPeople(live.detail?.students ?? []), [live.detail]);
 
   const body = groupView ? (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
@@ -195,6 +197,17 @@ export default function GroupStatsPanel({
           <span className="ms-2 font-semibold text-fg">davomat {Math.round(info.totals.rate)}%</span>
         )}
       </div>
+      {live.detail && (
+        <ArrivalsChart
+          buckets={groupArrivals.buckets}
+          who="talaba"
+          lateAfter={overview?.lateAfterStudents}
+          isToday={isToday}
+          untimed={groupArrivals.untimed}
+          onPick={setArrivalHour}
+          className="min-h-[190px] shrink-0"
+        />
+      )}
       <StatusCounters
         items={groupCounters(live.detail?.students ?? [], null)}
         active={status}
@@ -290,21 +303,25 @@ export default function GroupStatsPanel({
         open={arrivalHour !== null}
         onClose={() => setArrivalHour(null)}
         size="xl"
-        title={arrivalHour !== null ? `${students ? 'Talabalar' : 'O‘qituvchi va xodimlar'}: ${hourRange(arrivalHour)} da kelganlar` : ''}
+        title={
+          arrivalHour !== null
+            ? `${groupView ? `${group} guruhi` : students ? 'Talabalar' : 'O‘qituvchi va xodimlar'}: ${hourRange(arrivalHour)} da kelganlar`
+            : ''
+        }
         description={date}
         footer={
           arrivalHour !== null ? (
             <PdfButton
               path="/api/situation/pdf/people"
-              params={{ date, type: who, status: 'kelgan', arrivalHour }}
-              filename={`${who}-kelgan-${String(arrivalHour).padStart(2, '0')}-${date}`}
+              params={{ date, type: who, status: 'kelgan', arrivalHour, group: groupView ? group : undefined }}
+              filename={`${groupView ? `${group}-` : `${who}-`}kelgan-${String(arrivalHour).padStart(2, '0')}-${date}`}
             />
           ) : undefined
         }
       >
         {arrivalHour !== null && (
           <StatusPeopleTable
-            query={{ date, type: who, arrivalHour }}
+            query={{ date, type: who, arrivalHour, group: groupView ? group : undefined }}
             status="kelgan"
             refreshKey={pulse}
             maxHeight="60vh"

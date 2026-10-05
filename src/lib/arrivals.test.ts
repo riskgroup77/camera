@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   arrivalBars,
   barTitle,
+  bucketsFromPeople,
   clockMinutes,
   formatClock,
   tashkentMinutes,
@@ -83,5 +84,23 @@ describe('time helpers', () => {
   it('describes a bar in plain words', () => {
     expect(barTitle({ hour: 8, total: 64, late: 49, onTime: 15 })).toBe('08:00–08:59 · 64 kishi keldi, shundan 49 tasi kech');
     expect(barTitle({ hour: 7, total: 12, late: 0, onTime: 12 })).toBe('07:00–07:59 · 12 kishi keldi, hammasi o‘z vaqtida');
+  });
+});
+
+describe('bucketsFromPeople (guruh grafigi)', () => {
+  it('splits a group by arrival hour, late part from the record status, untimed apart', () => {
+    const { buckets, untimed } = bucketsFromPeople([
+      { checkIn: '08:05', status: 'keldi' },
+      { checkIn: '08:40', status: 'kech_keldi' },
+      { checkIn: '13:00', status: 'keldi' },
+      { checkIn: null, status: 'keldi' },
+      { checkIn: null, status: 'kelmadi' },
+      { checkIn: null, status: 'kutilmoqda' },
+    ]);
+    expect(buckets).toEqual([
+      { hour: 8, students: 2, staff: 0, studentsLate: 1, staffLate: 0 },
+      { hour: 13, students: 1, staff: 0, studentsLate: 0, staffLate: 0 },
+    ]);
+    expect(untimed).toBe(1);
   });
 });

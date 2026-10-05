@@ -108,3 +108,28 @@ export function barTitle(bar: ArrivalBar): string {
   const tail = bar.late > 0 ? `, shundan ${bar.late} tasi kech` : ', hammasi o‘z vaqtida';
   return `${hourRange(bar.hour)} · ${bar.total} kishi keldi${tail}`;
 }
+
+/** Guruh talabalaridan soatlik ustunlar (chapdagi jadval bilan bir xil
+ *  ma'lumot): kelish vaqti soati bo'yicha, "kech_keldi" — kech qismi.
+ *  Kelgan, lekin vaqti yo'qlar — `untimed`. */
+export function bucketsFromPeople(people: readonly { checkIn: string | null; status: string }[]): {
+  buckets: HourBucket[];
+  untimed: number;
+} {
+  const byHour = new Map<number, HourBucket>();
+  let untimed = 0;
+  for (const person of people) {
+    if (person.status !== 'keldi' && person.status !== 'kech_keldi') continue;
+    const minutes = clockMinutes(person.checkIn);
+    if (minutes === null) {
+      untimed += 1;
+      continue;
+    }
+    const hour = Math.floor(minutes / 60);
+    const bucket = byHour.get(hour) ?? { hour, students: 0, staff: 0, studentsLate: 0, staffLate: 0 };
+    bucket.students += 1;
+    if (person.status === 'kech_keldi') bucket.studentsLate = (bucket.studentsLate ?? 0) + 1;
+    byHour.set(hour, bucket);
+  }
+  return { buckets: [...byHour.values()].sort((a, b) => a.hour - b.hour), untimed };
+}
