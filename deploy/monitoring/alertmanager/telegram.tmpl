@@ -1,0 +1,12 @@
+{{/*
+  Telegram xabari (parse_mode: HTML). Alertmanager vaqti UTC da —
+  Toshkent vaqti = UTC + 5 soat.
+*/}}
+{{ define "sm.telegram.message" -}}
+{{ if eq .Status "firing" }}<b>[OGOHLANTIRISH]</b>{{ else }}<b>[HAL BO'LDI]</b>{{ end }} Situatsion Markaz
+{{ range .Alerts }}
+{{ if eq .Labels.severity "critical" }}<b>KRITIK</b>{{ else }}Diqqat{{ end }}: <b>{{ .Annotations.summary }}</b>
+{{ .Annotations.description }}
+<i>{{ .Labels.alertname }} · {{ .StartsAt.Format "02.01.2006 15:04" }} UTC{{ if eq .Status "resolved" }} → {{ .EndsAt.Format "15:04" }} UTC{{ end }}</i>
+{{ end }}
+{{- end }}

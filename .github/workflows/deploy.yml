@@ -1,0 +1,151 @@
+# Production deploy: main'dagi CI muvaffaqiyatli tugagach (yoki qo'lda) serverga
+# SSH orqali kirib deploy/server-pull.sh ni ishga tushiradi.
+#
+# Kerakli sozlamalar (GitHub → Settings → Secrets and variables → Actions):
+#   Secrets:   DEPLOY_HOST, DEPLOY_PORT (standart 22), DEPLOY_USER, DEPLOY_SSH_KEY
+#              DEPLOY_HOST_FINGERPRINT (ixtiyoriy, tavsiya: `ssh-keygen -lf` SHA256 izi)
+#              HEALTHCHECK_URL (ixtiyoriy; yoki o'zgaruvchi sifatida)
+#   Variables: DEPLOY_PATH (standart /opt/camera), HEALTHCHECK_URL (masalan
+#              https://camapi.fermi.uz/health)
+# Serverda DEPLOY_USER parolsiz sudo bilan server-pull.sh ni ishga tushira
+# olishi kerak — deploy/README.md "GitHub Actions orqali deploy".
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA (bo'sh — main'ning oxirgi commiti)"
+        required: false
+        default: ""
+
+# Bir vaqtda bitta deploy; navbatdagisi kutadi (bekor qilinmaydi — yarim
+# deploy qolmasin). Serverdagi skript ham flock bilan himoyalangan.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Serverga deploy
+    # Faqat main'ga push'dan kelgan muvaffaqiyatli CI (PR yoki fork emas) yoki qo'lda.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/camera' }}
+      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.ref }}
+      HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL || secrets.HEALTHCHECK_URL }}
+
+    steps:
+      - name: Kirish ma'lumotlarini tekshirish
+        env:
+          HAS_HOST: ${{ secrets.DEPLOY_HOST != '' }}
+          HAS_USER: ${{ secrets.DEPLOY_USER != '' }}
+          HAS_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+        run: |
+          missing=""
+          [ "$HAS_HOST" = true ] || missing="$missing DEPLOY_HOST"
+          [ "$HAS_USER" = true ] || missing="$missing DEPLOY_USER"
+          [ "$HAS_KEY" = true ] || missing="$missing DEPLOY_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::GitHub secrets yo'q:$missing"
+            exit 1
+          fi
+          # Masofaviy buyruqqa faqat xavfsiz qiymatlar tushsin.
+          if [ -n "$DEPLOY_SHA" ] && ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
+            echo "::error::ref faqat commit SHA bo'lishi mumkin: $DEPLOY_SHA"
+            exit 1
+          fi
+          if ! printf '%s' "$DEPLOY_PATH" | grep -Eq '^/[A-Za-z0-9._/-]+$'; then
+            echo "::error::DEPLOY_PATH noto'g'ri: $DEPLOY_PATH"
+            exit 1
+          fi
+          echo "Deploy: ${DEPLOY_SHA:-origin/main} -> ${DEPLOY_PATH}"
+
+      - name: Eskirgan CI natijasini o'tkazib yuborish
+        id: fresh
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Eski commitning CI'i yangisidan keyin tugasa, uni joylab yangisini
+          # bosib ketmaymiz — yangi commit o'z deployini baribir ishga tushiradi.
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [ "$head" != "$DEPLOY_SHA" ]; then
+            echo "main allaqachon ${head} da — ${DEPLOY_SHA} o'tkazib yuboriladi"
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: server-pull.sh (SSH)
+        id: ssh
+        if: steps.fresh.outputs.skip != 'true'
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          timeout: 60s
+          command_timeout: 40m
+          envs: DEPLOY_PATH,DEPLOY_SHA
+          capture_stdout: true
+          # Masofadagi standart shell sh bo'lishi mumkin — faqat POSIX.
+          script: |
+            set -eu
+            if [ -n "${DEPLOY_SHA:-}" ]; then
+              sudo -n bash "${DEPLOY_PATH}/deploy/server-pull.sh" --ref "$DEPLOY_SHA"
+            else
+              sudo -n bash "${DEPLOY_PATH}/deploy/server-pull.sh"
+            fi
+
+      - name: Health check (tashqaridan)
+        if: env.HEALTHCHECK_URL != '' && steps.fresh.outputs.skip != 'true'
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 10 "$HEALTHCHECK_URL") || code=000
+            if [ "$code" = "200" ]; then
+              echo "API sog'lom:"; cat /tmp/health.json; echo
+              exit 0
+            fi
+            echo "urinish $i/20: HTTP $code"
+            sleep 15
+          done
+          echo "::error::$HEALTHCHECK_URL 5 daqiqada 200 qaytarmadi"
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1
+
+      - name: Xulosa
+        if: always()
+        env:
+          SSH_STDOUT: ${{ steps.ssh.outputs.stdout }}
+        run: |
+          deployed=$(printf '%s\n' "$SSH_STDOUT" | sed -n 's/^DEPLOYED_COMMIT=//p' | tail -n 1)
+          {
+            echo "### Deploy"
+            echo "- So'ralgan: \`${DEPLOY_SHA:-origin/main}\`"
+            echo "- Serverda: \`${deployed:-aniqlanmadi}\`"
+            echo "- Papka: \`${DEPLOY_PATH}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [ "${{ job.status }}" = "success" ] && [ -n "$DEPLOY_SHA" ] && [ -n "$deployed" ] \
+             && [ "${deployed#"$DEPLOY_SHA"}" = "$deployed" ] && [ "${DEPLOY_SHA#"$deployed"}" = "$DEPLOY_SHA" ]; then
+            echo "::warning::Serverdagi commit ($deployed) so'ralganidan ($DEPLOY_SHA) farq qiladi"
+          fi

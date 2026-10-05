@@ -1,0 +1,54 @@
+# Prometheus — Situatsion Markaz. Prometheus host tarmog'ida ishlaydi
+# (docker-compose.monitoring.yml), shuning uchun hamma nishon 127.0.0.1 da.
+
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    site: cam.fermi.uz
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:19093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # FastAPI /metrics (app/routers/metrics.py). API konteyneri host'da
+  # 127.0.0.1:18080 ga ochilgan (deploy/docker-compose.override.yml). So'rov
+  # Docker ko'prigi orqali ichki IP bilan keladi — METRICS_TOKEN bo'sh bo'lsa
+  # ham ruxsat. Token qo'yilgan bo'lsa up.sh uni secrets/ ga yozadi.
+  - job_name: camera-api
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics_token
+    static_configs:
+      - targets: ["127.0.0.1:18080"]
+        labels:
+          service: api
+
+  - job_name: node
+    static_configs:
+      - targets: ["127.0.0.1:19100"]
+
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["127.0.0.1:18081"]
+    metric_relabel_configs:
+      # Faqat nomli konteynerlar (Docker ichki cgroup'lari kerak emas).
+      - source_labels: [name]
+        regex: ""
+        action: drop
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:19090"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["127.0.0.1:19093"]

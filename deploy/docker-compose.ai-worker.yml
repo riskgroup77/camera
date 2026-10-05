@@ -1,0 +1,66 @@
+# AI alohida konteynerda (ai-worker) — sayt (api) AI yukidan mustaqil.
+#
+# Nega: ilgari AI sweeplari uvicorn worker'laridan birida (leader) ishlardi.
+# AI yuklanganda (4K kadr dekodlash, CPU'da model, GIL) shu jarayonga
+# tushgan HTTP so'rovlar sekinlashardi, AI'ni qayta ishga tushirish esa
+# saytni ham uzardi. Endi:
+#   api       — AI_ROLE=api: faqat HTTP; AI qulfiga umuman urinmaydi;
+#   ai-worker — AI_ROLE=worker: bitta jarayon, tashqi port yo'q, barcha
+#               sweeplar va kirish kuzatuvchilari shu yerda.
+# Holat (tanish statistikasi, slotlar, sweeplar, hodisalar) ular o'rtasida
+# Redis orqali ulashiladi — app/services/runtime_snapshot.py, redis_bus.py.
+#
+# server-pull.sh bu faylni override'dan KEYIN va gpu faylidan OLDIN qo'shadi.
+services:
+  api:
+    environment:
+      AI_ROLE: api
+      # Video arxiv O'CHIRILGAN (2026-09-26): yozuvlar NVR'ning o'zida saqlanadi.
+      RECORDING_ENABLED: "false"
+      RECORDING_RETENTION_HOURS: "4"
+    # HTTP + miniatyura/jonli video uchun ffmpeg. AI endi bu yerda emas.
+    cpus: 10
+    mem_limit: 24g
+
+  ai-worker:
+    extends:
+      file: docker-compose.yml
+      service: api
+    env_file:
+      - .env
+    environment:
+      AI_ROLE: worker
+      RECORDING_ENABLED: "false"
+      RECORDING_RETENTION_HOURS: "4"
+      # Bitta jarayon: AI baribir bitta leader'da ishlaydi, ikkinchi
+      # jarayon faqat xotira (modellar ~2-3 GB) sarflardi.
+      WEB_CONCURRENCY: "1"
+      VIDEO_IMPORT_DIR: /data/nvr-eksport
+    # Disk nazorati (app/jobs/event_clips.py) arxiv papkasini faqat o'qiydi.
+    # nvr-eksport — NVR tarmoqqa ulanmagan bo'lsa yozuvlar shu papkaga
+    # joylanadi ("fayl" turidagi NVR, docs/KUNLIK_VIDEO_TAHLIL.md).
+    volumes:
+      - ../recordings:/recordings:ro
+      - ../nvr-eksport:/data/nvr-eksport
+    # !override: `extends` bazadagi api'ning depends_on'ini (profil bilan
+    # o'chirilgan bitta-MediaMTX bilan birga) ko'chirib olmasin. MediaMTX
+    # shardlari va migratsiyalar api orqali kafolatlanadi — api esa ularga
+    # bog'liq (docker-compose.mediamtx-shard.yml).
+    depends_on: !override
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    # Tashqi port yo'q — faqat ichki tarmoqda.
+    ports: !reset []
+    restart: unless-stopped
+    cpus: 20
+    mem_limit: 60g
+    pids_limit: 10000
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"

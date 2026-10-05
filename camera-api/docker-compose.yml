@@ -1,0 +1,141 @@
+# NOTE: not compose-tested locally (Docker isn't installed on the machine
+# this was written on — see uvicorn.log-style caveat repeated across this
+# repo). Config follows standard patterns: healthcheck gating, named
+# volumes for data, secrets from a local .env (never committed).
+#
+# Usage: cp .env.example .env, fill in DB_PASSWORD/JWT_SECRET/ENCRYPTION_KEY/
+# S3_ACCESS_KEY/S3_SECRET_KEY, then `docker compose up --build`.
+#
+# Networking note: S3_ENDPOINT_URL below is the api container's internal
+# route to minio ("http://minio:9000") — that's what boto3 actually
+# connects to for uploads. S3_PUBLIC_ENDPOINT_URL is what the *browser*
+# needs ("http://localhost:9000", since minio's port is published to the
+# host below) — presigned URLs are signed against this instead, or the
+# browser gets a URL it can't resolve. Same split exists for MediaMTX:
+# MEDIAMTX_API_URL is container-to-container (path registration),
+# MEDIAMTX_HLS_BASE_URL is what LiveVideoPlayer.tsx in the browser fetches.
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: camera_api
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: camera_api
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camera_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    # Versiyalar qotirilgan: ":latest" har `up --build` da boshqa narsa
+    # olib kelishi mumkin edi. MinIO Docker Hub'da rasmlarni to'xtatgan —
+    # rasmiy rasmlar quay.io da. Yangilash: deploy/monitoring/README.md.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9020:9000"
+      - "9021:9001"
+    healthcheck:
+      # Yangi MinIO rasmida curl yo'q — ichidagi mc bilan tekshiriladi.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  createbuckets:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY} &&
+      mc mb -p local/${S3_BUCKET:-camera-uploads} &&
+      exit 0
+      "
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.0
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+    ports:
+      - "127.0.0.1:8554:8554" # RTSP (faqat serverning o'zi)
+      - "127.0.0.1:8888:8888" # HLS (brauzerga nginx orqali)
+      - "127.0.0.1:9997:9997" # control API (faqat serverning ozi uchun)
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+      mediamtx:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://camera_api:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/camera_api
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      PORT: 8080
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+      S3_BUCKET: ${S3_BUCKET:-camera-uploads}
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_HLS_BASE_URL: ${MEDIAMTX_HLS_BASE_URL:-http://localhost:8888}
+      # Internal HLS base for ffmpeg/frame_grabber inside Docker — rewrites
+      # browser-facing stream URLs before opening them (see frame_grabber.py).
+      MEDIAMTX_HLS_INTERNAL_BASE_URL: ${MEDIAMTX_HLS_INTERNAL_BASE_URL:-http://mediamtx:8888}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Joylangan git commit (deploy/server-pull.sh beradi) — /metrics dagi
+      # sm_app_info{version} va Grafana'da ko'rinadi.
+      APP_VERSION: ${APP_VERSION:-unknown}
+      AI_SCHEDULER_ENABLED: ${AI_SCHEDULER_ENABLED:-false}
+      # Number of uvicorn worker processes (see Dockerfile). Leave at 1 for
+      # a single low-traffic instance; scale up (e.g. 4) for production —
+      # each core can roughly handle one worker for this kind of I/O-bound
+      # API.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+    volumes:
+      # Persists InsightFace's downloaded ONNX models (~350MB, pulled from
+      # the internet on first face-recognition request) across container
+      # restarts/rebuilds — without this every `docker compose up --build`
+      # re-downloads them on the first enrollment/compare call.
+      - insightface_models:/home/appuser/.insightface
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
+  minio_data:
+  insightface_models:

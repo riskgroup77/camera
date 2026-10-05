@@ -1,0 +1,9 @@
+# Single MediaMTX with ffmpeg for H264 on-demand transcode (browser + AI frame grab).
+services:
+  mediamtx:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro

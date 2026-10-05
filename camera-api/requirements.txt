@@ -1,0 +1,59 @@
+fastapi==0.141.1
+uvicorn[standard]==0.38.0
+sqlalchemy[asyncio]==2.0.51
+asyncpg==0.31.0
+pydantic==2.13.4
+email-validator==2.3.0
+pydantic-settings==2.7.1
+alembic==1.14.0
+bcrypt==4.2.1
+pyjwt==2.10.1
+python-multipart==0.0.20
+python-dotenv==1.0.1
+cryptography==50.0.0
+slowapi==0.1.10
+redis==5.2.1
+# FAISS optional — CPU index for 50k+ enrolled faces at scale.
+# Install faiss-gpu instead on GPU servers if needed.
+faiss-cpu==1.15.0
+python-json-logger==4.1.0
+# Talabalar va xodimlar ro'yxatini .xlsx ga chiqarish — app/services/staff_export.py.
+# CSV ustunlari Excel'da lokalga qarab aralashib ochilardi.
+openpyxl==3.1.5
+boto3==1.43.62
+httpx==0.28.1
+# Prometheus /metrics (app/routers/metrics.py) — deploy/monitoring/ o'qiydi.
+prometheus-client==0.26.0
+insightface==1.0.1
+# CPU-only inference engine — this is what runs in dev and in tests here.
+# On the production GPU server, install onnxruntime-gpu==1.28.0 INSTEAD OF
+# this package (both provide the `onnxruntime` Python module; they
+# conflict installed together) and set FACE_RECOGNITION_GPU_ENABLED=true —
+# see app/services/face_recognition.py's _get_app() and .env.example.
+onnxruntime==1.28.0
+opencv-python-headless==5.0.0.93
+numpy==2.5.1
+psutil==7.2.2
+tzdata==2026.3
+# YOLOv8 (COCO-pretrained) object detection — app/services/object_detection.py.
+# Pulls in torch/torchvision (CPU wheel installed here, via plain PyPI). On
+# the production GPU server, install a CUDA-enabled torch build first (see
+# https://pytorch.org/get-started/locally/ for the right index URL for that
+# machine's CUDA version) BEFORE this line, then set
+# OBJECT_DETECTION_GPU_ENABLED=true — not verified in this environment
+# (no GPU here), unlike the onnxruntime-gpu swap documented above.
+# First real use downloads yolov8n.pt (~6MB) from Ultralytics' GitHub
+# releases — see app/config.py's object_detection_model_path.
+ultralytics==8.4.118
+# mediapipe Pose Landmarker — app/services/pose_detection.py. NOTE: pulls
+# in opencv-contrib-python, which REPLACES opencv-python-headless above
+# (both provide the same `cv2` module; installing mediapipe after
+# opencv-python-headless overwrites it in place — verified this doesn't
+# break any existing cv2 usage in this codebase, e.g. abandoned_object_ai.py's
+# MOG2 or disorder_ai.py's optical flow, both still present in the contrib
+# build). Needs pose_landmarker_lite.task (~5.5MB, Google's official
+# mediapipe model hub) downloaded once — see
+# app/config.py's pose_detection_model_path.
+mediapipe==1.0.0
+# PDF eksport (filtr natijalari) — app/services/pdf_export.py
+reportlab>=4.2,<5

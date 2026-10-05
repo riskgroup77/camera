@@ -1,0 +1,6 @@
+[Unit]
+Description=Wait for cam.fermi.uz DNS and install SSL
+
+[Service]
+Type=oneshot
+ExecStart=/opt/camera/deploy/wait-dns-and-ssl.sh

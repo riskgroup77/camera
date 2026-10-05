@@ -1,0 +1,6 @@
+# Repo ildizi faqat deploy/Dockerfile.mediamtx uchun build konteksti
+# (deploy/docker-compose.mediamtx-shard.yml, context: ..). U kontekstdan
+# hech narsa ko'chirmaydi — butun repo (node_modules, zaxiralar, .env)
+# Docker'ga har safar yuborilmasligi uchun hammasi chiqarib tashlanadi.
+*
+!deploy/Dockerfile.mediamtx

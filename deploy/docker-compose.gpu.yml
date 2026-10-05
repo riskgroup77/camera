@@ -1,0 +1,28 @@
+# GPU image + NVIDIA runtime (xostda nvidia-container-toolkit kerak:
+# deploy/install-nvidia-toolkit.sh). server-pull.sh bu faylni faqat
+# `nvidia-smi` ishlasa qo'shadi.
+#
+# AI ai-worker konteynerida (docker-compose.ai-worker.yml) — GPU asosan
+# o'shanga kerak. api ham GPU'ni ko'radi: yuz ro'yxatga olish va jonli
+# aniqlash so'rovlari ham tezlashadi (bitta GPU'ni bir nechta konteyner
+# bo'lishib ishlatishi mumkin).
+x-gpu: &gpu
+  build:
+    context: .
+    dockerfile: Dockerfile.gpu
+  # .env (env.production.scale) da ular false — GPU'siz xostda CUDA so'ralmasin.
+  # Bu fayl faqat GPU bor xostda qo'shiladi, shuning uchun shu yerda yoqiladi.
+  environment:
+    FACE_RECOGNITION_GPU_ENABLED: "true"
+    OBJECT_DETECTION_GPU_ENABLED: "true"
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  api: *gpu
+  ai-worker: *gpu

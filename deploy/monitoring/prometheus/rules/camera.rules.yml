@@ -1,0 +1,182 @@
+# Situatsion Markaz — ogohlantirish qoidalari. Alertmanager ularni Telegram'ga
+# yuboradi (alertmanager/). Chegaralar README'da tushuntirilgan; o'zgartirgach:
+#   curl -X POST http://127.0.0.1:19090/-/reload
+#
+# severity: critical — darhol chora; warning — ish vaqtida ko'rib chiqish.
+
+groups:
+  - name: camera-api
+    rules:
+      - alert: ApiIshlamayapti
+        expr: up{job="camera-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API javob bermayapti"
+          description: "Prometheus 2 daqiqadan beri camapi /metrics ni o'qiy olmayapti. Tekshiring: docker compose -f /opt/camera/camera-api/docker-compose.yml ps; curl http://127.0.0.1:18080/health"
+
+      - alert: MetrikaBazadanOlinmayapti
+        expr: sm_metrics_collect_success == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API bazadan ko'rsatkichlarni ololmayapti"
+          description: "/metrics bazaga so'rovda xato beryapti (API logida 'metrics database collection failed'). PostgreSQL holatini tekshiring."
+
+      - alert: KameralarOflayn20Foizdan
+        expr: |
+          (sm_cameras_active - sm_cameras_reachable) / clamp_min(sm_cameras_active, 1) > 0.2
+          and sm_cameras_active > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Faol kameralarning {{ $value | humanizePercentage }} tarmoqda javob bermayapti"
+          description: "20% dan ortiq faol kamera 10 daqiqadan beri oflayn. Tarmoq kommutatori, elektr yoki VLAN'ni tekshiring (Monitoring sahifasi)."
+
+      - alert: KameralarOflaynYarmidan
+        expr: |
+          (sm_cameras_active - sm_cameras_reachable) / clamp_min(sm_cameras_active, 1) > 0.5
+          and sm_cameras_active > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kameralarning yarmidan ko'pi oflayn ({{ $value | humanizePercentage }})"
+          description: "Katta tarmoq uzilishi ehtimoli — asosiy kommutator yoki server tarmoq kartasini tekshiring."
+
+      - alert: KameralarTasvirsiz
+        expr: |
+          (sm_cameras_reachable - sm_cameras_video_flowing) / clamp_min(sm_cameras_reachable, 1) > 0.3
+          and sm_cameras_reachable > 0
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tarmoqdagi kameralarning {{ $value | humanizePercentage }} tasvir bermayapti"
+          description: "Kamera tarmoqda javob beradi, lekin kadr kelmayapti — AI ulardan hech narsa ololmaydi. MediaMTX shardlari va RTSP parollarini tekshiring."
+
+      - alert: MuddatiOtganHodisalarKopaydi
+        expr: sm_events_overdue > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} ta hodisaning hal qilish muddati o'tgan"
+          description: "Operatorlar hodisalarni SLA muddatida yopmayapti. Hodisalar jurnalida 'Muddati o'tgan' filtrini oching."
+
+      - alert: KoribChiqilmaganHodisalarKop
+        expr: sm_events_unreviewed > 200
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} ta hodisa ko'rib chiqilmagan"
+          description: "Navbat to'planib qolmoqda — operator yetishmaydi yoki biror modul juda ko'p signal beryapti (Grafana: 'Hodisalar modul bo'yicha')."
+
+      - alert: IshVaqtidaDavomatYozilmayapti
+        # Toshkent = UTC+5: 10:00–17:00 mahalliy = 05–12 UTC; dushanba–shanba.
+        # Bugun "dam_olish" belgilangan bo'lsa ogohlantirilmaydi.
+        expr: |
+          ((sum(sm_attendance_records_today{status=~"keldi|kech_keldi"}) or vector(0)) == 0)
+          and on() (hour() >= 5 and hour() < 12)
+          and on() (day_of_week() >= 1 and day_of_week() <= 6)
+          and on() ((sum(sm_attendance_records_today{status="dam_olish"}) or vector(0)) == 0)
+          and on() (up{job="camera-api"} == 1)
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ish vaqtida bugun birorta ham kelish qayd etilmadi"
+          description: "Davomat AI (kirish kameralari) yoki turniket ishlamayapti. AI holati: Boshqaruv paneli → AI; kirish kameralari tasvirini tekshiring."
+
+      - alert: AiSweepKechikmoqda
+        expr: max by (name) (sm_ai_sweep_lagging) == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI moduli '{{ $labels.name }}' kechikmoqda"
+          description: "Sweep o'z intervalidan ancha sekin ishlayapti yoki osilib qolgan. Server yuklamasi va ai-worker logini tekshiring."
+
+      - alert: XabarlarYuborilmayapti
+        expr: sum(sm_notifications_last_hour{status="xato"}) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oxirgi soatda {{ $value }} ta xabar yuborilmadi"
+          description: "Telegram/SMS xatolari. Bildirishnomalar sahifasidagi jurnalni va bot tokenini tekshiring."
+
+  - name: server
+    rules:
+      - alert: DiskToldi85Foiz
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs"}) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} {{ $value | humanizePercentage }} to'ldi"
+          description: "Snapshotlar (MinIO), Docker obrazlari va loglarni tozalang yoki diskni kengaytiring."
+
+      - alert: DiskToldi95Foiz
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs"}) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} deyarli to'ldi ({{ $value | humanizePercentage }})"
+          description: "PostgreSQL va MinIO yozolmay qolishi mumkin — darhol joy bo'shating."
+
+      - alert: XotiraYuqori
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Server xotirasi {{ $value | humanizePercentage }} band"
+          description: "OOM xavfi. Grafana'da 'Konteynerlar xotirasi' panelidan qaysi konteyner ko'p olayotganini ko'ring."
+
+      - alert: ProtsessorYuqori
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU {{ $value | humanizePercentage }} band (15 daqiqa)"
+          description: "AI yuklamasi server imkoniyatidan oshgan bo'lishi mumkin — AI_GLOBAL_SWEEP_CONCURRENCY ni kamaytiring yoki GPU'ni tekshiring."
+
+      - alert: KonteynerXotiraChegarasida
+        expr: |
+          container_memory_working_set_bytes{name!=""}
+            / (container_spec_memory_limit_bytes{name!=""} > 0) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Konteyner {{ $labels.name }} xotira chegarasining {{ $value | humanizePercentage }} ida"
+          description: "Chegaraga yetsa konteyner OOM bilan qayta ishga tushadi."
+
+      - alert: NodeExporterIshlamayapti
+        expr: up{job="node"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node-exporter javob bermayapti — server ko'rsatkichlari yo'q"
+          description: "docker compose -f /opt/camera/deploy/monitoring/docker-compose.monitoring.yml ps"
+
+      - alert: CadvisorIshlamayapti
+        expr: up{job="cadvisor"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cAdvisor javob bermayapti — konteyner ko'rsatkichlari yo'q"
+          description: "docker compose -f /opt/camera/deploy/monitoring/docker-compose.monitoring.yml logs cadvisor"

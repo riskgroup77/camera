@@ -1,0 +1,16 @@
+[Unit]
+Description=Camera API daily backup (Postgres + MinIO)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/camera/camera-api
+Environment=BACKUP_DIR=/var/backups/camera-api
+Environment=BACKUP_RETENTION_DAYS=14
+ExecStart=/bin/bash scripts/backup_docker.sh
+StandardOutput=append:/var/log/camera-api-backup.log
+StandardError=append:/var/log/camera-api-backup.log
+
+[Install]
+WantedBy=multi-user.target

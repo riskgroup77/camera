@@ -1,0 +1,6 @@
+[Unit]
+Description=Wait for storage/stream fermi DNS and install SSL
+
+[Service]
+Type=oneshot
+ExecStart=/opt/camera/deploy/wait-dns-storage-stream.sh

@@ -1,0 +1,14 @@
+# Repodagi dashboardlar (deploy/monitoring/grafana/dashboards/*.json).
+# Grafana ichida tahrirlash saqlanmaydi — o'zgarishni JSON faylga yozing.
+apiVersion: 1
+
+providers:
+  - name: situatsion-markaz
+    folder: Situatsion Markaz
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana-dashboards
+      foldersFromFilesStructure: false

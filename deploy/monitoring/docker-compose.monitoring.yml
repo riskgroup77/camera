@@ -1,0 +1,135 @@
+# Situatsion Markaz — monitoring steki: Prometheus + Alertmanager (Telegram)
+# + Grafana + node-exporter (server) + cAdvisor (konteynerlar).
+#
+# Ishga tushirish (serverda, root): sudo bash /opt/camera/deploy/monitoring/up.sh
+# Batafsil: deploy/monitoring/README.md
+#
+# Tarmoq. API host'da faqat 127.0.0.1:18080 da ochiq
+# (deploy/docker-compose.override.yml). Prometheus, Alertmanager, Grafana va
+# node-exporter host tarmog'ida ishlaydi va FAQAT 127.0.0.1 da tinglaydi —
+# tashqaridan hech biriga to'g'ridan-to'g'ri kirib bo'lmaydi; Grafana
+# nginx orqali (deploy/monitoring/nginx/) ochiladi. Portlar ataylab
+# noodatiy: server boshqa loyihalar bilan bo'lishilgan (9100 = MinIO,
+# 8080 = nginx, 3000/9090 ko'pincha band).
+#
+#   Prometheus    127.0.0.1:19090
+#   Alertmanager  127.0.0.1:19093
+#   Grafana       127.0.0.1:13000
+#   node-exporter 127.0.0.1:19100
+#   cAdvisor      127.0.0.1:18081
+#
+# Versiyalar qotirilgan (":latest" emas) — yangilash README'da.
+
+name: camera-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-30d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-20GB}
+      - --web.listen-address=127.0.0.1:19090
+      # up.sh sozlamani qayta yuklash uchun (POST /-/reload) — faqat 127.0.0.1.
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    mem_limit: 4g
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    restart: unless-stopped
+    network_mode: host
+    command:
+      # up.sh .env dan yaratadi (Telegram tokeni shu faylda — gitignore'da).
+      - --config.file=/etc/alertmanager/alertmanager.generated.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=127.0.0.1:19093
+      - --web.external-url=${ALERTMANAGER_EXTERNAL_URL:-http://127.0.0.1:19093}
+      # Bitta nusxa — klaster porti ochilmaydi.
+      - --cluster.listen-address=
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    mem_limit: 256m
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "13000"
+      # Subdomen: https://monitor.cam.fermi.uz/ ; subpath: https://cam.fermi.uz/grafana/
+      # (subpath uchun GRAFANA_SERVE_FROM_SUB_PATH=true) — README.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://127.0.0.1:13000/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GRAFANA_SERVE_FROM_SUB_PATH:-false}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD ni deploy/monitoring/.env da bering}
+      GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_DATE_FORMATS_DEFAULT_TIMEZONE: Asia/Tashkent
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana-dashboards/situatsion-markaz.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana-dashboards:ro
+    mem_limit: 1g
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=127.0.0.1:19100
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($$|/)
+    volumes:
+      - /:/host:ro,rslave
+    mem_limit: 128m
+    logging: *logging
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      # Keraksiz (va juda ko'p qatorli) ko'rsatkichlar o'chiriladi.
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,hugetlb,referenced_memory,cpu_topology,resctrl,memory_numa
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "127.0.0.1:18081:8080"
+    mem_limit: 512m
+    logging: *logging
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

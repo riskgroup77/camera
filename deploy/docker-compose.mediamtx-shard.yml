@@ -1,0 +1,115 @@
+# MediaMTX horizontal sharding — 3 nodes on one host (path-based nginx: /s0 /s1 /s2).
+# Disables the single-node mediamtx service (profile legacy-single).
+# Portlar faqat 127.0.0.1 da: brauzer videoni host'dagi nginx orqali oladi
+# (imzolangan havolalar — deploy/nginx/cam-fermi-stream-locations.conf),
+# API konteyneri esa Docker tarmog'i orqali (mediamtx-N:8888). LAN'dan
+# to'g'ridan-to'g'ri 192.168.0.101:8888 ga kirib himoyani chetlab o'tib
+# bo'lmaydi.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f deploy/docker-compose.mediamtx-shard.yml up -d
+
+services:
+  mediamtx:
+    profiles: ["legacy-single"]
+
+  mediamtx-0:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
+    volumes:
+      # To'g'ridan-to'g'ri deploy/ dagi fayl. Ilgari ./mediamtx.yml edi —
+      # compose uni camera-api/ ga nisbatan ochadi, u yerda esa gitdagi
+      # STANDART konfiguratsiya turadi (hlsCDNSecret yo'q -> ?cookieCheck=1
+      # ga imzosiz 302 -> nginx 403). 2026-09-24 da shardlar qayta
+      # yaratilganda hamma jonli video shu sababli to'xtagan.
+      - ../deploy/mediamtx.yml:/mediamtx.yml:ro
+      # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
+      # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
+      # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
+      - ../recordings:/recordings
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+      MTX_PLAYBACK: "yes"
+      MTX_PLAYBACKADDRESS: ":9996"
+      # WebRTC media porti — ichkarida ham xostda ham bir xil raqam (brauzerga
+      # aynan shu port e'lon qilinadi). Faqat LAN manzilida.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8189"
+      MTX_WEBRTCADDITIONALHOSTS: "192.168.0.101"
+    ports:
+      - "127.0.0.1:8554:8554"
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:9997:9997"
+      - "192.168.0.101:8189:8189/udp"
+
+  mediamtx-1:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
+    volumes:
+      - ../deploy/mediamtx.yml:/mediamtx.yml:ro
+      # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
+      # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
+      # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
+      - ../recordings:/recordings
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+      MTX_PLAYBACK: "yes"
+      MTX_PLAYBACKADDRESS: ":9996"
+      # WebRTC media porti — ichkarida ham xostda ham bir xil raqam (brauzerga
+      # aynan shu port e'lon qilinadi). Faqat LAN manzilida.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8190"
+      MTX_WEBRTCADDITIONALHOSTS: "192.168.0.101"
+    ports:
+      - "127.0.0.1:8555:8554"
+      - "127.0.0.1:8889:8888"
+      - "127.0.0.1:9998:9997"
+      - "192.168.0.101:8190:8190/udp"
+
+  mediamtx-2:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mediamtx
+    image: camera-mediamtx-ffmpeg:latest
+    volumes:
+      - ../deploy/mediamtx.yml:/mediamtx.yml:ro
+      # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
+      # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
+      # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
+      - ../recordings:/recordings
+    restart: unless-stopped
+    environment:
+      MTX_API: "yes"
+      MTX_APIADDRESS: ":9997"
+      MTX_PLAYBACK: "yes"
+      MTX_PLAYBACKADDRESS: ":9996"
+      # WebRTC media porti — ichkarida ham xostda ham bir xil raqam (brauzerga
+      # aynan shu port e'lon qilinadi). Faqat LAN manzilida.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8191"
+      MTX_WEBRTCADDITIONALHOSTS: "192.168.0.101"
+    ports:
+      - "127.0.0.1:8556:8554"
+      - "127.0.0.1:8890:8888"
+      - "127.0.0.1:9999:9997"
+      - "192.168.0.101:8191:8191/udp"
+
+  api:
+    depends_on: !override
+      db:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mediamtx-0:
+        condition: service_started
+      mediamtx-1:
+        condition: service_started
+      mediamtx-2:
+        condition: service_started

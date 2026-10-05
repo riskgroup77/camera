@@ -1,0 +1,11 @@
+# MediaMTX + static ffmpeg for on-demand H264 browser transcoding (runOnDemand).
+# Versiya camera-api/docker-compose.yml dagi mediamtx bilan bir xil bo'lsin.
+FROM bluenviron/mediamtx:1.21.0 AS mtx
+
+FROM mwader/static-ffmpeg:7.1 AS ffmpeg
+
+FROM scratch
+COPY --from=mtx /mediamtx /mediamtx
+COPY --from=ffmpeg /ffmpeg /ffmpeg
+
+ENTRYPOINT ["/mediamtx"]

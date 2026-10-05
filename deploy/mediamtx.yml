@@ -1,0 +1,57 @@
+# MediaMTX — production (3-shard). LL-HLS for low browser latency.
+api: yes
+apiAddress: :9997
+
+hls: yes
+hlsAddress: :8888
+# fmp4 — barqaror; lowLatency ba'zi kameralarda "muxer instance not available" beradi
+hlsVariant: fmp4
+# 2026-09-19: kameralar substream'i H.264 va GOP=1s ga o'tkazildi
+# (scripts/camera_stream_settings.py --faqat-sub). Segment faqat kalit kadrda
+# kesiladi — endi 1 s segment mumkin, jonli kechikish ~2-3 s gacha tushadi.
+# 7 segment (7 s oyna) — sekin tarmoqdagi pleyerga ham 404 siz yetadi.
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsMuxerCloseAfter: 120s
+hlsAllowOrigins: ["*"]
+# Nginx Bearer bilan session o'chiriladi — 401/404 kamayadi
+hlsCDNSecret: fermi-hls-cdn-secret-2026
+
+rtspAddress: :8554
+
+# Jonli video WebRTC orqali (~0.3-0.5 s; HLS'da 4-8 s). Signalizatsiya
+# (WHEP) faqat autentifikatsiyali API orqali (camera-api/app/routers/public.py,
+# /whep) — 8889 porti xostga umuman chiqarilmaydi. Media (DTLS-SRTP) UDP'da,
+# faqat LAN manzilida: har shard o'z portida (docker-compose.mediamtx-shard.yml).
+# Docker ichki manzillari e'lon qilinmaydi — brauzer ularga yeta olmaydi.
+webrtc: yes
+webrtcAddress: :8889
+webrtcIPsFromInterfaces: no
+webrtcLocalTCPAddress: ""
+
+authMethod: internal
+authInternalUsers:
+  # Oqimni faqat konteyner ichidagi ffmpeg nashr qiladi (runOnDemand ->
+  # rtsp://127.0.0.1, camera-api/app/services/video_gateway.py). Ilgari
+  # LAN'dagi har kim istalgan nomga o'z videosini nashr qila olardi.
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+  # Ko'rish va boshqaruv — faqat ichki tarmoqlardan: API konteyneri (Docker
+  # tarmog'i) va host'dagi nginx (Docker ko'prigi orqali). Brauzer bu yerga
+  # to'g'ridan-to'g'ri emas, faqat nginx'dagi imzolangan havola orqali keladi.
+  - user: any
+    pass:
+    ips: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+    permissions:
+      - action: read
+      - action: playback
+      - action: api
+
+paths:
+  all_others:

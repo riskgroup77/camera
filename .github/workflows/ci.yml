@@ -1,0 +1,224 @@
+# CI: har push va pull request'da frontend va backend tekshiruvi.
+# Deploy (.github/workflows/deploy.yml) faqat shu workflow main'da muvaffaqiyatli
+# tugagandan keyin ishga tushadi.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (lint, test, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Unit testlar (vitest)
+        run: npm test
+
+      - name: Build (tsc + vite)
+        env:
+          APP_VERSION: ${{ github.sha }}
+        run: npm run build
+
+      - name: PWA fayllari build'da bor
+        run: |
+          for f in dist/index.html dist/sw.js dist/manifest.webmanifest dist/icons/icon-192.png dist/icons/icon-512.png; do
+            test -s "$f" || { echo "::error::$f yo'q"; exit 1; }
+          done
+          grep -q 'rel="manifest"' dist/index.html
+
+  backend:
+    name: Backend (migratsiyalar, pytest)
+    runs-on: ubuntu-24.04
+    # Testlar ketma-ket (umumiy test bazasi): 60 daqiqaga sig'may qoldi.
+    timeout-minutes: 150
+    defaults:
+      run:
+        working-directory: camera-api
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: camera_api
+          POSTGRES_PASSWORD: camera_api_ci_pw
+          POSTGRES_DB: camera_api
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U camera_api"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # Testlar uchun soxta sirlar (haqiqiy emas). ENCRYPTION_KEY — Fernet
+      # formatidagi 32 baytli base64 kalit, faqat CI uchun.
+      DATABASE_URL: postgresql+asyncpg://camera_api:camera_api_ci_pw@127.0.0.1:5432/camera_api
+      TEST_DATABASE_URL: postgresql+asyncpg://camera_api:camera_api_ci_pw@127.0.0.1:5432/camera_api_test
+      JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else-0123456789
+      ENCRYPTION_KEY: Y2ktb25seS1lbmNyeXB0aW9uLWtleS0wMTIzNDU2Nzg=
+      S3_ENDPOINT_URL: http://127.0.0.1:9000
+      S3_ACCESS_KEY: ci_minio_user
+      S3_SECRET_KEY: ci_minio_password_123
+      S3_BUCKET: camera-uploads
+      MEDIAMTX_API_URL: http://127.0.0.1:9997
+      # Unit testlar Redis'siz (jarayon ichidagi holat; Redis kerak joyda
+      # soxtalashtiriladi). Haqiqiy Redis pastdagi "Smoke" qadamida ishlatiladi.
+      REDIS_URL: ""
+      SEED_DEMO_USERS: "true"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          # camera-api/Dockerfile bilan bir xil (python:3.14-slim).
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            camera-api/requirements.txt
+            camera-api/requirements-dev.txt
+
+      - name: Tizim kutubxonalari (Dockerfile bilan bir xil)
+        working-directory: .
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 libgomp1
+
+      - name: Python kutubxonalari
+        run: |
+          python -m pip install --upgrade pip wheel
+          # CPU torch avval — aks holda ultralytics PyPI'dagi CUDA torch'ni
+          # (~3 GB nvidia-* paketlari bilan) tortadi.
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 torchvision==0.29.0
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: MinIO va MediaMTX (health va storage testlari uchun)
+        working-directory: .
+        run: |
+          # MinIO 2025-yil oxirida rasmiy rasmlarini (quay.io, Docker Hub)
+          # va dl.min.io dagi fayllarni yopdi — anonim yuklash 401/410.
+          # Bitnami'ning arxivlangan rasmi ochiq; bucket'ni o'zi yaratadi
+          # (MINIO_DEFAULT_BUCKETS), shuning uchun mc rasmi kerak emas.
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$S3_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
+            -e MINIO_DEFAULT_BUCKETS="$S3_BUCKET" \
+            bitnamilegacy/minio:2025.7.23-debian-12-r5
+          docker run -d --name mediamtx -p 9997:9997 -p 8888:8888 -p 8554:8554 \
+            -e MTX_API=yes -e MTX_APIADDRESS=:9997 \
+            bluenviron/mediamtx:1.21.0
+          # Bucket mavjud bo'lsa anonim so'rov 403 qaytaradi (yo'q bo'lsa 404).
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:9000/$S3_BUCKET" || true)
+            [ "$code" = "403" ] && break
+            sleep 2
+          done
+          [ "$code" = "403" ] || { echo "::error::MinIO bucket tayyor emas (HTTP $code)"; docker logs minio | tail -30; exit 1; }
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9997/v3/paths/list >/dev/null && break
+            sleep 2
+          done
+
+      - name: Test bazasini yaratish
+        run: |
+          PGPASSWORD=camera_api_ci_pw psql -h 127.0.0.1 -U camera_api -d camera_api \
+            -c "CREATE DATABASE camera_api_test"
+
+      - name: Migratsiyalar toza bazada (alembic upgrade head)
+        run: |
+          alembic upgrade head
+          # Bitta head bo'lishi shart (parallel branchlar birlashtirilmagan bo'lsa ushlanadi).
+          test "$(alembic heads | wc -l)" -eq 1 || { alembic heads; echo "::error::Bir nechta alembic head"; exit 1; }
+          # `alembic check` hozircha qo'shilmagan: modellar va migratsiyalar
+          # orasida ma'lum kichik farqlar bor (created_at NOT NULL, ikki indeks) —
+          # ular alohida migratsiya bilan tuzatilgach yoqiladi.
+
+      # Har test 5 daqiqa bilan cheklangan: osilib qolgan test butun ishni
+      # 60 daqiqalik chegaraga olib bormaydi (2026-09-24 dagi ikki CI shunday
+      # bekor bo'lgan) — nomi va stek izi bilan yiqiladi.
+      - name: Pytest
+        run: >-
+          python -m pytest -q -p no:cacheprovider -W ignore::DeprecationWarning --durations=15
+          --timeout=300 --junitxml=/tmp/pytest.xml
+
+      # To'liq log faqat tizimga kirganlarga ko'rinadi; yiqilgan va eng sekin
+      # testlar annotatsiya sifatida (ochiq repoda hammaga) chiqariladi.
+      - name: Test natijalari xulosasi
+        if: always()
+        run: |
+          [ -s /tmp/pytest.xml ] || exit 0
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("/tmp/pytest.xml").getroot()
+          cases = list(root.iter("testcase"))
+          failed = [c for c in cases if c.find("failure") is not None or c.find("error") is not None]
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          print(f"::notice title=Pytest::{len(cases)} test, {len(failed)} yiqildi, {float(suite.get('time', 0)) / 60:.1f} daq")
+          for case in failed[:20]:
+              node = case.find("failure") if case.find("failure") is not None else case.find("error")
+              message = (node.get("message") or "").replace("\n", " ")[:300]
+              print(f"::error title={case.get('classname')}.{case.get('name')}::{message}")
+          slow = sorted(cases, key=lambda c: -float(c.get("time", 0)))[:8]
+          print("::notice title=Eng sekin testlar::" + "; ".join(
+              f"{c.get('classname').rsplit('.', 1)[-1]}.{c.get('name')} {float(c.get('time', 0)):.0f}s" for c in slow))
+          PY
+
+      - name: "Smoke: API ishga tushadi (/health, /metrics)"
+        env:
+          REDIS_URL: redis://127.0.0.1:6379/0
+          AI_ROLE: api
+          AI_SCHEDULER_ENABLED: "false"
+          APP_VERSION: ${{ github.sha }}
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8080 >/tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8080/health >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8080/health; echo
+          curl -sf http://127.0.0.1:8080/metrics >/tmp/metrics.txt
+          grep -E '^sm_(cameras_total|events_unreviewed|metrics_collect_success|app_info)' /tmp/metrics.txt
+          grep -q '^sm_metrics_collect_success 1' /tmp/metrics.txt
+
+      - name: Xizmat loglari (xato bo'lsa)
+        if: failure()
+        working-directory: .
+        run: |
+          cat /tmp/uvicorn.log 2>/dev/null | tail -100 || true
+          docker logs minio 2>&1 | tail -50 || true
+          docker logs mediamtx 2>&1 | tail -50 || true

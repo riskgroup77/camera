@@ -1,0 +1,33 @@
+# `COPY . .` (Dockerfile) — obrazga faqat ilova kodi, migratsiyalar,
+# skriptlar va model fayllari tushishi kerak.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+.git/
+
+# Maxfiy va shaxsiy ma'lumotlar. backups/ — scripts/backup_docker.sh ning
+# standart katalogi: to'liq baza nusxasi (yuz vektorlari, JSHSHIR) va MinIO
+# obyektlari. Obrazga tushsa, obrazni olgan har kim ularni oladi.
+.env
+.env.*
+!.env.example
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.tar
+*.tar.gz
+*.key
+*.crt
+*.pem
+hodisa-rasmlar/
+
+# Ish jarayoni qoldiqlari
+*.log
+*.bak
+*.orig
+docs/
+docker-compose*.yml
+mediamtx.yml

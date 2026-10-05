@@ -1,0 +1,8 @@
+# server-pull.sh yozadigan holat fayllari (serverda)
+.deployed
+.deployed.*
+# Monitoring maxfiy sozlamalari (deploy/monitoring/.env.example dan nusxa)
+monitoring/.env
+monitoring/alertmanager/alertmanager.generated.yml
+monitoring/prometheus/secrets/
+__pycache__/

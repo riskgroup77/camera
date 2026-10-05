@@ -1,0 +1,313 @@
+import { useState, type FormEvent } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { AlertCircle, Eye, EyeOff, Lock, ShieldCheck, User } from 'lucide-react';
+import { useAuth, DEMO_CREDENTIALS, type AuthResult, type DemoRole } from '../../lib/auth';
+import { isBackendConfigured } from '../../lib/config';
+import ForgotPasswordModal from '../../components/admin/ForgotPasswordModal';
+import { normalizeAuthErrorText } from '../../components/admin/authErrors';
+import { homeForRole } from '../../layouts/shell/navConfig';
+import { Button, CodeText, Field, IconButton, Input, MicroLabel, Tabs, cn, focusRing } from '../../ui';
+
+interface FieldErrors {
+  login?: string;
+  password?: string;
+  code?: string;
+  form?: string;
+}
+
+export function validateLogin(login: string): string | undefined {
+  if (!login.trim()) return 'Login kiritilishi shart';
+  if (login.trim().length < 3) return "Login kamida 3 belgidan iborat bo'lishi kerak";
+}
+
+/** Parol SERVERGA `trim()` qilingan holda ketadi — tekshiruv ham shunga
+ *  qarab bo'lishi shart. Ilgari faqat `password.length` ko'rilardi: olti
+ *  bo'sh joy "yaroqli parol" hisoblanib, serverga bo'sh satr yuborilardi
+ *  va foydalanuvchi "Login yoki parol noto'g'ri" degan chalg'ituvchi
+ *  javobni olardi (aslida u hech narsa kiritmagan edi). */
+export function validatePassword(password: string): string | undefined {
+  const value = password.trim();
+  if (!value) return 'Parol kiritilishi shart';
+  if (value.length < 6) return "Parol kamida 6 belgidan iborat bo'lishi kerak";
+}
+
+/**
+ * Kirishdan keyin qaytish manzili: FAQAT shu saytning ichki yo'li.
+ *
+ * `state.from` — foydalanuvchi bosgan havoladan kelib chiqadi, ya'ni
+ * begona sayt uni /kirish'ga o'zi yasagan `from` bilan yubora oladi.
+ * "//evil.com" tekshirilardi, lekin brauzerlar "/\evil.com" ni ham
+ * PROTOKOLSIZ TASHQI manzil deb o'qiydi: natija — hisobga kirgan zahoti
+ * begona saytga otilish, ya'ni ishonchli ko'ringan fishing sahifasi.
+ * Endi birinchi belgidan keyin qiyshiq yoki teskari chiziq bo'lsa ham
+ * rad etiladi.
+ */
+export function safeReturnPath(from: unknown): string | null {
+  if (typeof from !== 'string' || from.length > 2048) return null;
+  if (!from.startsWith('/')) return null;
+  // "//host", "/\host" — ikkalasi ham tashqi manzil.
+  if (/^\/[/\\]/.test(from)) return null;
+  // Boshqaruv belgilari va bo'shliqlar bilan tekshiruvni chetlab o'tish.
+  if (/[\x00-\x1f\x7f\s]/.test(from)) return null;
+  const path = from.split(/[?#]/)[0];
+  if (path === '/kirish' || path === '/parolni-tiklash' || path.startsWith('/kirish/') || path.startsWith('/parolni-tiklash/')) return null;
+  return from;
+}
+
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const auth = useAuth();
+  // Bu tanlov faqat DEMO rejim uchun: backend ulangan bo'lsa rol
+  // serverdan keladi (kamera mas'uli ham shu yo'l bilan kiradi).
+  const [role, setRole] = useState<DemoRole>('super-admin');
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [touched, setTouched] = useState<{ login?: boolean; password?: boolean }>({});
+  const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  // Ikkinchi qadam (2FA): parol to'g'ri bo'lganda server bergan chaqiruv.
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+
+  // Allaqachon kirgan foydalanuvchi /kirish'ni ochsa — o'z bosh sahifasiga.
+  if (auth.role && !loading) return <Navigate to={homeForRole(auth.role)} replace />;
+
+  function handleBlur(field: 'login' | 'password') {
+    setTouched((t) => ({ ...t, [field]: true }));
+    setErrors((e) => ({
+      ...e,
+      login: field === 'login' ? validateLogin(login) : e.login,
+      password: field === 'password' ? validatePassword(password) : e.password,
+    }));
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    const loginError = validateLogin(login);
+    const passwordError = validatePassword(password);
+    setTouched({ login: true, password: true });
+
+    if (loginError || passwordError) {
+      setErrors({ login: loginError, password: passwordError });
+      return;
+    }
+
+    setErrors({});
+    setLoading(true);
+
+    finish(await auth.authenticate(role, login, password));
+  }
+
+  function finish(result: AuthResult) {
+    if (result.ok) {
+      // Haqiqiy rol backend javobidan olinadi (yoki demo rejimida tekshirilgan
+      // hisobdan) — rol tanlagich faqat qaysi demo login/parolni ko'rsatish
+      // uchun, xavfsizlik chegarasi emas.
+      auth.login(result.role, result.userName, result.token);
+      const from = safeReturnPath((location.state as { from?: string } | null)?.from);
+      navigate(from ?? homeForRole(result.role), { replace: true });
+      return;
+    }
+    setLoading(false);
+    if ('twoFactor' in result) {
+      // Parol to'g'ri — endi ilovadagi kod. Parol xotirada qolmasin.
+      setPassword('');
+      setCode('');
+      setChallenge(result.challenge);
+      setErrors({});
+      return;
+    }
+    // Chegaradan o'tilgan 429 javobi "So'rov muvaffaqiyatsiz tugadi (429)"
+    // bo'lib kelardi — authErrors.ts izohiga qarang.
+    setErrors({ form: normalizeAuthErrorText(result.error) });
+  }
+
+  async function handleCodeSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!challenge) return;
+    const cleaned = code.replace(/[\s-]+/g, '');
+    if (!/^\d{6}$/.test(cleaned)) {
+      setErrors({ code: 'Ilovadagi 6 xonali kodni kiriting' });
+      return;
+    }
+    setErrors({});
+    setLoading(true);
+    const result = await auth.verifyTwoFactor(challenge, cleaned);
+    if (!result.ok && !('twoFactor' in result) && /muddati tugagan/i.test(result.error)) {
+      // Chaqiruv (5 daqiqa) eskirgan — parol bosqichiga qaytamiz.
+      setChallenge(null);
+      setLoading(false);
+      setErrors({ form: normalizeAuthErrorText(result.error) });
+      return;
+    }
+    finish(result);
+  }
+
+  function backToPassword() {
+    setChallenge(null);
+    setCode('');
+    setErrors({});
+  }
+
+  if (challenge) {
+    return (
+      <div>
+        <h1 className="border-b border-border pb-2.5 text-[16px] font-semibold tracking-tight text-fg">
+          Ikki bosqichli kirish
+        </h1>
+        <p className="mt-3 text-[13px] text-muted">
+          Autentifikator ilovasidagi 6 xonali kodni kiriting.
+        </p>
+        <form onSubmit={handleCodeSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
+          {errors.form && (
+            <div role="alert" className="flex items-start gap-2 rounded-control border border-danger/35 bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{errors.form}</span>
+            </div>
+          )}
+          <Field label="Kod" error={errors.code}>
+            <Input
+              icon={ShieldCheck}
+              size="lg"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              maxLength={7}
+              autoFocus
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                setErrors((prev) => (prev.form || prev.code ? {} : prev));
+              }}
+            />
+          </Field>
+          <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+            {loading ? 'Tekshirilmoqda…' : 'Tasdiqlash'}
+          </Button>
+          <div className="flex justify-center">
+            <button type="button" onClick={backToPassword} className={cn('rounded text-[13px] font-medium text-primary hover:underline', focusRing)}>
+              Orqaga
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+
+  return (
+    <>
+      <div>
+        <h1 className="border-b border-border pb-2.5 text-[16px] font-semibold tracking-tight text-fg">
+          Tizimga kirish
+        </h1>
+
+        {/* Rol tanlash faqat DEMO rejimida (backendsiz) ma'noli — qaysi demo
+            hisobni ko'rsatishni tanlaydi. Haqiqiy tizimda rolni server
+            hisobning o'zidan aniqlaydi. */}
+        {!isBackendConfigured && (
+          <div className="mt-4">
+            <MicroLabel className="mb-1.5 block">Demo hisob</MicroLabel>
+            <Tabs
+              variant="segmented"
+              ariaLabel="Demo hisob"
+              className="w-full [&>button]:flex-1 [&>button]:justify-center"
+              tabs={[
+                { id: 'super-admin', label: 'Super Admin' },
+                { id: 'admin', label: 'Admin' },
+              ]}
+              value={role}
+              onChange={(value) => setRole(value as DemoRole)}
+            />
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
+          {errors.form && (
+            <div role="alert" className="flex items-start gap-2 rounded-control border border-danger/35 bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{errors.form}</span>
+            </div>
+          )}
+
+          <Field label="Login" error={touched.login ? errors.login : undefined}>
+            <Input
+              icon={User}
+              size="lg"
+              type="text"
+              placeholder={isBackendConfigured ? 'Loginingiz' : 'admin'}
+              autoComplete="username"
+              // Mobil klaviatura birinchi harfni O'ZI kattalashtiradi va
+              // avto-tuzatish loginni o'zgartirib yuboradi: "admin" o'rniga
+              // "Admin" ketib, server "Login yoki parol noto'g'ri" deydi —
+              // foydalanuvchi esa parolini qidirib ovora bo'ladi.
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              value={login}
+              onChange={(e) => {
+                setLogin(e.target.value);
+                // Server xatosi ("parol noto'g'ri") eski kiritmaga tegishli —
+                // foydalanuvchi tuzata boshlagach ko'rinib turmasligi kerak.
+                setErrors((prev) => (prev.form ? { ...prev, form: undefined } : prev));
+              }}
+              onBlur={() => handleBlur('login')}
+            />
+          </Field>
+
+          <Field label="Parol" error={touched.password ? errors.password : undefined}>
+            <Input
+              icon={Lock}
+              size="lg"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setErrors((prev) => (prev.form ? { ...prev, form: undefined } : prev));
+              }}
+              onBlur={() => handleBlur('password')}
+              trailing={
+                <IconButton
+                  icon={showPassword ? EyeOff : Eye}
+                  label={showPassword ? 'Parolni yashirish' : "Parolni ko'rsatish"}
+                  size="sm"
+                  pressed={showPassword}
+                  onClick={() => setShowPassword((v) => !v)}
+                />
+              }
+            />
+          </Field>
+
+          <div className="-mt-1 flex justify-end">
+            <button type="button" onClick={() => setForgotOpen(true)} className={cn('rounded text-[13px] font-medium text-primary hover:underline', focusRing)}>
+              Parolni unutdingizmi?
+            </button>
+          </div>
+
+          <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+            {loading ? 'Tekshirilmoqda…' : 'Kirish'}
+          </Button>
+
+          {/* Production'da bu yozuv Super Admin parolini hammaga ko'rsatardi. */}
+          {!isBackendConfigured && (
+            <p className="flex items-center justify-center gap-2 border-t border-border pt-2.5">
+              <MicroLabel>Demo</MicroLabel>
+              <CodeText className="text-[12px] text-muted">
+                {DEMO_CREDENTIALS[role].login} / {DEMO_CREDENTIALS[role].password}
+              </CodeText>
+            </p>
+          )}
+        </form>
+      </div>
+
+      <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
+    </>
+  );
+}

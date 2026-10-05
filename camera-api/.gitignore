@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+
+# Backups (scripts/backup_postgres.sh, scripts/backup_minio.py) contain
+# real data — DB dumps, uploaded photos/passports — never commit them.
+backups/
+
+# Talabalar kontingenti (scripts/import_talabalar.py export) — JSHSHIR va
+# pasport raqamlari. Repozitoriy ochiq: bu fayllar hech qachon commit
+# qilinmasin.
+talabalar*.json
+*.xlsx
+
+# Pretrained model weights — downloaded on demand by ultralytics (see
+# app/services/object_detection.py) and mediapipe (see
+# app/services/pose_detection.py), not source; large binaries don't
+# belong in git.
+*.pt
+*.task
+
+# Self-signed TLS cert/key auto-generated locally by MediaMTX — regenerated
+# per-machine, and private keys don't belong in git even when self-signed.
+auto.crt
+auto.key
+
+# Yozib olingan videolar (scripts/video_tahlil.py) — repoga kirmaydi
+nvr-eksport/

@@ -1,0 +1,880 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------
+ * Dizayn tokenlari. Qiymatlar "R G B" — Tailwind `bg-primary/10` kabi
+ * shaffoflikni shu orqali quradi (tailwind.config.js).
+ *
+ * Tizim faqat YORUG' ishlaydi (2026-09-21). Qorong'i mavzu olib
+ * tashlandi: hujjat ekranda ham, qog'ozda ham bir xil ko'rinishi kerak,
+ * ikkita palitrani parallel to'g'ri saqlash esa doimiy xato manbai edi.
+ * ------------------------------------------------------------------ */
+@layer base {
+  :root,
+  [data-theme='light'] {
+    color-scheme: light;
+
+    /* Tizimning yangi bazasi: yorug', keng va xotirjam. Oqartirilgan
+       ko'k fon kontentni ajratadi, lekin hech qachon "terminal" emas. */
+    --c-bg: 244 248 255;
+    --c-surface: 255 255 255;
+    --c-surface-2: 248 251 255;
+    --c-surface-3: 237 244 255;
+    --c-border: 220 230 245;
+    --c-border-strong: 183 203 235;
+
+    --c-fg: 19 35 67;
+    --c-muted: 93 111 144;
+    --c-subtle: 146 161 189;
+
+    /* Chuqur indigo asosida, jonli osmonday ko'k aksent. */
+    --c-primary: 45 83 222;
+    --c-primary-fg: 255 255 255;
+    --c-primary-soft: 235 240 255;
+
+    /* Svetofor: yashil / sariq / qizil. To'yingan emas — bosma hujjatda
+       ham xunuk ko'rinmasin. */
+    --c-success: 19 149 108;
+    --c-success-fg: 255 255 255;
+    --c-success-soft: 229 249 240;
+
+    --c-warning: 210 135 20;
+    --c-warning-fg: 255 255 255;
+    --c-warning-soft: 255 246 224;
+
+    --c-danger: 221 75 91;
+    --c-danger-fg: 255 255 255;
+    --c-danger-soft: 255 237 240;
+
+    --c-info: 29 128 216;
+    --c-info-fg: 255 255 255;
+    --c-info-soft: 232 246 255;
+
+    /* Grafik seriyalari (kategoriyalar) — src/ui/chartTheme.ts o'qiydi. */
+    --c-chart-1: 37 99 235;
+    --c-chart-2: 13 148 136;
+    --c-chart-3: 124 58 237;
+    --c-chart-4: 217 119 6;
+    --c-chart-5: 219 39 119;
+    --c-chart-6: 100 116 139;
+
+    --shadow-card: 0 18px 42px -28px rgb(51 81 145 / 0.32), 0 2px 8px rgb(51 81 145 / 0.05);
+    --shadow-pop: 0 28px 72px -30px rgb(30 54 112 / 0.34), 0 8px 22px rgb(30 54 112 / 0.12);
+    --shadow-hover: 0 20px 34px -22px rgb(45 83 222 / 0.36), 0 0 0 1px rgb(var(--c-primary) / 0.16);
+    /* Qorong'ida sirtning ustki 1px yorug' qirrasi (yorug'da yo'q). */
+    --edge-highlight: inset 0 0 0 0 transparent;
+    --shimmer: 255 255 255;
+  }
+
+  /* Qorong'i mavzu olib tashlandi (2026-09-21): tizim faqat yorug'
+     ishlaydi — yarim qorong'i ekranlar va ikki xil kontrast muammosi
+     yo'qoldi. `data-theme` atributi zararsiz qoladi. */
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Taqdimot rejimi (devor ekrani): hamma narsa rem'da — bitta joydan kattalashadi. */
+  html[data-presentation='true'] {
+    font-size: 112.5%;
+  }
+
+  body {
+    @apply bg-bg font-sans text-fg antialiased;
+    background-image:
+      radial-gradient(circle at 0% 0%, rgb(116 178 255 / 0.17), transparent 32rem),
+      radial-gradient(circle at 100% 14%, rgb(169 143 255 / 0.12), transparent 30rem);
+    background-attachment: fixed;
+  }
+
+  [data-theme] {
+    color: rgb(var(--c-fg));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-primary) / 0.7);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.011em;
+    text-wrap: balance;
+  }
+
+  h1 {
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: rgb(var(--c-primary) / 0.2);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--c-border-strong)) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Katta raqamlar: teng kenglikdagi raqamlar + zich harf oralig'i. */
+  .text-display {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'cv11', 'ss01';
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+
+  /* Skeleton ustidan o'tuvchi yaltirash (prefers-reduced-motion'da — o'chadi). */
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(var(--shimmer) / 0.55), transparent);
+    animation: ui-shimmer 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer::after {
+      display: none;
+    }
+  }
+
+  /* Bosiladigan sirt: hover'da yengil ko'tarilish. */
+  .lift {
+    transition:
+      transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 160ms ease,
+      border-color 160ms ease;
+  }
+  .lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-hover);
+  }
+  .lift:active {
+    transform: translateY(0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lift:hover {
+      transform: none;
+    }
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * ESKI sinflar — hali yangi dizayn tizimiga ko'chirilmagan sahifalar
+ * uchun (2-bosqichda o'chiriladi). Ular ATAYLAB doim yorug' ko'rinadi:
+ * ichidagi matnlar qattiq `text-slate-*` bilan yozilgan, qorong'i
+ * mavzuda ham o'qilishi uchun. Yangi kodda ishlatmang — src/ui.
+ * ------------------------------------------------------------------ */
+@keyframes ui-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@layer components {
+  .glass {
+    @apply rounded-card border border-slate-200/80 bg-white text-slate-900 shadow-card;
+  }
+
+  .glass-deep {
+    @apply rounded-control border border-slate-200/80 bg-white text-slate-900;
+  }
+
+  .btn-glass {
+    @apply rounded-control border border-slate-200 bg-white px-3 py-2 text-[12.5px] font-semibold text-slate-700 shadow-btn transition-colors hover:bg-slate-50;
+  }
+
+  .btn-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .glass-btn-danger {
+    @apply rounded-control border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Operatsiya markazi uslubi (src/ui/intel.tsx).
+ *
+ * Hisobotlar va kamera devori uchun: qat'iy to'rt burchak, ingichka
+ * chiziq, monoshrift raqamlar, burchak qisqichlari. Mavzu yorug'
+ * qoladi — ekrandagi hujjat qog'ozdagi bilan bir xil ko'rinsin.
+ * ------------------------------------------------------------------ */
+:root {
+  --font-intel: ui-monospace, "Cascadia Mono", "Segoe UI Mono", "SF Mono", Consolas,
+    "Liberation Mono", "Roboto Mono", monospace;
+}
+
+.intel-micro {
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  color: rgb(var(--c-muted));
+  white-space: nowrap;
+}
+
+/* Tor ustun sarlavhasi ikki qatorga tushsin (tabeldagi "Ma'lumot yo'q"
+   kabi uzun yorliqlar qirqilib qolmasin). */
+.intel-micro-wrap {
+  white-space: normal;
+  /* So'z ichidan emas, faqat bo'shliqdan bo'linadi: "KELMADI" ikkiga
+     bo'linib "KELM/ADI" bo'lib qolmasin. */
+  overflow-wrap: normal;
+  word-break: keep-all;
+  letter-spacing: 0.04em;
+}
+
+.intel-code {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.intel-panel {
+  position: relative;
+  background: linear-gradient(145deg, rgb(255 255 255 / 0.98), rgb(248 251 255 / 0.94));
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow: var(--shadow-card);
+  border-radius: 20px;
+}
+
+/* Burchak qisqichlari — panel chegarasini "nishon" kabi belgilaydi. */
+.intel-brackets::before,
+.intel-brackets::after {
+  display: none;
+}
+
+.intel-brackets::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.intel-brackets::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.intel-doc-head {
+  background: linear-gradient(145deg, rgb(255 255 255 / 0.96), rgb(244 248 255 / 0.9));
+  border: 1px solid rgb(255 255 255 / 0.95);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Jonli manbani bildiruvchi sekin urish. */
+@keyframes intel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.intel-pulse {
+  animation: intel-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intel-pulse {
+    animation: none;
+  }
+}
+
+/* Ekran to'ri — kamera kataklari ostidagi zaif o'lchov to'ri. */
+.intel-grid {
+  background-image:
+    linear-gradient(to right, rgb(var(--c-border) / 0.55) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--c-border) / 0.55) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* ------------------------------------------------------------------
+ * Chop etish (Ctrl+P). Hisobot sahifasi qog'ozda hujjatga aylanadi:
+ * yon menyu, yuqori panel, filtrlar va tugmalar chiqmaydi; jadval
+ * sarlavhasi har betda takrorlanadi; A4 eniga sig'adi.
+ * ------------------------------------------------------------------ */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm 10mm 16mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* Ilova qobig'i va faqat ekran uchun boshqaruvlar. */
+  [data-print='hide'],
+  .print-hide {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* Jadval ustidagi rostgo'ylik izohi (nechta odam hisoblangan, nechta
+     qator bosilgan) jadvaldan ajralib, o'zi yolg'iz betda qolmasin. */
+  .print-scope-note {
+    break-after: avoid;
+    page-break-after: avoid;
+    break-inside: avoid;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Jadval qog'ozda to'liq: ichki aylantirish yo'q, sarlavha takrorlanadi. */
+  [data-table-scroll] {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  [data-table-cards] {
+    display: none !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  /* A4 eniga sig'sin: kichik shrift, matn ko'chirilsin, gorizontal
+     aylantirish o'rniga qator bo'linsin. */
+  [data-table-scroll] table {
+    width: 100% !important;
+    table-layout: auto;
+    font-size: 9pt;
+  }
+
+  [data-table-scroll] th,
+  [data-table-scroll] td {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    padding: 3pt 4pt !important;
+  }
+
+  [data-table-scroll] td span {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+
+  thead th {
+    position: static !important;
+    box-shadow: none !important;
+  }
+
+  tr,
+  li {
+    break-inside: avoid;
+  }
+
+  /* Qog'ozda soya va yumaloq ramka keraksiz; matn qora. */
+  .shadow-card,
+  .shadow-btn {
+    box-shadow: none !important;
+  }
+
+  * {
+    color: #111 !important;
+  }
+
+  /* Ba'zi brauzerlar qo'llab-quvvatlaydi: bet raqami. */
+  @page {
+    @bottom-right {
+      content: counter(page) ' / ' counter(pages);
+      font-size: 9pt;
+    }
+  }
+
+  /* ----------------------------------------------------------------
+   * Oylik tabel — asosiy chiqish shakli: A4 ENIGA (landscape).
+   *
+   * 31 kunli oy uchun eng tor holat: 297mm - 16mm chekka = 281mm.
+   * Chap uchta ustun 82mm, o'ngdagi besh "jami" ustuni 40mm, qolgan
+   * ~159mm 31 ta kunga bo'linadi (~5mm). Shrift 7pt — belgi ham,
+   * ikki xonali son ham sig'adi, kesilmaydi.
+   * Nomlangan bet (`page: tabel`) shu varaqqagina landscape beradi;
+   * qo'llab-quvvatlamaydigan brauzerda oddiy portret bet qoladi,
+   * jadval esa baribir to'liq chiqadi (table-layout: fixed).
+   * -------------------------------------------------------------- */
+  @page tabel {
+    size: A4 landscape;
+    margin: 10mm 8mm 12mm;
+  }
+
+  .tabel-print {
+    page: tabel;
+    gap: 3mm !important;
+  }
+
+  .tabel-print-head {
+    text-align: center;
+    margin-bottom: 2mm;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .tabel-print-org {
+    font-size: 10pt;
+  }
+
+  .tabel-print-title {
+    font-size: 13pt;
+    font-weight: 700;
+    margin: 1mm 0;
+  }
+
+  .tabel-print-scope {
+    font-size: 9.5pt;
+  }
+
+  .tabel-note {
+    font-size: 8pt;
+    border: 0 !important;
+    background: none !important;
+    padding: 0 !important;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Jadval to'liq chiqsin: ichki aylantirish yo'q, ramka ko'rinadi. */
+  [data-tabel-scroll] {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  table[data-tabel] {
+    width: 100% !important;
+    table-layout: fixed;
+    font-size: 7pt;
+  }
+
+  table[data-tabel] thead {
+    display: table-header-group;
+  }
+
+  table[data-tabel] th,
+  table[data-tabel] td {
+    position: static !important;
+    border: 0.2mm solid #999 !important;
+    padding: 0.6mm 0.4mm !important;
+    background: none !important;
+    box-shadow: none !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  /* Ustun kengliklari: chap uchtasi va o'ngdagi jami ustunlari
+     qat'iy, qolgan eni kun ustunlariga teng bo'linadi. */
+  table[data-tabel] th:nth-child(1),
+  table[data-tabel] td:nth-child(1) {
+    width: 8mm;
+    text-align: center;
+  }
+
+  table[data-tabel] th:nth-child(2),
+  table[data-tabel] td:nth-child(2) {
+    width: 44mm;
+    text-align: left;
+  }
+
+  table[data-tabel] th:nth-child(3),
+  table[data-tabel] td:nth-child(3) {
+    width: 22mm;
+    text-align: left;
+  }
+
+  /* Jami ustunlari: sarlavhasi ("Aniqlanmadi") eng uzun so'z, shuning
+     uchun ular kun ustunlaridan kengroq va shrifti kichikroq — yorliq
+     qisqartirib "Aniql…" bo'lib qolmasligi kerak. */
+  table[data-tabel] td[data-total],
+  table[data-tabel] thead th:nth-last-child(-n + 5) {
+    width: 13mm;
+    font-size: 5.5pt;
+    text-align: center;
+    white-space: normal;
+  }
+
+  table[data-tabel] td[data-total] {
+    font-size: 7pt;
+  }
+
+  /* Ustun sarlavhasidagi hafta kuni harfi va sana ekran uchun piksel
+     bilan berilgan (10px) — qog'ozda u 7pt jadvalga sig'maydi. */
+  table[data-tabel] thead th span {
+    font-size: 6pt !important;
+    line-height: 1.05 !important;
+    display: block;
+  }
+
+  table[data-tabel] thead th span + span {
+    font-size: 7pt !important;
+    font-weight: 700;
+  }
+
+  table[data-tabel] td[data-tabel-cell] {
+    text-align: center;
+    font-weight: 700;
+  }
+
+  /* Dam olish kuni rangsiz qog'ozda ham ajralib tursin. */
+  table[data-tabel] [data-rest] {
+    background: #ececec !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* "Bugun" ekran belgisi qog'ozda keraksiz — sana o'zi ko'rinib turadi. */
+  table[data-tabel] [data-today] {
+    box-shadow: none !important;
+  }
+
+  .tabel-legend {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 8pt;
+    margin-top: 2mm;
+  }
+
+  /* Imzo bloki — varaqning oxirida, bo'linmasdan. */
+  .tabel-sign {
+    display: block !important;
+    margin-top: 6mm;
+    font-size: 9pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .tabel-sign-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 3mm;
+    margin-top: 5mm;
+  }
+
+  .tabel-sign-line {
+    display: inline-block;
+    width: 60mm;
+    border-bottom: 0.3mm solid #111;
+  }
+
+  .tabel-sign-hint {
+    font-size: 7.5pt;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Hisobot hujjati — rasmiy jurnal ko'rinishi.
+ *
+ * Faqat QO'SHIMCHA qoidalar: yuqoridagi hech biri o'zgarmaydi.
+ * Maqsad — ekrandagi tabel qog'ozdagi daftar kabi o'qilsin: har
+ * katakda ingichka to'r, har 5-kun va har 5-odamdan keyin qalinroq
+ * chiziq (ko'z 31 ta ustunda adashmaydi), dam olish kunlari tekis
+ * kulrang emas, zaif qiya shtrix bilan, bugungi kun ingichka urg'u
+ * chizig'i bilan belgilanadi.
+ * ------------------------------------------------------------------ */
+
+/* Ish varag'ining to'ri. */
+table[data-tabel] th,
+table[data-tabel] td {
+  border-right: 1px solid rgb(var(--c-border) / 0.75);
+}
+
+/* Har 5-kun ustunidan keyin — qalinroq chiziq. */
+table[data-tabel] [data-major] {
+  border-right: 2px solid rgb(var(--c-border-strong));
+}
+
+/* Har 5-odamdan keyin — qalinroq ko'ndalang chiziq. */
+table[data-tabel] tr[data-major-row] > * {
+  border-bottom: 2px solid rgb(var(--c-border-strong));
+}
+
+/* Yopishgan chap uchta ustunning o'ng chegarasi — kunlardan ajratadi. */
+table[data-tabel] [data-sticky-edge] {
+  border-right: 2px solid rgb(var(--c-border-strong));
+}
+
+/* Dam olish kunlari: tekis kulrang o'rniga zaif qiya shtrix. */
+.intel-hatch,
+table[data-tabel] td[data-rest],
+table[data-tabel] th[data-rest] {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgb(var(--c-border-strong) / 0.6) 0 1px,
+    transparent 1px 5px
+  );
+}
+
+/* Bugungi ustun — ingichka urg'u chizig'i (fon emas). */
+table[data-tabel] [data-today] {
+  box-shadow: inset 2px 0 0 rgb(var(--c-primary) / 0.85), inset -2px 0 0 rgb(var(--c-primary) / 0.85);
+}
+
+/* Shartli belgilar kaliti: har belgi o'z ramkasida. */
+.intel-key-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  border: 1px solid rgb(var(--c-border-strong));
+  border-radius: 2px;
+  padding: 0 0.25rem;
+  font-family: var(--font-intel);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.5rem;
+  color: rgb(var(--c-fg));
+}
+
+/* ------------------------------------------------------------------
+ * Chop etish — yuqoridagi qoidalarning qog'ozdagi ko'rinishi.
+ * ---------------------------------------------------------------- */
+@media print {
+  /* Burchak qisqichlari qog'ozda keraksiz bezak. */
+  .intel-brackets::before,
+  .intel-brackets::after {
+    display: none !important;
+  }
+
+  .intel-panel,
+  .intel-doc-head {
+    border: 0 !important;
+  }
+
+  /* Hujjat raqami qog'ozda ham ko'rinadi — varaqni ekrandagi
+     ko'rinish bilan solishtirish uchun yagona bog'lovchi. */
+  .tabel-print-ref {
+    font-size: 8.5pt;
+    margin-top: 1mm;
+  }
+
+  /* Bir odamning qatori ikki betga bo'linmasin. */
+  table[data-tabel] tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Qalin chiziqlar qog'ozda ham qoladi (umumiy 0.2mm to'rdan qalinroq). */
+  table[data-tabel] [data-major] {
+    border-right: 0.5mm solid #555 !important;
+  }
+
+  table[data-tabel] tr[data-major-row] > * {
+    border-bottom: 0.45mm solid #555 !important;
+  }
+
+  table[data-tabel] [data-sticky-edge] {
+    border-right: 0.5mm solid #555 !important;
+  }
+
+  /* Kalit va imzo bloki bo'linmasin. */
+  .intel-key {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .intel-key-mark {
+    border: 0.2mm solid #111 !important;
+    min-width: 5mm;
+    line-height: 4.5mm;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * KONSOL — bitta ekranli boshqaruv oynasi (src/console/**).
+ *
+ * Yorug' "kelajak" muhiti: oq qog'oz emas, yorug' shisha. Fon jonli,
+ * lekin sekin — diqqatni tortmaydi; panellar shisha kabi suzadi;
+ * jonli manbalar nafas oladi. Hamma harakat `prefers-reduced-motion`
+ * ga bo'ysunadi.
+ * ------------------------------------------------------------------ */
+:root {
+  --c-accent: 0 122 255;
+  --c-accent-2: 0 208 255;
+  --glass: 255 255 255;
+}
+
+.console-root {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(88% 90% at 7% -10%, rgb(120 184 255 / 0.24), transparent 56%),
+    radial-gradient(70% 90% at 104% 4%, rgb(151 132 255 / 0.19), transparent 57%),
+    radial-gradient(80% 75% at 54% 118%, rgb(50 211 181 / 0.12), transparent 62%),
+    linear-gradient(145deg, #f9fbff 0%, #edf4ff 47%, #f8faff 100%);
+}
+
+/* Telefon va planshet: 7 panel bitta ekranga sig'maydi (har biri ~110 px
+   bo'lib qolardi) — panellar ustma-ust, sahifa aylantiriladi. */
+@media (max-width: 1023px) {
+  .console-root {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+}
+
+/* Sekin suzuvchi yorug'lik — muhit tirik ekanini bildiradi. */
+.console-root::before {
+  content: "";
+  position: absolute;
+  inset: -28%;
+  pointer-events: none;
+  background:
+    radial-gradient(32% 34% at 28% 38%, rgb(55 145 255 / 0.12), transparent 70%),
+    radial-gradient(28% 32% at 70% 60%, rgb(132 104 255 / 0.1), transparent 70%);
+  animation: console-drift 20s ease-in-out infinite alternate;
+}
+
+/* O'lchov to'ri — asbob ekanini eslatadi, lekin deyarli ko'rinmaydi. */
+.console-root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgb(87 128 203 / 0.18) 0.75px, transparent 0.75px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+@keyframes console-drift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+/* Shisha panel: yorug', chegarasi nozik, ostida yumshoq soya. */
+/* Panel oq shisha: fon ko'kimtir bo'lgani uchun u YORQIN bo'lib
+   ajralib turadi — qirrasi yorug', ostida aniq soya. */
+.glass {
+  background: linear-gradient(145deg, rgb(255 255 255 / 0.96), rgb(246 250 255 / 0.88));
+  backdrop-filter: blur(18px) saturate(1.18);
+  border: 1px solid rgb(255 255 255 / 0.92);
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.glass-hover {
+  transition: box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.glass-hover:hover {
+  transform: translateY(-3px) scale(1.006);
+  box-shadow: var(--shadow-hover);
+}
+
+/* Nafas oluvchi nuqta — jonli ulanish. */
+.live-dot {
+  position: relative;
+}
+
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  opacity: 0.5;
+  animation: console-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes console-ping {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  80%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-root::before,
+  .live-dot::after {
+    animation: none;
+  }
+  .glass-hover:hover {
+    transform: none;
+  }
+}
+
+/* Panel kirishi — CSS animatsiyasi, JS emas.
+ *
+ * Nega: `motion` kirish animatsiyasini requestAnimationFrame bilan
+ * yuritadi, brauzer esa oyna FOKUSDA bo'lmaganda rAF'ni to'xtatadi.
+ * Natijada ikkinchi monitorda yoki fon oynasida ochilgan konsol
+ * panellari `opacity: 0` holida QOTIB qolardi — ekran bo'm-bo'sh.
+ * CSS animatsiyasi kompozitorda ishlaydi va `both` bilan tugash
+ * holatini saqlaydi, shuning uchun eng yomon holatda ham panel
+ * ko'rinadi. */
+.panel-enter {
+  animation: console-panel-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Ketma-ketlik — ekran chapdan o'ngga "yig'iladi". Kechikish CSS'da
+   beriladi: panel komponentlari bu haqda bilishi shart emas. */
+.console-grid > *:nth-child(1) { animation-delay: 0ms; }
+.console-grid > *:nth-child(2) { animation-delay: 45ms; }
+.console-grid > *:nth-child(3) { animation-delay: 90ms; }
+.console-grid > *:nth-child(4) { animation-delay: 135ms; }
+.console-grid > *:nth-child(5) { animation-delay: 180ms; }
+.console-grid > *:nth-child(6) { animation-delay: 225ms; }
+.console-grid > *:nth-child(7) { animation-delay: 270ms; }
+.console-grid > *:nth-child(8) { animation-delay: 315ms; }
+
+@keyframes console-panel-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter {
+    animation-duration: 1ms;
+    animation-delay: 0ms !important;
+  }
+}

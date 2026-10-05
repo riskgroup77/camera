@@ -1,0 +1,13 @@
+# Host port overrides for shared server (ishifo-minio uses 9000, nginx uses 8080).
+# !override replaces base compose ports instead of merging them.
+services:
+  minio:
+    ports: !override
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+
+  api:
+    env_file:
+      - .env
+    ports: !override
+      - "127.0.0.1:18080:8080"
