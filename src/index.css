@@ -747,6 +747,9 @@ table[data-tabel] [data-today] {
   position: relative;
   height: 100dvh;
   overflow: hidden;
+  /* clip — fon bezagi (::before, inset -28%) chetdan chiqadi; hidden esa
+     fokus/klikdan keyin butun pult yonga siljishiga yo'l qo'yardi. */
+  overflow: clip;
   background:
     radial-gradient(88% 90% at 7% -10%, rgb(120 184 255 / 0.24), transparent 56%),
     radial-gradient(70% 90% at 104% 4%, rgb(151 132 255 / 0.19), transparent 57%),
@@ -761,6 +764,7 @@ table[data-tabel] [data-today] {
     height: auto;
     min-height: 100dvh;
     overflow-x: hidden;
+    overflow-x: clip;
     overflow-y: visible;
   }
 }

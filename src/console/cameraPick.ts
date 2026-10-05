@@ -117,3 +117,39 @@ export type WallLayout = (typeof WALL_LAYOUTS)[number];
 export function layoutColumns(layout: WallLayout): number {
   return Math.round(Math.sqrt(layout));
 }
+
+/** Nazorat → Kameralar: bino kartochkalari (nomi, kameralar va tasvir
+ *  uzatayotganlari soni). Binosi yozilmagan kameralar — "Binosiz". */
+export const NO_BUILDING = 'Binosiz';
+
+export interface BuildingCard {
+  name: string;
+  total: number;
+  streaming: number;
+}
+
+export function buildingCards(cameras: readonly CameraFeed[]): BuildingCard[] {
+  const byName = new Map<string, BuildingCard>();
+  for (const camera of cameras) {
+    const name = camera.building || NO_BUILDING;
+    const card = byName.get(name) ?? { name, total: 0, streaming: 0 };
+    card.total += 1;
+    if (isStreaming(camera)) card.streaming += 1;
+    byName.set(name, card);
+  }
+  return [...byName.values()].sort(
+    (a, b) => Number(a.name === NO_BUILDING) - Number(b.name === NO_BUILDING) || collator.compare(a.name, b.name),
+  );
+}
+
+/** Bino xonalari (kameralar): qavat bo'yicha, so'ng nomi; tasvirsizlar oxirida. */
+export function roomCards(cameras: readonly CameraFeed[], building: string): CameraFeed[] {
+  return cameras
+    .filter((camera) => (camera.building || NO_BUILDING) === building)
+    .sort(
+      (a, b) =>
+        Number(!isStreaming(a)) - Number(!isStreaming(b)) ||
+        (a.floor ?? 99) - (b.floor ?? 99) ||
+        collator.compare(a.name, b.name),
+    );
+}

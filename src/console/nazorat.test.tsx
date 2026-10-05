@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupStudent } from '../lib/situationApi';
-import { ROTATE_MS, nextStage } from './panels/CamerasPanel';
+import { CAMERA_LOAD_MS } from './panels/CamerasPanel';
+import { NO_BUILDING, buildingCards, roomCards } from './cameraPick';
+import type { CameraFeed } from '../types';
 import { groupCounters, studentMatches } from './panels/GroupTablePanel';
 import { parseCounter } from './nazoratSelection';
 
@@ -11,17 +13,29 @@ function student(id: string, status: GroupStudent['status'], face = true): Group
   };
 }
 
-describe('aylanuvchi kamera mozaikasi', () => {
-  it('asosiy kamera har daqiqada navbatdagisiga, oxiridan keyin boshidan', () => {
-    const pool = ['c1', 'c2', 'c3'];
-    expect(nextStage(pool, null)).toBe('c1');
-    expect(nextStage(pool, 'c1')).toBe('c2');
-    expect(nextStage(pool, 'c3')).toBe('c1');
-    expect(nextStage(pool, 'yoq')).toBe('c1');
-    expect(nextStage([], 'c1')).toBeNull();
-    expect(ROTATE_MS).toBe(60_000);
+function cam(id: string, building: string, floor: number | null, live = true): CameraFeed {
+  return { id, name: id, building, zone: '', status: live ? 'live' : 'offline', streamUrl: live ? `/hls/${id}` : '', floor } as CameraFeed;
+}
+
+describe('kameralar: bino -> xona tanlovi', () => {
+  const cameras = [cam('2-xona', 'B3', 2), cam('1-xona', 'B3', 1), cam('Hovli', '', null), cam('Oflayn', 'B3', 1, false), cam('Kirish', 'A', 1)];
+
+  it('binolar — nomi, kameralar va jonlilar soni; binosizlar oxirida', () => {
+    expect(buildingCards(cameras)).toEqual([
+      { name: 'A', total: 1, streaming: 1 },
+      { name: 'B3', total: 3, streaming: 2 },
+      { name: NO_BUILDING, total: 1, streaming: 1 },
+    ]);
   });
 
+  it('bino xonalari — avval tasvir uzatayotganlar, qavat va nomi bo‘yicha', () => {
+    expect(roomCards(cameras, 'B3').map((c) => c.id)).toEqual(['1-xona', '2-xona', 'Oflayn']);
+    expect(roomCards(cameras, NO_BUILDING).map((c) => c.id)).toEqual(['Hovli']);
+  });
+
+  it('video ~5 soniya yuklanish pardasi bilan ochiladi', () => {
+    expect(CAMERA_LOAD_MS).toBe(5_000);
+  });
 });
 
 describe('guruh sanoqlari va filtr', () => {
