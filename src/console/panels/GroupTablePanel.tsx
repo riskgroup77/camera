@@ -19,7 +19,6 @@ import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import PdfButton from '../../components/situation/PdfButton';
 import GroupCriteriaTable from '../../components/situation/GroupCriteriaTable';
-import { criterionShort } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { GroupCriteriaState } from '../useGroupCriteria';
@@ -390,7 +389,6 @@ export default function GroupTablePanel({
     </div>
   );
 
-  const hiddenCriteria = (criteria.data?.criteria ?? []).filter((c) => c.unavailable);
   const criteriaRows = criteria.data
     ? { ...criteria.data, people: criteria.data.people.filter((p) => !needle || p.full_name.toLowerCase().includes(needle)) }
     : null;
@@ -399,15 +397,6 @@ export default function GroupTablePanel({
   if (criteriaMode) {
     body = (
       <>
-        {hiddenCriteria.length > 0 && (
-          <p
-            className="shrink-0 text-[11px] leading-snug text-muted"
-            title={hiddenCriteria.map((c) => `${c.code ? `${c.code}. ` : ''}${c.label}: ${c.unavailable}`).join(' · ')}
-          >
-            Hozir hisoblanmayotgan {hiddenCriteria.length} ta kriteriya ko‘rsatilmadi:{' '}
-            {hiddenCriteria.map((c) => criterionShort(c)).join(', ')} — sababi uchun sichqonchani shu yerga olib boring.
-          </p>
-        )}
         <div className="min-h-0 flex-1">
           <GroupCriteriaTable data={criteriaRows} loading={criteria.loading} error={criteria.error} />
         </div>
