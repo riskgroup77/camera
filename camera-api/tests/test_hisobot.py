@@ -375,7 +375,7 @@ def test_matrix_cell_reads_like_a_register():
     assert cell(data, "dars_qatnashish", pid)["value"] == "2/3"
     assert cell(data, "forma", pid)["value"] == "1" and cell(data, "forma", pid)["tone"] == "danger"
     assert cell(data, "forma", pid)["evidence"] == 1  # 2 daqiqalik video dalil
-    assert cell(data, "chekish", pid)["value"] == "0" and cell(data, "chekish", pid)["evidence"] is None
+    assert cell(data, "chekish", pid)["value"] == "—" and cell(data, "chekish", pid)["evidence"] is None
     other = uuid.uuid4()
     assert cell(data, "davomat", other)["value"] == "—"
     assert cell(data, "dars_qatnashish", other)["value"] == "—"
@@ -409,7 +409,9 @@ async def test_group_matrix_lists_every_student_with_every_criterion(client, adm
     body = (await client.get("/api/situation/group-criteria", params={"group": "DI-2301"}, headers=admin)).json()
     cells = {p["full_name"]: p["cells"] for p in body["people"]}
     assert body["analysed"] is True
-    assert cells["Aliyev Anvar"]["forma"]["value"] == "1" and cells["Botirova Nigora"]["forma"]["value"] == "0"
+    assert cells["Aliyev Anvar"]["forma"]["value"] == "1"
+    # Kechki tahlil ko'rmagan talabaga ✓ qo'yilmaydi — "—".
+    assert cells["Botirova Nigora"]["forma"]["value"] == "—"
 
 
 async def test_group_matrix_requires_login_but_not_the_report_password(client, admin, world, monkeypatch):
@@ -419,3 +421,12 @@ async def test_group_matrix_requires_login_but_not_the_report_password(client, a
     monkeypatch.setattr(settings, "report_password_hash", "qulf")
     res = await client.get("/api/situation/group-criteria", params={"group": "MD-134/25"}, headers=admin)
     assert res.status_code == 200 and res.json()["people"] == []
+
+
+def test_coat_cell_ticks_only_people_seen_in_a_coat():
+    base = hisobot._cell("0", "neutral", "")
+    assert hisobot.coat_cell(2, 0, base)["value"] == "✓"
+    assert hisobot.coat_cell(2, 0, base)["tone"] == "success"
+    assert hisobot.coat_cell(0, 0, base)["value"] == "—"
+    bad = hisobot._cell("1", "danger", "1 ta oq xalatsiz kun", 1)
+    assert hisobot.coat_cell(1, 1, bad) is bad  # xalatsiz ko'rilgan — son qoladi

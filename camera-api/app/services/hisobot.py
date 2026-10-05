@@ -1554,8 +1554,22 @@ def matrix_cell(data: Data, key: str, pid: uuid.UUID) -> dict:
                      clips)
     n = data.events.get(key, {}).get(pid, 0)
     what = COUNT_WHAT.get(key, "holat")
+    if key == "chekish" and not n:
+        # Chekish — faqat aniqlangan holat soni; yo'q bo'lsa "—" (0 emas).
+        return _cell("—", "neutral", "Chekish qayd etilmagan", clips)
     return _cell(str(n), "danger" if n else "neutral", f"{n} ta {what}" if n else f"{what.capitalize()} qayd etilmagan",
                  clips)
+
+
+def coat_cell(seen_with: int, seen_without: int, base: dict) -> dict:
+    """Oq xalat: kechki tahlil xalatsiz ko'rgan bo'lsa — son (qizil); faqat
+    xalatda ko'rgan bo'lsa — ✓; umuman ko'rmagan bo'lsa — "—" (tekshirilmagan
+    talabaga ✓ qo'yilmaydi)."""
+    if seen_without:
+        return base
+    if seen_with:
+        return _cell("✓", "success", f"Oq xalatda ko'rildi ({seen_with} kun)", base.get("evidence") or 0)
+    return _cell("—", "neutral", "Oq xalat bu kun tekshirilmagan (talaba kechki tahlilda ko'rinmagan)")
 
 
 def matrix_unavailable(data: Data, key: str, analysed: bool) -> str | None:
@@ -1595,10 +1609,22 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
             "unavailable": stop, "note": None if stop else note_for(data, c.key),
         })
     blocked = {c["key"] for c in criteria if c["unavailable"]}
+    # Oq xalat: kim xalatda, kim xalatsiz ko'rilgan (kunlik natija) — ✓ faqat ko'rilganga.
+    coat: dict = defaultdict(lambda: [0, 0])
+    if ids and "forma" not in blocked:
+        d = DailyPersonCriteria
+        for pid, status, n in (await db.execute(
+            select(d.student_staff_id, d.coat_status, func.count())
+            .where(d.student_staff_id.in_(ids), d.day.between(start, end), d.coat_status.in_(("kiygan", "kiymagan")))
+            .group_by(d.student_staff_id, d.coat_status)
+        )).all():
+            coat[pid][0 if status == "kiygan" else 1] += int(n)
     people = []
     for m in sorted(ctx.members, key=lambda m: svc.norm_name(m.name)):
         cells = {c["key"]: (_cell("—", "neutral", c["unavailable"]) if c["key"] in blocked
                             else matrix_cell(data, c["key"], m.id)) for c in criteria}
+        if "forma" in cells and "forma" not in blocked:
+            cells["forma"] = coat_cell(*coat.get(m.id, (0, 0)), cells["forma"])
         people.append({"id": str(m.id), "full_name": m.name, "initials": svc.initials(m.name),
                        "enrolled": m.enrolled, "cells": cells})
     return {
