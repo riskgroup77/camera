@@ -111,6 +111,25 @@ function CriteriaSummary({ criteria, onOpen }: { criteria: GroupCriteriaState; o
         </button>
       </div>
       <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+        {criteria.sample && (
+          <>
+            <span className="col-span-2 mt-0.5 text-[11px] font-semibold text-warning">Namuna — to‘qima ma’lumot</span>
+            <span className="flex items-baseline justify-between gap-2 px-1 text-[12px]">
+              <span className="truncate text-muted">
+                <span className="me-1 text-[10px] text-subtle">21</span>O‘qituvchi faolligi
+              </span>
+              <b className={cn('shrink-0 tabular-nums', criteria.sample.activity >= 70 ? 'text-success' : 'text-warning')}>
+                {criteria.sample.activity} ball
+              </b>
+            </span>
+            <span className="flex items-baseline justify-between gap-2 px-1 text-[12px]">
+              <span className="truncate text-muted">
+                <span className="me-1 text-[10px] text-subtle">22</span>O‘qituvchi darsga
+              </span>
+              <b className={cn('shrink-0 tabular-nums', TONE_TEXT[criteria.sample.arrivalTone])}>{criteria.sample.arrival}</b>
+            </span>
+          </>
+        )}
         {workingCriteria(criteria.data.criteria).map((c) => (
           <button
             key={c.key}

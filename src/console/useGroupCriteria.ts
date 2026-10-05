@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ApiError } from '../lib/apiClient';
 import { getGroupCriteria, type GroupCriteria } from '../lib/groupCriteriaApi';
+import type { SampleTeacher } from '../lib/criteriaSample';
 
 export interface GroupCriteriaState {
   data: GroupCriteria | null;
   error: string | null;
   loading: boolean;
+  /** Namuna rejimi: to'qima ma'lumot va o'qituvchi ko'rsatkichlari. */
+  sample?: SampleTeacher | null;
 }
 
 /** Tanlangan guruhning kriteriyalar jadvali; `pulse` da (jonli xabar) yangilanadi. */

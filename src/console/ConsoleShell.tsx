@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { LayoutGroup, motion } from 'motion/react';
 import { ChartColumn, Search } from 'lucide-react';
@@ -17,7 +17,8 @@ import ConsolePalette, { type PaletteTarget } from './ConsolePalette';
 import { useConsoleFilter } from './consoleFilter';
 import { useNazoratSelection } from './nazoratSelection';
 import { useGroupLive } from './useGroupLive';
-import { useGroupCriteria } from './useGroupCriteria';
+import { useGroupCriteria, type GroupCriteriaState } from './useGroupCriteria';
+import { sampleGroupCriteria } from '../lib/criteriaSample';
 import { EASE } from './motion';
 import DayOffNotice from '../components/situation/DayOffNotice';
 
@@ -113,7 +114,14 @@ function Console() {
   // Guruh ma'lumoti faqat talabalar uchun (xodimlarda `group` — kafedra id si).
   const groupLive = useGroupLive(canPeople && selection.who === 'talaba' ? selection.group : '', date, isToday, pulse);
   // Guruh kriteriyalari — Nazorat ruxsati bilan (hisobotlar parolisiz).
-  const groupCriteria = useGroupCriteria(selection.who === 'talaba' ? selection.group : '', date, pulse, canPeople);
+  const realCriteria = useGroupCriteria(selection.who === 'talaba' ? selection.group : '', date, pulse, canPeople);
+  // Namuna (taqdimot): to'qima ma'lumot, guruh hajmicha — bazaga tegmaydi.
+  const sampleSize = realCriteria.data?.people.length || groupLive.detail?.students.length || 0;
+  const groupCriteria = useMemo<GroupCriteriaState>(() => {
+    if (!selection.sample || selection.who !== 'talaba' || !selection.group) return realCriteria;
+    const { teacher, ...data } = sampleGroupCriteria(selection.group, date, sampleSize);
+    return { data, error: null, loading: false, sample: teacher };
+  }, [selection.sample, selection.who, selection.group, date, sampleSize, realCriteria]);
 
   // Jonli xabar kelganda raqamlar yangilanadi. Ulanish HOLATI hodisalar
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni
