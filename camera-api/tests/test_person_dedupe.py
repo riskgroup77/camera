@@ -183,3 +183,53 @@ async def test_face_evidence_merges_swapped_names_but_not_different_people(clien
     assert refused["mergedGroups"] == 0
     merged = (await client.post(url, headers=headers, json={"groups": [{"keepId": str(ids[0]), "removeIds": [str(ids[1])]}]})).json()
     assert merged["mergedGroups"] == 1
+
+
+async def test_hemis_record_keeps_its_group_and_takes_the_registered_face(db_session):
+    """HEMIS moslashtirishi (scripts/hemis_moslash.py): HEMIS qatori qoladi,
+    o'zi ro'yxatdan o'tgan qatorning uch burchakli yuzi va davomati unga o'tadi;
+    ism kirill/lotin va otasining ismi farqiga qaramay mos."""
+    from app.services.person_dedupe import merge_people
+
+    hemis = StudentStaff(
+        id=uuid.uuid4(), full_name="Mahamatova Umidaxon Rustam qizi", type="talaba",
+        group_or_position="1-kurs, Davolash ishi-25", hemis_id="H-1001",
+        biometrics_status="tasdiqlangan", biometric_embedding=_face(1, base=7), biometric_photo_key="hemis.jpg",
+    )
+    registered = StudentStaff(
+        id=uuid.uuid4(), full_name="Махаматова Умидахон", type="talaba", group_or_position="20.26 gurux",
+        self_registered=True, biometrics_status="tasdiqlangan", biometric_embedding=_face(2, 0.3, base=7),
+        biometric_photo_key="old.jpg", biometric_photo_left_key="left.jpg", biometric_photo_right_key="right.jpg",
+        consent_source="royxatdan_otish",
+    )
+    hemis_id, registered_id = hemis.id, registered.id
+    db_session.add_all([hemis, registered])
+    await db_session.commit()
+    db_session.add(AttendanceRecord(student_staff_id=registered_id, date=date(2026, 10, 5), status="keldi", check_in=time(8, 2)))
+    await db_session.commit()
+
+    moved = await merge_people(db_session, hemis_id, registered_id)
+    await db_session.commit()
+    assert moved["yuz"] == 1 and moved["davomat"] == 1
+
+    db_session.expire_all()
+    kept = await db_session.get(StudentStaff, hemis_id)
+    assert await db_session.get(StudentStaff, registered_id) is None
+    assert kept.full_name == "Mahamatova Umidaxon Rustam qizi"  # HEMIS ismi rasmiy
+    assert kept.group_or_position == "1-kurs, Davolash ishi-25"
+    assert (kept.biometric_photo_key, kept.biometric_photo_left_key) == ("old.jpg", "left.jpg")
+    assert kept.consent_source == "royxatdan_otish"
+
+
+async def test_swapped_names_with_different_faces_are_not_merged(db_session):
+    from app.services.person_dedupe import MergeError, merge_people
+
+    a = StudentStaff(id=uuid.uuid4(), full_name="Karimov Anvar", type="talaba", group_or_position="A",
+                     biometrics_status="tasdiqlangan", biometric_embedding=_face(1))
+    b = StudentStaff(id=uuid.uuid4(), full_name="Anvar Karimov", type="talaba", group_or_position="B",
+                     biometrics_status="tasdiqlangan", biometric_embedding=_face(2))
+    a_id, b_id = a.id, b.id
+    db_session.add_all([a, b])
+    await db_session.commit()
+    with pytest.raises(MergeError):
+        await merge_people(db_session, a_id, b_id)

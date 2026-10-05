@@ -33,6 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.name_matching import same_person_name
 
 _APOS = str.maketrans({c: "'" for c in "‘’ʻʼ`´"})
 _SUFFIX = {"o'g'li", "og'li", "o'gli", "ogli", "ugli", "o'g'il", "qizi", "kizi", "qiz"}
@@ -43,6 +44,10 @@ COPY_FIELDS = (
     "parent_phone", "parent_telegram_chat_id", "telegram_link_code",
     "consent_given_at", "consent_version", "consent_source",
 )
+# ArcFace kosinus o'xshashligi: bundan past — boshqa-boshqa odamlar (bir
+# odamning ikki surati odatda 0.45 dan yuqori).
+FACE_DIFFERENT = 0.25
+
 UNIQUE_FIELDS = frozenset({"pinfl", "hemis_id", "card_number", "telegram_link_code"})
 BIOMETRIC_FIELDS = (
     "biometric_embedding", "biometric_photo_key", "biometric_photo_left_key", "biometric_photo_right_key",
@@ -265,6 +270,16 @@ class MergeError(Exception):
     pass
 
 
+def faces_differ(a: dict, b: dict) -> bool:
+    """Ikkalasida yuz bor va ular boshqa-boshqa odamniki (FACE_DIFFERENT dan past)."""
+    va, vb = _unit_vector(a.get("biometric_embedding")), _unit_vector(b.get("biometric_embedding"))
+    return va is not None and vb is not None and va.shape == vb.shape and float(va @ vb) < FACE_DIFFERENT
+
+
+def _all_angles(row: dict) -> bool:
+    return bool(row.get("biometric_photo_key") and row.get("biometric_photo_left_key") and row.get("biometric_photo_right_key"))
+
+
 async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uuid.UUID) -> dict:
     """Bitta dublikatni saqlanadigan yozuvga qo'shib o'chiradi. Commit
     chaqiruvchida (bir guruh — bir tranzaksiya). Nima ko'chirilganini qaytaradi."""
@@ -277,14 +292,25 @@ async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uui
     if keeper["type"] != dup["type"]:
         raise MergeError("Talaba va xodimni birlashtirib bo'lmaydi")
     # Himoya: so'rov qo'lda tuzilgan bo'lsa ham, adashlarni birlashtirmaydi.
-    if not any(group.mergeable for group in group_duplicates([keeper, dup])):
+    # Ism qoidasi — name_matching (kirill/lotin, q/k, so'z tartibi; HEMIS
+    # moslashtirishi — app/services/hemis_reconcile.py — ham shunga tayanadi).
+    same_name = (
+        same_person_name(keeper["full_name"], dup["full_name"])
+        and not _pinfl_conflict([keeper, dup])
+        and not faces_differ(keeper, dup)
+    )
+    if not same_name and not any(group.mergeable for group in group_duplicates([keeper, dup])):
         raise MergeError(f"{keeper['full_name']} va {dup['full_name']} — boshqa-boshqa odamlar")
 
     moved: dict[str, int] = {}
     updates = {f: dup[f] for f in COPY_FIELDS if keeper.get(f) is None and dup.get(f) is not None}
-    if len(name_tokens(dup["full_name"])) > len(name_tokens(keeper["full_name"])):
+    # HEMIS ismi rasmiy — sinxron baribir qaytarib yozadi.
+    if not keeper.get("hemis_id") and len(name_tokens(dup["full_name"])) > len(name_tokens(keeper["full_name"])):
         updates["full_name"] = dup["full_name"]
-    if not keeper.get("biometric_embedding") and dup.get("biometric_embedding"):
+    # Yuz: saqlanadiganda yo'q bo'lsa — dublikatniki; ikkalasida bo'lsa,
+    # uch burchakdan olingani (ro'yxatdan o'tish) bitta suratdan olinganidan
+    # (HEMIS rasmi) ishonchliroq tanitadi.
+    if dup.get("biometric_embedding") and (not keeper.get("biometric_embedding") or (_all_angles(dup) and not _all_angles(keeper))):
         for f in BIOMETRIC_FIELDS:
             updates[f] = dup.get(f)
         moved["yuz"] = 1
