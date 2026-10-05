@@ -1492,6 +1492,123 @@ async def report(db: AsyncSession, kind: str, start: date_type, end: date_type, 
     }
 
 
+# ─────────────────────────────────────────── guruh: talaba × mezon
+
+# Faqat kunlik video tahlildan (daily_person_criteria) keladigan mezonlar —
+# tahlil o'tmagan kunda ular "0" emas, "hali tahlil qilinmagan".
+NIGHTLY_ONLY = ("forma", "chekish")
+# Dars yozuvidan (lesson_attendance) — dars bo'lmagan kunda hisoblanmaydi.
+LESSON_BASED = ("darsga_kech", "darsdan_erta", "diqqat")
+
+
+def _cell(value: str, tone: str = "neutral", title: str = "", evidence: int = 0) -> dict:
+    return {"value": value, "tone": tone, "title": title, "evidence": evidence or None}
+
+
+def _tri_tone(rate: float | None) -> str:
+    if rate is None:
+        return "neutral"
+    return "success" if rate >= 100 else "danger" if rate <= 0 else "warning"
+
+
+def matrix_cell(data: Data, key: str, pid: uuid.UUID) -> dict:
+    """Bitta talabaning bitta mezon bo'yicha qisqa qiymati (guruh jadvali)."""
+    _total, clips = findings_for(data, key, pid)
+    one_day = data.start == data.end
+    if key in ("davomat", "kechikish"):
+        row = data.day_rows.get(pid) if one_day else None
+        a = data.att.get(pid)
+        if one_day:
+            status = (row or {}).get("status")
+            check_in = (row or {}).get("check_in")
+            at = f" {check_in.strftime('%H:%M')} da" if check_in else ""
+            if key == "davomat":
+                if status == "keldi":
+                    return _cell("keldi", "success", f"Keldi{at}", clips)
+                if status == "kech_keldi":
+                    return _cell("kech", "warning", f"Kech keldi{at}", clips)
+                if status == "kelmadi":
+                    return _cell("kelmadi", "danger", "Kun davomida kamerada ko'rinmadi", clips)
+                if status == "dam_olish":
+                    return _cell("dam", "neutral", "Dam olish kuni", clips)
+                return _cell("—", "neutral", "Bu kun uchun yozuv yo'q", clips)
+            if status == "kech_keldi":
+                return _cell(f"+{row['late']} daq", "warning", f"Kech keldi{at}", clips)
+            if status == "keldi":
+                return _cell("0", "neutral", f"O'z vaqtida keldi{at}", clips)
+            return _cell("—", "neutral", "Kelmagan yoki yozuv yo'q", clips)
+        if a is None or a.present + a.absent == 0:
+            return _cell("—", "neutral", "Bu davrda yozuv yo'q", clips)
+        if key == "davomat":
+            return _cell(f"{a.present}/{a.present + a.absent}", _rate_tone(a.rate),
+                         f"{a.present + a.absent} kundan {a.present} tasida kelgan (shundan {a.late} kunda kech)", clips)
+        return _cell(str(a.late), "warning" if a.late else "neutral",
+                     f"{a.late} kunda kech kelgan" if a.late else "Kech kelmagan", clips)
+    if key == "dars_qatnashish":
+        t = data.lessons.get(pid)
+        if t is None or t.total == 0:
+            return _cell("—", "neutral", "Tekshirilgan dars yo'q", clips)
+        return _cell(f"{t.ok + t.late}/{t.total}", _tri_tone(t.rate),
+                     f"{t.total} darsdan {t.ok + t.late} tasida bo'lgan ({t.late} tasiga kech), {t.miss} tasiga kirmagan",
+                     clips)
+    n = data.events.get(key, {}).get(pid, 0)
+    what = COUNT_WHAT.get(key, "holat")
+    return _cell(str(n), "danger" if n else "neutral", f"{n} ta {what}" if n else f"{what.capitalize()} qayd etilmagan",
+                 clips)
+
+
+def matrix_unavailable(data: Data, key: str, analysed: bool) -> str | None:
+    """Ustun nega hisoblanmayapti — "0" o'rniga sabab."""
+    stop = blocker(data, key)
+    if stop:
+        return stop
+    if key in NIGHTLY_ONLY and not analysed and not _has_data(data, key):
+        return ("Bu kun hali video tahlil qilinmagan: oq xalat va chekish NVR yozuvlaridan kechqurun aniqlanadi "
+                "(Video tahlil sahifasi).")
+    if key in LESSON_BASED and not data.lessons_daily and not _has_data(data, key):
+        return "Bu kun guruhning tekshirilgan darsi yo'q — dars jadvali yoki xona kamerasi biriktirilmagan."
+    return None
+
+
+async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date_type) -> dict:
+    """Nazorat → guruh: har talaba qatorida hamma mezonlar (davomat, darsga
+    kirish, kech kirish, erta chiqish, oq xalat, chekish, diqqat) va video
+    dalillar soni. Sonlar /api/hisobot/report bilan bir xil hisobdan."""
+    kind = "talaba"
+    f = Filters(group=group)
+    ctx = await context(db, kind, start, end, f)
+    data = await collect(db, kind, start, end, f, ctx.scope, ctx.members)
+    ids = [m.id for m in ctx.members]
+    analysed = bool(ids) and bool(await db.scalar(
+        select(func.count()).select_from(DailyPersonCriteria)
+        .where(DailyPersonCriteria.student_staff_id.in_(ids), DailyPersonCriteria.day.between(start, end))
+    ))
+    criteria = []
+    for c in criteria_for(kind):
+        value, tone = indicator(data, c.key)
+        stop = matrix_unavailable(data, c.key, analysed)
+        criteria.append({
+            "key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
+            "description": describe(c.key, data.policy, kind),
+            "indicator": "—" if stop else value, "tone": "neutral" if stop else tone,
+            "unavailable": stop, "note": None if stop else note_for(data, c.key),
+        })
+    blocked = {c["key"] for c in criteria if c["unavailable"]}
+    people = []
+    for m in sorted(ctx.members, key=lambda m: svc.norm_name(m.name)):
+        cells = {c["key"]: (_cell("—", "neutral", c["unavailable"]) if c["key"] in blocked
+                            else matrix_cell(data, c["key"], m.id)) for c in criteria}
+        people.append({"id": str(m.id), "full_name": m.name, "initials": svc.initials(m.name),
+                       "enrolled": m.enrolled, "cells": cells})
+    return {
+        "group": group,
+        "period": {"from": start.isoformat(), "to": end.isoformat(), "days": (end - start).days + 1},
+        "analysed": analysed,
+        "criteria": criteria,
+        "people": people,
+    }
+
+
 async def filter_options(db: AsyncSession, kind: str) -> dict:
     everyone = await population(db, kind)
     if kind == "talaba":

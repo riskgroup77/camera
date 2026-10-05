@@ -17,6 +17,7 @@ import ConsolePalette, { type PaletteTarget } from './ConsolePalette';
 import { useConsoleFilter } from './consoleFilter';
 import { useNazoratSelection } from './nazoratSelection';
 import { useGroupLive } from './useGroupLive';
+import { useGroupCriteria } from './useGroupCriteria';
 import { EASE } from './motion';
 import DayOffNotice from '../components/situation/DayOffNotice';
 
@@ -111,6 +112,8 @@ function Console() {
   const canPeople = canAttendance || canReports;
   // Guruh ma'lumoti faqat talabalar uchun (xodimlarda `group` — kafedra id si).
   const groupLive = useGroupLive(canPeople && selection.who === 'talaba' ? selection.group : '', date, isToday, pulse);
+  // Guruh kriteriyalari — hisobot bilan bir xil hisob, shuning uchun hisobot huquqi bilan.
+  const groupCriteria = useGroupCriteria(selection.who === 'talaba' ? selection.group : '', date, pulse, canReports);
 
   // Jonli xabar kelganda raqamlar yangilanadi. Ulanish HOLATI hodisalar
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni
@@ -217,6 +220,8 @@ function Console() {
           <GroupTablePanel
             selection={selection}
             live={groupLive}
+            criteria={groupCriteria}
+            canCriteria={canReports}
             date={date}
             setDate={filter.setDate}
             isToday={isToday}
@@ -240,6 +245,8 @@ function Console() {
           <GroupStatsPanel
             selection={selection}
             live={groupLive}
+            criteria={groupCriteria}
+            canCriteria={canReports}
             date={date}
             isToday={isToday}
             pulse={pulse}

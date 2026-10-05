@@ -14,8 +14,10 @@ import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import PdfButton from '../../components/situation/PdfButton';
 import ArrivalsChart from '../../components/situation/ArrivalsChart';
 import { hourRange } from '../../lib/arrivals';
+import { TONE_TEXT, criterionShort } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
+import type { GroupCriteriaState } from '../useGroupCriteria';
 import type { NazoratSelection } from '../nazoratSelection';
 import { groupCounters, lessonSeenIds } from './GroupTablePanel';
 
@@ -96,9 +98,44 @@ function LessonCard({
   );
 }
 
+/** Guruh bo'yicha kriteriyalar — bosilsa chapdagi jadval kriteriyalarga o'tadi. */
+function CriteriaSummary({ criteria, onOpen }: { criteria: GroupCriteriaState; onOpen: () => void }) {
+  if (criteria.error) return <p className="text-[12px] text-danger">{criteria.error}</p>;
+  if (!criteria.data) return <p className="text-[12px] text-muted">Kriteriyalar yuklanmoqda…</p>;
+  return (
+    <div className="rounded-control border border-border bg-surface px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[13px] font-semibold text-fg">Kriteriyalar</span>
+        <button type="button" onClick={onOpen} className="text-[11px] text-primary hover:underline">
+          har talaba bo‘yicha →
+        </button>
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+        {criteria.data.criteria.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={onOpen}
+            title={`${c.code ? `${c.code}. ` : ''}${c.label} — ${c.unavailable ?? c.description}`}
+            className="flex items-baseline justify-between gap-2 rounded px-1 text-left text-[12px] hover:bg-surface-2"
+          >
+            <span className="truncate text-muted">
+              {c.code ? <span className="me-1 text-[10px] text-subtle">{c.code}</span> : null}
+              {criterionShort(c)}
+            </span>
+            <b className={cn('shrink-0 tabular-nums', c.unavailable ? 'font-normal text-subtle' : TONE_TEXT[c.tone])}>{c.indicator}</b>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GroupStatsPanel({
   selection,
   live,
+  criteria,
+  canCriteria,
   date,
   isToday,
   pulse,
@@ -108,6 +145,8 @@ export default function GroupStatsPanel({
 }: {
   selection: NazoratSelection;
   live: GroupLive;
+  criteria: GroupCriteriaState;
+  canCriteria: boolean;
   date: string;
   isToday: boolean;
   pulse: number;
@@ -176,6 +215,7 @@ export default function GroupStatsPanel({
           )}
         </div>
       )}
+      {canCriteria && <CriteriaSummary criteria={criteria} onOpen={() => selection.setView('kriteriyalar')} />}
     </div>
   ) : orgUnitId ? (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, GraduationCap, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, GraduationCap, ListChecks, Users } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import {
   POSITION_GROUP_LABEL,
@@ -18,9 +18,11 @@ import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/
 import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import PdfButton from '../../components/situation/PdfButton';
+import GroupCriteriaTable from '../../components/situation/GroupCriteriaTable';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
-import type { NazoratSelection, Who } from '../nazoratSelection';
+import type { GroupCriteriaState } from '../useGroupCriteria';
+import type { GroupView, NazoratSelection, Who } from '../nazoratSelection';
 
 /**
  * NAZORAT — chap jadval.
@@ -35,12 +37,18 @@ import type { NazoratSelection, Who } from '../nazoratSelection';
  * jadvali (sanoqlar bosiladi); holat yoki F.I.Sh. berilsa — shu filtrdagi
  * talabalarning o'zi (butun institut / fakultet / kurs bo'yicha).
  * Guruh tanlangan: guruh talabalari — holati, kelgan vaqti, hozirgi darsda
- * ko'ringanmi, yuzi bazadami.
+ * ko'ringanmi, yuzi bazadami. "Kriteriyalar" ko'rinishida — har talaba
+ * qatorida hamma kriteriyalar va video dalillar (GroupCriteriaTable).
  */
 
 const WHO_TABS = [
   { id: 'talaba' as const, label: 'Talabalar', icon: GraduationCap },
   { id: 'xodim' as const, label: 'O‘qituvchi va xodimlar', icon: Users },
+];
+
+const VIEW_TABS = [
+  { id: 'davomat' as const, label: 'Davomat', icon: CalendarCheck },
+  { id: 'kriteriyalar' as const, label: 'Kriteriyalar', icon: ListChecks },
 ];
 
 const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
@@ -90,6 +98,8 @@ function statusOptions(keys: readonly CounterKey[]) {
 export default function GroupTablePanel({
   selection,
   live,
+  criteria,
+  canCriteria,
   date,
   setDate,
   isToday,
@@ -100,6 +110,9 @@ export default function GroupTablePanel({
 }: {
   selection: NazoratSelection;
   live: GroupLive;
+  /** Guruh kriteriyalari (hisobotlarni ko'rish huquqi bo'lsa). */
+  criteria: GroupCriteriaState;
+  canCriteria: boolean;
   date: string;
   setDate: (date: string) => void;
   isToday: boolean;
@@ -108,8 +121,9 @@ export default function GroupTablePanel({
   onExpand: (id: string | null) => void;
   area?: string;
 }) {
-  const { who, group, status, setWho, setGroup, setStatus } = selection;
+  const { who, group, status, view, setWho, setGroup, setStatus, setView } = selection;
   const students = who === 'talaba';
+  const criteriaMode = students && Boolean(group) && canCriteria && view === 'kriteriyalar';
   const [groups, setGroups] = useState<GroupStat[] | null>(null);
   const [tree, setTree] = useState<OrgTree | null>(null);
   const [positionGroup, setPositionGroup] = useState<PositionGroup | ''>('');
@@ -327,6 +341,9 @@ export default function GroupTablePanel({
             Barcha guruhlar
           </Button>
         )}
+        {students && group && canCriteria && (
+          <Tabs<GroupView> tabs={VIEW_TABS} value={view} onChange={setView} variant="segmented" size="sm" ariaLabel="Guruh jadvali" />
+        )}
         {students ? (
           <>
             {!group && (
@@ -355,7 +372,7 @@ export default function GroupTablePanel({
             <CountPicker label="Lavozim" value={position} onChange={setPosition} options={positionOptions} />
           </>
         )}
-        <Select
+        {!criteriaMode && <Select
           label="Holat"
           value={status === 'hammasi' ? '' : status}
           onChange={(value) => setStatus((value || 'hammasi') as CounterKey)}
@@ -363,17 +380,40 @@ export default function GroupTablePanel({
           placeholder="hammasi"
           size="sm"
           highlightActive
-        />
+        />}
         <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha qidirish" size="sm" className="w-52" />
         <span className="ms-auto">
-          {status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
+          {!criteriaMode && status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
         </span>
       </div>
     </div>
   );
 
+  const criteriaRows = criteria.data
+    ? { ...criteria.data, people: criteria.data.people.filter((p) => !needle || p.full_name.toLowerCase().includes(needle)) }
+    : null;
+
   let body;
-  if (students && group) {
+  if (criteriaMode) {
+    body = (
+      <>
+        {criteria.data && !criteria.data.analysed && (
+          <p className="shrink-0 rounded-control bg-warning-soft px-2.5 py-1.5 text-[12px] text-fg">
+            Bu kun hali kunlik video tahlil qilinmagan: oq xalat va chekish ustunlarida «—». Davomat va darsga oid
+            kriteriyalar jonli kuzatuvdan.
+          </p>
+        )}
+        <div className="min-h-0 flex-1">
+          <GroupCriteriaTable data={criteriaRows} loading={criteria.loading} error={criteria.error} />
+        </div>
+        <p className="shrink-0 text-[11px] leading-snug text-muted">
+          Rang: <span className="text-success">yashil</span> — yaxshi, <span className="text-warning">sariq</span> — ogohlantirish,{' '}
+          <span className="text-danger">qizil</span> — muammo · kamera belgisi — 2 daqiqalik video dalil (talaba sahifasida) ·
+          «—» — hisoblanmagan, sababi sarlavha izohida. Ustunni bosing — muammolilar tepaga chiqadi.
+        </p>
+      </>
+    );
+  } else if (students && group) {
     body = (
       <>
         <StatusCounters items={groupCounters(groupStudents, seen)} active={status} onPick={setStatus} size="sm" className="shrink-0" />
@@ -449,7 +489,8 @@ export default function GroupTablePanel({
   const unitName = !students && group ? tree?.units.find((u) => u.id === group)?.name : null;
   const title = students ? (group ? `Guruh ${group}` : 'Talabalar') : unitName ?? 'O‘qituvchi va xodimlar';
   const badge =
-    students && group ? `${shownStudents.length}/${groupStudents.length}` : students && !peopleMode ? `${filteredGroups.length} guruh` : null;
+    criteriaMode && criteriaRows ? `${criteriaRows.people.length} talaba`
+    : students && group ? `${shownStudents.length}/${groupStudents.length}` : students && !peopleMode ? `${filteredGroups.length} guruh` : null;
 
   return (
     <Panel

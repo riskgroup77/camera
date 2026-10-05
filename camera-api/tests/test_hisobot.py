@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models import DailyPersonCriteria, LessonAttendance, PresenceVisit
+from app.batch import holatlar
 from app.services import hisobot
 from app.timezone import INSTITUTE_TZ
 from tests.conftest import auth_headers
@@ -353,3 +354,63 @@ async def test_requires_auth(client, world):
     assert res.status_code == 401
 
 
+
+
+# ─────────────────────────────────────────── guruh: talaba × mezon (Nazorat)
+
+def test_matrix_cell_reads_like_a_register():
+    import uuid
+    from datetime import date
+
+    pid = uuid.uuid4()
+    day = date(2026, 10, 6)
+    data = hisobot.Data("talaba", day, day, None, [])
+    data.day_rows[pid] = {"status": "kech_keldi", "check_in": time(8, 42), "late": 32}
+    data.lessons[pid] = hisobot.Tri(ok=1, late=1, miss=1)
+    data.events["forma"] = {pid: 1}
+    data.findings[holatlar.NO_COAT] = {pid: (1, 1)}
+    cell = hisobot.matrix_cell
+    assert cell(data, "davomat", pid)["value"] == "kech" and cell(data, "davomat", pid)["tone"] == "warning"
+    assert cell(data, "kechikish", pid)["value"] == "+32 daq"
+    assert cell(data, "dars_qatnashish", pid)["value"] == "2/3"
+    assert cell(data, "forma", pid)["value"] == "1" and cell(data, "forma", pid)["tone"] == "danger"
+    assert cell(data, "forma", pid)["evidence"] == 1  # 2 daqiqalik video dalil
+    assert cell(data, "chekish", pid)["value"] == "0" and cell(data, "chekish", pid)["evidence"] is None
+    other = uuid.uuid4()
+    assert cell(data, "davomat", other)["value"] == "—"
+    assert cell(data, "dars_qatnashish", other)["value"] == "—"
+    # Bir necha kun: kelgan kunlar / yozuvli kunlar.
+    week = hisobot.Data("talaba", day - timedelta(days=4), day, None, [])
+    week.att[pid] = hisobot.Att(present=3, late=1, absent=2)
+    assert cell(week, "davomat", pid)["value"] == "3/5" and cell(week, "kechikish", pid)["value"] == "1"
+
+
+async def test_group_matrix_lists_every_student_with_every_criterion(client, admin, world, db_session):
+    res = await client.get("/api/hisobot/guruh", params={"group": "DI-2301"}, headers=admin)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    names = [p["full_name"] for p in body["people"]]
+    # Faol a'zolar alifbo tartibida; XDI-2301 (Komilov) va faol emaslar yo'q.
+    assert names == ["Aliyev Anvar", "Botirova Nigora", "Choriyev Sardor", "Davronov Jasur", "Ergasheva Laylo"]
+    keys = [c["key"] for c in body["criteria"]]
+    assert keys[:2] == ["davomat", "kechikish"] and {"forma", "chekish", "diqqat"} <= set(keys)
+    cells = {p["full_name"]: p["cells"] for p in body["people"]}
+    assert cells["Aliyev Anvar"]["davomat"]["value"] == "keldi"
+    assert cells["Botirova Nigora"]["davomat"]["value"] == "kech"
+    assert cells["Botirova Nigora"]["kechikish"]["value"].startswith("+")
+    assert cells["Choriyev Sardor"]["davomat"]["value"] == "kelmadi"
+    # Video tahlil o'tmagan kun: oq xalat "0" emas — sababi bilan "—".
+    forma = next(c for c in body["criteria"] if c["key"] == "forma")
+    assert forma["unavailable"] and "tahlil" in forma["unavailable"]
+    assert cells["Aliyev Anvar"]["forma"]["value"] == "—"
+
+    db_session.add(DailyPersonCriteria(student_staff_id=world.people.aliyev.id, day=world.today, coat_status="kiymagan"))
+    await db_session.commit()
+    body = (await client.get("/api/hisobot/guruh", params={"group": "DI-2301"}, headers=admin)).json()
+    cells = {p["full_name"]: p["cells"] for p in body["people"]}
+    assert body["analysed"] is True
+    assert cells["Aliyev Anvar"]["forma"]["value"] == "1" and cells["Botirova Nigora"]["forma"]["value"] == "0"
+
+
+async def test_group_matrix_requires_reports_permission(client, world):
+    assert (await client.get("/api/hisobot/guruh", params={"group": "DI-2301"})).status_code in (401, 403)

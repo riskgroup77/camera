@@ -11,8 +11,11 @@ import type { CounterKey } from '../components/situation/StatusCounters';
 export const GROUP_PARAM = 'guruh';
 export const STATUS_PARAM = 'holat';
 export const WHO_PARAM = 'toifa';
+/** Guruh ichida: davomat (standart) yoki kriteriyalar jadvali. */
+export const VIEW_PARAM = 'korinish';
 
 export type Who = 'talaba' | 'xodim';
+export type GroupView = 'davomat' | 'kriteriyalar';
 
 const COUNTER_KEYS: readonly CounterKey[] = [
   'hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz', 'darsda', 'darsda_emas',
@@ -30,6 +33,9 @@ export interface NazoratSelection {
   setWho: (who: Who) => void;
   setGroup: (group: string) => void;
   setStatus: (status: CounterKey) => void;
+  /** Guruh jadvali: davomat yoki 9 kriteriya (har talaba qatorida). */
+  view: GroupView;
+  setView: (view: GroupView) => void;
 }
 
 export function useNazoratSelection(): NazoratSelection {
@@ -37,6 +43,7 @@ export function useNazoratSelection(): NazoratSelection {
   const group = params.get(GROUP_PARAM) ?? '';
   const status = parseCounter(params.get(STATUS_PARAM));
   const who: Who = params.get(WHO_PARAM) === 'xodim' ? 'xodim' : 'talaba';
+  const view: GroupView = params.get(VIEW_PARAM) === 'kriteriyalar' ? 'kriteriyalar' : 'davomat';
 
   const setWho = useCallback(
     (next: Who) =>
@@ -83,5 +90,19 @@ export function useNazoratSelection(): NazoratSelection {
     [setParams],
   );
 
-  return { who, group, status, setWho, setGroup, setStatus };
+  const setView = useCallback(
+    (next: GroupView) =>
+      setParams(
+        (current) => {
+          const out = new URLSearchParams(current);
+          if (next === 'kriteriyalar') out.set(VIEW_PARAM, next);
+          else out.delete(VIEW_PARAM);
+          return out;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
+
+  return { who, group, status, view, setWho, setGroup, setStatus, setView };
 }
