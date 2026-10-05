@@ -127,19 +127,18 @@ export default function GroupStatsPanel({
   // Kelish grafigidagi bosilgan ustun (soat) — shu soatda kelganlar ro'yxati.
   const [arrivalHour, setArrivalHour] = useState<number | null>(null);
 
-  // Institut / kafedra bo'yicha sanoqlar (talaba guruhi tanlanmaganda).
+  // Institut bo'yicha — faqat kelish grafigi (overview); kafedra/bo'linma
+  // tanlanganda soatlik sanoq unga mos kelmaydi — o'rniga uning sanoqlari.
   useEffect(() => {
     if (groupView) return;
     const controller = new AbortController();
-    Promise.all([
-      getPeopleStatus({ date, type: who, orgUnitId, pageSize: 1 }, { signal: controller.signal }),
-      getOverview(date, { signal: controller.signal }),
-    ])
-      .then(([page, data]) => {
-        setCounts(page.counts);
-        setOverview(data);
-        setError(null);
-      })
+    const request = orgUnitId
+      ? getPeopleStatus({ date, type: who, orgUnitId, pageSize: 1 }, { signal: controller.signal }).then((page) => {
+          setCounts(page.counts);
+        })
+      : getOverview(date, { signal: controller.signal }).then(setOverview);
+    request
+      .then(() => setError(null))
       .catch((err) => {
         if (!controller.signal.aborted) setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
       });
@@ -178,36 +177,32 @@ export default function GroupStatsPanel({
         </div>
       )}
     </div>
-  ) : (
+  ) : orgUnitId ? (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
       <StatusCounters
         items={INSTITUTE_KEYS.map((key) => ({ key, value: counts ? counts[COUNT_FIELD[key]!] : null }))}
         onPick={(key) => setListing(key as PeopleStatusKey)}
         size="sm"
       />
-      <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>
-        {error ??
-          (!overview
-            ? 'Yuklanmoqda…'
-            : isToday
-              ? `Hozir ${overview.lessons.ongoing} ta dars ketmoqda · darsdagi o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`
-              : `Shu kuni darsi bor o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`)}
-      </div>
-      {/* Kelish oqimi — butun institut bo'yicha (bo'linma tanlanganda
-          soatlik sanoq unga mos kelmaydi, shuning uchun ko'rsatilmaydi). */}
-      {overview && !orgUnitId && (
+      <p className={cn('text-[11px]', error ? 'text-danger' : 'text-muted')}>{error ?? 'Sonni bosing — kimligi ko‘rinadi.'}</p>
+    </div>
+  ) : (
+    // Kelish oqimi — butun institut bo'yicha; panelning hamma joyini oladi.
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
+      {overview ? (
         <ArrivalsChart
           buckets={overview.arrivalsByHour}
           who={who}
           lateAfter={students ? overview.lateAfterStudents : overview.lateAfterStaff}
           isToday={isToday}
           onPick={setArrivalHour}
-          className="max-h-[300px] min-h-[190px] flex-1"
+          className="min-h-[190px] flex-1"
         />
+      ) : (
+        <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>{error ?? 'Yuklanmoqda…'}</div>
       )}
-      <p className="text-[11px] text-muted">
-        Sonni bosing — kimligi ko‘rinadi.{students ? ' Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.' : ''}
-      </p>
+      {overview && error && <p className="text-[11px] text-danger">{error}</p>}
+      {students && <p className="text-[11px] text-muted">Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.</p>}
     </div>
   );
 

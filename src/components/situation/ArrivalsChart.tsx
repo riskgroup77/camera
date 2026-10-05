@@ -29,7 +29,7 @@ const SIDE = 6;
 const FALLBACK = { width: 520, height: 168 };
 // Grafik panelda qolgan joyni egallaydi, lekin shu oraliqda qoladi.
 const MIN_HEIGHT = 112;
-const MAX_HEIGHT = 240;
+const MAX_HEIGHT = 360;
 
 /** Konteyner o'lchami (ResizeObserver; jsdom va eski brauzerda — zaxira). */
 function useSize<T extends HTMLElement>() {
