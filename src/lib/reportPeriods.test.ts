@@ -52,11 +52,11 @@ describe('yordamchilar', () => {
     expect(todayInTashkent(new Date(Date.UTC(2026, 8, 15, 1, 30)))).toBe('2026-09-15');
   });
 
-  it('ish kuni 06:00 da almashadi', () => {
-    // 2026-09-14 20:30 UTC = 2026-09-15 01:30 Toshkent — hali kechagi ish kuni
-    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 14, 20, 30)))).toBe('2026-09-14');
-    // 00:59 UTC = 05:59 Toshkent — kechagi; 01:00 UTC = 06:00 — bugungi
-    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 15, 0, 59)))).toBe('2026-09-14');
-    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 15, 1, 0)))).toBe('2026-09-15');
+  it('kun yarim tunda (Toshkent) almashadi', () => {
+    // 2026-09-14 18:59 UTC = 23:59 Toshkent — hali 14-sentabr
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 14, 18, 59)))).toBe('2026-09-14');
+    // 2026-09-14 19:00 UTC = 2026-09-15 00:00 Toshkent — yangi kun (tunda ham)
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 14, 19, 0)))).toBe('2026-09-15');
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 14, 21, 44)))).toBe('2026-09-15');
   });
 });

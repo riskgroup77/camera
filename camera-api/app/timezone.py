@@ -37,9 +37,9 @@ def to_local(moment: datetime) -> datetime:
 
 
 # ── Ish kuni ────────────────────────────────────────────────────────────────
-# Institutda kun yarim tunda emas, settings.day_start_hour (06:00) da
-# almashadi: 00:00-05:59 dagi ko'rinishlar (tungi navbatchi, kechki
-# mashg'ulotdan keyin ketayotganlar) OLDINGI kunga tegishli. "Bugun",
+# Kun settings.day_start_hour da almashadi (standart 0 — yarim tun,
+# kalendar kuni). Soat berilsa (masalan 6), 00:00-05:59 dagi ko'rinishlar
+# (tungi navbatchi) OLDINGI kunga tegishli bo'ladi. "Bugun",
 # kunlik davomat sanasi, statistikalar va hisobotlarning kun chegaralari
 # shu funksiyalar orqali hisoblanadi.
 

@@ -1242,7 +1242,10 @@ class Settings(BaseSettings):
     org_name: str = "Farg'ona JSSTI"
     # Ish kuni shu soatda (institut vaqti) almashadi — kunlik davomat,
     # "bugun" statistikasi va hisobot kunlari (app/timezone.py business_*).
-    day_start_hour: int = 6
+    # 2026-10-06: 6 -> 0 — kalendar kuni. 06:00 da almashganda tunda
+    # (00:00-05:59) panel kechagi sanani "Bugun" deb ko'rsatardi; institutda
+    # yarim tundan keyin dars/ish yo'q. Frontend: src/lib/uzDate.ts.
+    day_start_hour: int = 0
     # Hisobotlar bo'limi paroli (app/routers/report_lock.py): pbkdf2 xesh, .env da.
     # Bo'sh — qulf o'chiq.
     report_password_hash: str = ""
