@@ -576,6 +576,7 @@ async def person_profile(
         faculty_id=str(person.faculty_id) if person.faculty_id else None,
         faculty=person.faculty.name if person.faculty else (NO_FACULTY_LABEL if person.type == "talaba" else None),
         unit=person.group_or_position, group=group or None, course=course,
+        reported_group=person.reported_group if person.type == "talaba" else None,
         position=person.position if person.type == "xodim" else None,
         photo_angles=sum(1 for key in (person.biometric_photo_key, person.biometric_photo_left_key,
                                        person.biometric_photo_right_key) if key),

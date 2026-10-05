@@ -75,6 +75,8 @@ from app.schemas.enrollment import (
     EnrollmentSubmitOut,
 )
 from app.services.face_matching import announce_roster_change
+from app.services.hemis_reconcile import NOT_IN_HEMIS, hemis_groups, match_hemis_group
+from app.services.integrations.hemis import hemis_configured
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.privacy import record_consent
 from app.services.self_enrollment import decide_status
@@ -315,6 +317,7 @@ async def register_self(
         faculty_id = faculty.id
 
     group_or_position = body.group_or_position.strip()
+    reported_group = None
     org_unit_id = None
     position = None
     if body.type == "talaba":
@@ -326,6 +329,16 @@ async def register_self(
         if group is not None:
             group_or_position = f"{group.course}-kurs, {group.name}"
             faculty_id = faculty_id or group.faculty_id
+        elif hemis_configured():
+            # HEMIS ulangan: qo'lda yozilgan, HEMIS'da yo'q guruh ("20.26
+            # gurux") Nazoratda bir kishilik soxta guruh bo'lmasin — bitta
+            # "HEMIS'da topilmadi" ro'yxati, yozgani reported_group'da.
+            known = match_hemis_group(group_or_position, await hemis_groups(db))
+            if known is not None:
+                group_or_position = known
+            else:
+                reported_group = group_or_position[:300]
+                group_or_position = NOT_IN_HEMIS
     else:
         position = group_or_position
         if body.org_unit_id:
@@ -338,6 +351,7 @@ async def register_self(
         full_name=body.full_name.strip(),
         type=body.type,
         group_or_position=group_or_position,
+        reported_group=reported_group,
         org_unit_id=org_unit_id,
         position=position,
         faculty_id=faculty_id,

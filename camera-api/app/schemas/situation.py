@@ -340,6 +340,8 @@ class PersonInfoOut(CamelModel):
     photo_angles: int = 0
     group: str | None = None  # talaba guruhi
     course: int | None = None
+    # HEMIS'da topilmagan talaba o'zi yozgan guruh.
+    reported_group: str | None = None
     department_id: str | None = None  # xodim kafedrasi (nom bo'yicha topilgan)
     department: str | None = None
     biometrics_status: str

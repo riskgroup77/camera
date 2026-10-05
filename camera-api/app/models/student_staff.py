@@ -51,6 +51,9 @@ class StudentStaff(Base):
         UUID(as_uuid=True), ForeignKey("faculties.id", ondelete="SET NULL"), nullable=True, index=True
     )
     group_or_position: Mapped[str] = mapped_column(String, nullable=False)
+    # Talaba o'zi yozgan guruh — HEMIS'da topilmaganda group_or_position
+    # "HEMIS'da topilmadi" bo'ladi, yozgani shu yerda (hemis_reconcile).
+    reported_group: Mapped[str | None] = mapped_column(String, nullable=True)
     # Xodim: tuzilmadagi bo'linmasi (app/models/org.py OrgUnit) va lavozimi
     # (HEMIS staffPosition: "Assistent", "Farrosh", ...). Talabada bo'sh.
     org_unit_id: Mapped[uuid.UUID | None] = mapped_column(

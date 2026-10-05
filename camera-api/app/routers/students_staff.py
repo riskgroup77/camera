@@ -139,6 +139,7 @@ def _to_out(record: StudentStaff, faculty_name: str, org_unit: str | None = None
         biometric_photo_url=presigned_url(record.biometric_photo_key) if record.biometric_photo_key else None,
         course=course,
         group=group or None,
+        reported_group=record.reported_group if record.type == "talaba" else None,
         confirmed_label=_confirmed_label(record),
         self_registered=record.self_registered,
         awaiting_approval=record.awaiting_approval,

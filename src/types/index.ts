@@ -143,6 +143,8 @@ export interface StudentStaffRecord {
   /** Faqat talabada — groupOrPosition "2-kurs, DI-1625" dan ajratilgan. */
   course?: number | null;
   group?: string | null;
+  /** HEMIS'da topilmagan talaba o'zi yozgan guruh (group — "HEMIS'da topilmadi"). */
+  reportedGroup?: string | null;
   /** "14.09.2026 13:57" — yuz tasdiqlangan payt (Toshkent vaqti). */
   confirmedLabel?: string | null;
   /** Ochiq sahifada o'zini o'zi ro'yxatdan o'tkazgan. */

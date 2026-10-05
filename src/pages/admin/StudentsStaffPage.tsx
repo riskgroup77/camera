@@ -342,7 +342,7 @@ export default function StudentsStaffPage() {
             cell: (person: StudentStaffRecord) => {
               const group = person.group || (person.course ? null : person.groupOrPosition);
               if (!group) return <span className="text-subtle">—</span>;
-              return person.group ? (
+              const name = person.group ? (
                 <Link
                   to={situationPaths.group(person.group)}
                   onClick={(e) => e.stopPropagation()}
@@ -352,6 +352,14 @@ export default function StudentsStaffPage() {
                 </Link>
               ) : (
                 group
+              );
+              if (!person.reportedGroup) return name;
+              // HEMIS'da topilmagan: bo'limdan so'rash uchun o'zi yozgani ham ko'rinsin.
+              return (
+                <span className="flex flex-col">
+                  {name}
+                  <span className="text-[11px] text-muted">yozgani: {person.reportedGroup}</span>
+                </span>
               );
             },
           },

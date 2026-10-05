@@ -301,6 +301,8 @@ export interface PersonInfo {
   photoAngles?: number;
   group: string | null;
   course: number | null;
+  /** HEMIS'da topilmagan talaba o'zi yozgan guruh. */
+  reportedGroup?: string | null;
   departmentId: string | null;
   department: string | null;
   biometricsStatus: string;

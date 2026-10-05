@@ -15,6 +15,11 @@ Qoida va sabab — app/services/hemis_reconcile.py. Ikki bosqich:
      rozilik ma'lumoti unga ko'chadi, o'zi esa o'chiriladi
      (person_dedupe.merge_people). Har juftlik — alohida tranzaksiya va
      audit jurnalida yozuv. Oldin baza zaxirasini oling.
+  3. BELGILASH — qolgan bog'lanmagan talabalar: guruhi HEMIS'da bo'lmasa
+     "HEMIS'da topilmadi" guruhiga (Nazoratda yuzlab soxta guruh o'rniga
+     bitta ro'yxat), qo'lda yozgani reported_group'da saqlanadi; qisqa
+     yozilgan to'g'ri guruh ("DI-2426") HEMIS ko'rinishiga keltiriladi.
+     Bo'limdan so'rab ism/guruh to'g'irlangach — hisobot va qo'llash qayta.
 
 ISHGA TUSHIRISH (server, /opt/camera/camera-api):
 
@@ -24,6 +29,8 @@ ISHGA TUSHIRISH (server, /opt/camera/camera-api):
     docker compose cp ./hemis_moslash.xlsx api:/tmp/hemis_moslash.xlsx
     docker compose exec -T api python scripts/hemis_moslash.py qollash --fayl /tmp/hemis_moslash.xlsx --sinov
     docker compose exec -T api python scripts/hemis_moslash.py qollash --fayl /tmp/hemis_moslash.xlsx
+    docker compose exec -T api python scripts/hemis_moslash.py belgilash --sinov
+    docker compose exec -T api python scripts/hemis_moslash.py belgilash
 
 Qayta ishga tushirish xavfsiz: birlashtirilgan qator ikkinchi marta topilmaydi.
 """
@@ -43,10 +50,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.orm import defer, noload
 
 from app.database import SessionLocal
-from app.models import AuditLog
+from app.models import AuditLog, StudentStaff
 from app.services import hemis_reconcile as rec
 from app.services import person_dedupe
 from app.services.face_matching import announce_roster_change
@@ -58,7 +66,7 @@ DECISION = "Qaror"
 KEEP_COL, DUP_COL = "hemis_qator_id", "ozi_qoshgan_qator_id"
 
 _ROWS_SQL = """
-    select s.id, s.full_name, s.type, s.pinfl, s.hemis_id, s.group_or_position, s.active,
+    select s.id, s.full_name, s.type, s.pinfl, s.hemis_id, s.group_or_position, s.reported_group, s.active,
            s.biometrics_status, s.biometric_embedding, s.biometric_photo_key,
            s.biometric_photo_left_key, s.biometric_photo_right_key, s.self_registered,
            s.consent_source, s.created_at, f.name as faculty,
@@ -93,7 +101,7 @@ def _pinfl(row: dict | None) -> str:
 
 def _person_cells(row: dict) -> list:
     return [
-        row["full_name"], row["group_or_position"], _face(row), _pinfl(row), _date(row.get("created_at")),
+        row["full_name"], rec.typed_group(row), _face(row), _pinfl(row), _date(row.get("created_at")),
         int(row.get("att") or 0), "o'zi (QR)" if row.get("self_registered") else (row.get("consent_source") or "admin"),
     ]
 
@@ -277,6 +285,46 @@ async def cmd_qollash(path: str, dry_run: bool) -> None:
         print("Tanish ro'yxati yangilanishi e'lon qilindi.")
 
 
+async def cmd_belgilash(dry_run: bool) -> None:
+    async with SessionLocal() as db:
+        groups = await rec.hemis_groups(db)
+        if not groups:
+            raise SystemExit("Bazada HEMIS guruhlari yo'q — HEMIS sinxroni ishlaganini tekshiring")
+        people = (
+            await db.execute(
+                select(StudentStaff)
+                .options(noload(StudentStaff.faculty), defer(StudentStaff.biometric_embedding))
+                .where(StudentStaff.type == "talaba", StudentStaff.active.is_(True), StudentStaff.hemis_id.is_(None))
+            )
+        ).scalars().all()
+        normalized = marked = 0
+        for person in people:
+            if person.group_or_position == rec.NOT_IN_HEMIS:
+                continue
+            known = rec.match_hemis_group(person.group_or_position, groups)
+            if known is not None:
+                if known != person.group_or_position:
+                    person.group_or_position = known
+                    normalized += 1
+                continue
+            person.reported_group = person.reported_group or person.group_or_position
+            person.group_or_position = rec.NOT_IN_HEMIS
+            marked += 1
+        db.add(AuditLog(
+            user_id=None, user_name=AUDIT_USER, module="Talabalar", status="muvaffaqiyatli", ip="internal",
+            action=f"HEMIS'da topilmagan {marked} talaba \"{rec.NOT_IN_HEMIS}\" guruhiga o'tkazildi; "
+                   f"{normalized} tasining guruhi HEMIS ko'rinishiga keltirildi",
+        ))
+        if dry_run:
+            await db.rollback()
+        else:
+            await db.commit()
+    print(f"HEMIS'ga bog'lanmagan faol talabalar: {len(people)}{'  (SINOV — bazaga yozilmaydi)' if dry_run else ''}")
+    print(f"  \"{rec.NOT_IN_HEMIS}\" guruhiga o'tkazildi : {marked}")
+    print(f"  guruhi HEMIS ko'rinishiga keltirildi : {normalized}")
+    print(f"  o'zgarishsiz (HEMIS guruhida)        : {len(people) - marked - normalized}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -285,11 +333,15 @@ def main() -> None:
     apply = sub.add_parser("qollash", help="Excel'dagi tasdiqlanganlarni birlashtirish")
     apply.add_argument("--fayl", required=True)
     apply.add_argument("--sinov", action="store_true", help="hamma tekshiruvdan o'tadi, lekin bazaga yozilmaydi")
+    mark = sub.add_parser("belgilash", help="HEMIS'da topilmaganlarni bitta guruhga yig'ish")
+    mark.add_argument("--sinov", action="store_true", help="bazaga yozilmaydi")
     args = parser.parse_args()
     if args.cmd == "hisobot":
         asyncio.run(cmd_hisobot(args.fayl))
-    else:
+    elif args.cmd == "qollash":
         asyncio.run(cmd_qollash(args.fayl, args.sinov))
+    else:
+        asyncio.run(cmd_belgilash(args.sinov))
 
 
 if __name__ == "__main__":

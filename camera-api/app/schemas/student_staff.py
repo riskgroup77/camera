@@ -19,6 +19,8 @@ class StudentStaffOut(CamelModel):
     # Faqat talabada: group_or_position "2-kurs, DI-1625" dan ajratilgan
     course: int | None = None
     group: str | None = None
+    # HEMIS'da topilmagan talaba o'zi yozgan guruh (group — "HEMIS'da topilmadi").
+    reported_group: str | None = None
     # "14.09.2026 13:57" — yuz tasdiqlangan payt, Toshkent vaqti
     confirmed_label: str | None = None
     # Ochiq sahifada o'zini o'zi ro'yxatdan o'tkazgan; awaiting_approval —

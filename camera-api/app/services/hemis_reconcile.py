@@ -34,6 +34,10 @@ from app.services.integrations.hemis import group_code
 from app.services.name_matching import name_key, name_tokens, same_person_name
 from app.services.person_dedupe import FACE_DIFFERENT, pinfl_close
 
+#: HEMIS'da topilmagan talabaning guruhi (o'zi yozgani — reported_group).
+#: Bo'limdan so'rab to'g'irlanguncha hammasi shu bitta ro'yxatda turadi.
+NOT_IN_HEMIS = "HEMIS'da topilmadi"
+
 MERGE = "birlashtiriladi"
 REVIEW = "tekshirish"
 NOT_FOUND = "topilmadi"
@@ -89,8 +93,13 @@ def _pinfl_conflict(a: dict, b: dict) -> bool:
     return bool(pa and pb and pa != pb and not pinfl_close(pa, pb))
 
 
+def typed_group(person: dict) -> str | None:
+    """Odam yozgan guruh: "HEMIS'da topilmadi"ga o'tkazilgan bo'lsa — reported_group."""
+    return person.get("reported_group") or person.get("group_or_position")
+
+
 def _same_group(person: dict, hemis: dict) -> bool:
-    wanted = group_code(person.get("group_or_position"))
+    wanted = group_code(typed_group(person))
     return bool(wanted) and wanted == group_code(hemis.get("group_or_position"))
 
 
@@ -142,7 +151,7 @@ class _HemisIndex:
 
     def group_candidates(self, person: dict, limit: int = 2) -> list[dict]:
         """Shu guruh kodidagi, ismi boshqacha yozilgan talabalar."""
-        code = group_code(person.get("group_or_position"))
+        code = group_code(typed_group(person))
         mine = name_tokens(person.get("full_name"))
         if not code or not mine:
             return []
@@ -300,3 +309,36 @@ def reconcile(unlinked: list[dict], hemis_rows: list[dict]) -> list[Proposal]:
     order = {MERGE: 0, REVIEW: 1, NOT_FOUND: 2}
     proposals.sort(key=lambda p: (order[p.verdict], p.person.get("full_name") or ""))
     return proposals
+
+
+# ── Guruh: yozilgani HEMIS guruhimi ──────────────────────────────────────
+
+
+def match_hemis_group(typed: str | None, hemis_groups: list[str]) -> str | None:
+    """Yozilgan guruh HEMIS talabalari guruhlaridan biriga AYNAN mosmi —
+    to'liq ("1-kurs, DI-2426") yoki faqat nomi ("di-2426"). Mos bo'lsa —
+    HEMIS'dagi to'liq ko'rinishi; aks holda None (taxmin qilinmaydi)."""
+    text = " ".join((typed or "").split()).lower()
+    if not text or text == NOT_IN_HEMIS.lower():
+        return None
+    by_name: dict[str, set[str]] = defaultdict(set)
+    for full in hemis_groups:
+        if full.lower() == text:
+            return full
+        by_name[full.split(", ", 1)[-1].lower()].add(full)
+    found = by_name.get(text, set())
+    return next(iter(found)) if len(found) == 1 else None
+
+
+async def hemis_groups(db) -> list[str]:
+    """HEMIS'ga bog'langan faol talabalar guruhlari (~800 ta)."""
+    from sqlalchemy import select
+
+    from app.models import StudentStaff
+
+    rows = await db.execute(
+        select(StudentStaff.group_or_position)
+        .where(StudentStaff.type == "talaba", StudentStaff.hemis_id.is_not(None), StudentStaff.active.is_(True))
+        .distinct()
+    )
+    return [value for value in rows.scalars().all() if value]

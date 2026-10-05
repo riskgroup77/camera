@@ -141,3 +141,24 @@ def test_same_group_with_a_differently_written_name_goes_to_review():
     assert p.verdict == REVIEW
     # Boshqa guruhda — dalil yo'q.
     assert _one([_person("boymamatovshamsiddin", "1111")], hemis).verdict == NOT_FOUND
+
+
+def test_typed_group_is_matched_only_to_a_real_hemis_group():
+    from app.services.hemis_reconcile import NOT_IN_HEMIS, match_hemis_group
+
+    groups = ["1-kurs, DI-2426", "2-kurs, TPI-926", "DI-4626"]
+    assert match_hemis_group("1-kurs, DI-2426", groups) == "1-kurs, DI-2426"
+    assert match_hemis_group(" di-2426 ", groups) == "1-kurs, DI-2426"  # faqat nomi
+    assert match_hemis_group("DI-4626", groups) == "DI-4626"  # kursi aniqlanmagan HEMIS guruhi
+    for typed in ("2426", "20.26 gurux", "1-kurs", "", None, NOT_IN_HEMIS):
+        assert match_hemis_group(typed, groups) is None
+
+
+def test_group_evidence_survives_moving_to_not_in_hemis():
+    from app.services.hemis_reconcile import NOT_IN_HEMIS
+
+    person = _person("Aliyev Anvar", NOT_IN_HEMIS)
+    person["reported_group"] = "1kurs 3426 guruh"
+    hemis = [_hemis("Aliyev Anvar", "2-kurs, DI-3426"), _hemis("Aliyev Anvar", "3-kurs, DI-2301")]
+    p = _one([person], hemis)
+    assert p.verdict == MERGE and p.hemis["group_or_position"] == "2-kurs, DI-3426"

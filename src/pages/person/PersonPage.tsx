@@ -434,6 +434,7 @@ export default function PersonPage() {
                           'Biriktirilmagan'
                         )}
                       </Fact>
+                      {person.reportedGroup && <Fact label="O‘zi yozgan guruh">{person.reportedGroup}</Fact>}
                     </>
                   ) : (
                     <>

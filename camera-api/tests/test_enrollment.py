@@ -227,6 +227,35 @@ class TestSelfRegistration:
         assert record.biometrics_status == "yoq"
         assert record.biometric_embedding is None
 
+    async def test_with_hemis_an_unknown_typed_group_goes_to_not_in_hemis(
+        self, client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """HEMIS ulangan: qo'lda yozilgan, HEMIS'da yo'q guruh Nazoratda bir
+        kishilik soxta guruh bo'lmaydi; HEMIS guruhining qisqa nomi esa
+        HEMIS ko'rinishiga keltiriladi."""
+        from app.config import settings
+        from app.services.hemis_reconcile import NOT_IN_HEMIS
+
+        monkeypatch.setattr(settings, "hemis_base_url", "https://hemis.example/rest")
+        monkeypatch.setattr(settings, "hemis_api_token", "token")
+        db_session.add(StudentStaff(full_name="Hemis Talaba", type="talaba", group_or_position="1-kurs, DI-2426",
+                                    hemis_id="H-77"))
+        await db_session.commit()
+
+        for name, typed, number in (("Soxta Guruhli", "20.26 gurux", "5550001"), ("Qisqa Guruhli", "di-2426", "5550002")):
+            resp = await client.post(
+                "/api/public/enrollment/register",
+                json={"code": ENROLL_CODE, "fullName": name, "type": "talaba", "groupOrPosition": typed,
+                      "passportSeries": "AB", "passportNumber": number},
+            )
+            assert resp.status_code == 201, resp.text
+        rows = {
+            r.passport_number: r
+            for r in (await db_session.execute(select(StudentStaff).where(StudentStaff.passport_number.like("555000%")))).scalars()
+        }
+        assert (rows["5550001"].group_or_position, rows["5550001"].reported_group) == (NOT_IN_HEMIS, "20.26 gurux")
+        assert (rows["5550002"].group_or_position, rows["5550002"].reported_group) == ("1-kurs, DI-2426", None)
+
     async def test_the_new_record_can_be_found_by_lookup_afterwards(self, client: AsyncClient):
         await client.post(
             "/api/public/enrollment/register",
