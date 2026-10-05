@@ -10,6 +10,7 @@ const data: GroupCriteria = {
   analysed: false,
   criteria: [
     { key: 'davomat', code: 7, label: 'Kelgan-kelmagani', description: 'kun davomida', indicator: '50%', tone: 'danger', unavailable: null, note: null },
+    { key: 'dars_qatnashish', code: 7, label: 'Darsga kirgan talabalar', description: 'dars', indicator: '90%', tone: 'success', unavailable: null, note: null },
     { key: 'forma', code: 10, label: 'Oq xalatsiz yurganlar', description: 'oq xalat', indicator: '—', tone: 'neutral', unavailable: 'Bu kun hali video tahlil qilinmagan', note: null },
   ],
   people: [
@@ -46,6 +47,8 @@ describe('GroupCriteriaTable', () => {
     // Sarlavha: buyurtmachi raqami + qisqa nom, izohda — sabab.
     const table = screen.getByRole('table');
     expect(within(table).getByTitle('7. Kelgan-kelmagani — kun davomida')).toHaveTextContent('7Davomat');
+    // Darsga oid ustunlar (darsda, darsga kech, erta chiqdi) guruh jadvalida yo'q.
+    expect(within(table).queryByText('Darsda')).toBeNull();
     // Hisoblanmayotgan kriteriya ham ustun bo'lib turadi — izohida sababi.
     expect(within(table).getByTitle('10. Oq xalatsiz yurganlar — Bu kun hali video tahlil qilinmagan')).toHaveTextContent('Oq xalat');
     const anvar = within(table).getByText('Aliyev Anvar').closest('tr')!;

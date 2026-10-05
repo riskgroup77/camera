@@ -66,6 +66,14 @@ export const CRITERION_SHORT: Record<string, string> = {
   faollik: 'Faollik',
 };
 
+/** Nazorat guruh jadvalida ko'rsatilmaydigan kriteriyalar (buyurtmachi
+ *  qarori, 2026-10-06): dars bo'yicha — darsda, darsga kech, darsdan erta. */
+export const HIDDEN_IN_GROUP = new Set(['dars_qatnashish', 'darsga_kech', 'darsdan_erta']);
+
+export function groupCriteria(criteria: readonly GroupCriterion[]): GroupCriterion[] {
+  return criteria.filter((c) => !HIDDEN_IN_GROUP.has(c.key));
+}
+
 export function criterionShort(c: Pick<GroupCriterion, 'key' | 'label'>): string {
   return CRITERION_SHORT[c.key] ?? c.label;
 }

@@ -4,6 +4,7 @@ import { DataTable, cn, type DataTableColumn } from '../../ui';
 import {
   TONE_TEXT,
   criterionShort,
+  groupCriteria,
   type CriterionCell,
   type CriterionTone,
   type GroupCriteria,
@@ -56,7 +57,7 @@ export default function GroupCriteriaTable({
   loading: boolean;
   error: string | null;
 }) {
-  const criteria = data?.criteria ?? [];
+  const criteria = groupCriteria(data?.criteria ?? []);
   const columns: DataTableColumn<GroupCriteriaPerson>[] = [
     { key: 'n', header: '№', width: '2.5rem', cell: (_r, i) => i + 1, mono: true },
     {

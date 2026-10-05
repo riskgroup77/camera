@@ -14,7 +14,7 @@ import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import PdfButton from '../../components/situation/PdfButton';
 import ArrivalsChart from '../../components/situation/ArrivalsChart';
 import { bucketsFromPeople, hourRange } from '../../lib/arrivals';
-import { TONE_TEXT, criterionShort } from '../../lib/groupCriteriaApi';
+import { TONE_TEXT, criterionShort, groupCriteria } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { GroupCriteriaState } from '../useGroupCriteria';
@@ -111,7 +111,7 @@ function CriteriaSummary({ criteria, onOpen }: { criteria: GroupCriteriaState; o
         </button>
       </div>
       <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
-        {criteria.data.criteria.map((c) => (
+        {groupCriteria(criteria.data.criteria).map((c) => (
           <button
             key={c.key}
             type="button"
