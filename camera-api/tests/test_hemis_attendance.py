@@ -29,3 +29,17 @@ def test_present_if_not_absent_from_every_lesson():
 def test_excused_absence_is_still_absence():
     out = day_attendance([_control("G", "1", "T")], [_absent("ali", "1", on=2, off=0)], {"G": ["ali"]})
     assert out.students == {"ali": "kelmadi"}
+
+
+def test_arrival_time_is_the_first_attended_lesson():
+    def control(group, pair, teacher, start):
+        return {"group": {"id": group}, "lessonPair": {"code": pair, "start_time": start}, "employee": {"id": teacher}}
+
+    controls = [control("G", "1", "T1", "08:30"), control("G", "2", "T2", "10:00"), control("G", "3", "T1", "11:30")]
+    absences = [_absent("vali", "1"), _absent("soli", "1"), _absent("soli", "2"), _absent("soli", "3")]
+    out = day_attendance(controls, absences, {"G": ["ali", "vali", "soli"]})
+    from datetime import time
+
+    assert out.student_times == {"ali": time(8, 30), "vali": time(10, 0)}  # soli — kelmadi, vaqt yo'q
+    assert out.teacher_times == {"T1": time(8, 30), "T2": time(10, 0)}
+    assert out.students["soli"] == "kelmadi"

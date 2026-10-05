@@ -3,7 +3,8 @@
 
 Dastur davomatni o'zi yuritmagan kun uchun (masalan, ishga tushirilgan
 kundan oldingi kun). Kamera yozgan yozuvlarga tegilmaydi; HEMIS'dan
-olingan yozuv source='hemis', kelish vaqti bo'sh.
+olingan yozuv source='hemis', kelish vaqti — birinchi qatnashgan darsi
+boshlanishi. Ilgari vaqtsiz yozilgan HEMIS yozuvlariga vaqt qo'yiladi.
 
 ISHGA TUSHIRISH (server):
 
@@ -24,7 +25,7 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.database import SessionLocal
@@ -68,42 +69,63 @@ async def run(day: date, apply: bool) -> None:
 
     result = day_attendance(controls, absences, by_group)
     wanted: dict[str, str] = {number_of[sid]: status for sid, status in result.students.items() if sid in number_of}
+    times: dict = {number_of[sid]: at for sid, at in result.student_times.items() if sid in number_of}
     teachers = {staff_number[t] for t in result.teachers if t in staff_number}
+    times.update({staff_number[t]: at for t, at in result.teacher_times.items() if t in staff_number})
 
     async with SessionLocal() as db:
         rows = (await db.execute(
             select(StudentStaff.id, StudentStaff.hemis_id, StudentStaff.type)
             .where(StudentStaff.active.is_(True), StudentStaff.hemis_id.in_([*wanted, *teachers]))
         )).all()
-        existing = set((await db.execute(
-            select(AttendanceRecord.student_staff_id).where(AttendanceRecord.date == day)
-        )).scalars().all())
+        records = {r.student_staff_id: r for r in (await db.execute(
+            select(AttendanceRecord.student_staff_id, AttendanceRecord.source, AttendanceRecord.check_in,
+                   AttendanceRecord.status)
+            .where(AttendanceRecord.date == day)
+        )).all()}
+        existing = set(records)
         plan: list[tuple] = []
+        retime: list[tuple] = []  # ilgari vaqtsiz yozilgan HEMIS yozuvlari
         for pid, hemis_id, kind in rows:
             status = wanted.get(hemis_id) if kind == "talaba" else ("keldi" if hemis_id in teachers else None)
+            at = times.get(hemis_id) if status == "keldi" else None
             if status and pid not in existing:
-                plan.append((pid, kind, status))
-        counts = Counter((kind, status) for _, kind, status in plan)
+                plan.append((pid, kind, status, at))
+            elif pid in existing and at is not None:
+                old = records[pid]
+                if old.source == SOURCE and old.check_in is None and old.status in ("keldi", "kech_keldi"):
+                    retime.append((pid, at))
+        counts = Counter((kind, status) for _, kind, status, _ in plan)
         print(f"HEMIS {day}: davomat olingan darslar {len(controls)}, guruhlar {result.groups_checked} "
               f"(talabasi topilmagan {result.groups_without_students}), kelmaganlik qaydlari {len(absences)}")
         print(f"  HEMIS bo'yicha talabalar: keldi {sum(1 for s in wanted.values() if s == 'keldi')}, "
               f"kelmadi {sum(1 for s in wanted.values() if s == 'kelmadi')}; dars o'tgan o'qituvchilar {len(teachers)}")
-        print(f"  bazada topildi: {len(rows)}; shu kuni yozuvi bor (kamera) — tegilmaydi: "
+        print(f"  bazada topildi: {len(rows)}; shu kuni yozuvi bor — yangisi qo'shilmaydi: "
               f"{sum(1 for pid, *_ in rows if pid in existing)}")
         print(f"  YOZILADI: talaba keldi {counts[('talaba', 'keldi')]}, talaba kelmadi {counts[('talaba', 'kelmadi')]}, "
               f"xodim keldi {counts[('xodim', 'keldi')]}" + ("" if apply else "   (SINOV — yozilmadi; --qollash bilan yoziladi)"))
-        if not apply or not plan:
+        untimed = sum(1 for _, _, status, at in plan if status == "keldi" and at is None)
+        print(f"  kelish vaqti qo'yiladi (ilgari vaqtsiz HEMIS yozuvlari): {len(retime)}; vaqti topilmadi: {untimed}")
+        if not apply or not (plan or retime):
             return
         for start in range(0, len(plan), 1000):
             chunk = plan[start:start + 1000]
             await db.execute(
                 insert(AttendanceRecord)
-                .values([{"student_staff_id": pid, "date": day, "status": status, "source": SOURCE} for pid, _, status in chunk])
+                .values([{"student_staff_id": pid, "date": day, "status": status, "source": SOURCE, "check_in": at}
+                         for pid, _, status, at in chunk])
                 .on_conflict_do_nothing(index_elements=["student_staff_id", "date"])
+            )
+        for pid, at in retime:
+            await db.execute(
+                update(AttendanceRecord)
+                .where(AttendanceRecord.student_staff_id == pid, AttendanceRecord.date == day,
+                       AttendanceRecord.source == SOURCE, AttendanceRecord.check_in.is_(None))
+                .values(check_in=at)
             )
         db.add(AuditLog(
             user_id=None, user_name=AUDIT_USER, module="Davomat", status="muvaffaqiyatli", ip="internal",
-            action=f"{day} davomati HEMIS'dan: {dict(counts)}",
+            action=f"{day} davomati HEMIS'dan: {dict(counts)}; kelish vaqti qo'yildi: {len(retime)}",
         ))
         await db.commit()
         print("Yozildi.")

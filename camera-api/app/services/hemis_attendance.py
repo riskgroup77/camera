@@ -11,14 +11,17 @@ Qoida (taxmin emas — HEMIS'dagi qaydlar):
     yozilmagan bo'lsa — keldi; hamma darslarida "yo'q" bo'lsa — kelmadi;
   * davomati olinmagan guruh — yozuv qo'yilmaydi (ma'lumot yo'q);
   * shu kuni dars o'tgan (davomat olgan) o'qituvchi — keldi.
-HEMIS kelish vaqtini bermaydi: vaqt bo'sh qoladi va "kech keldi" taxmin
-qilinmaydi. Kamera yozgan yozuvga tegilmaydi (haqiqiy vaqti bor).
+Kelish vaqti — birinchi QATNASHGAN darsining boshlanishi (lessonPair
+start_time): odam shu paytda darsda bo'lgani HEMIS'da qayd etilgan.
+O'qituvchiga — birinchi o'tgan darsi. Holat "keldi" (darsiga kechikmagan;
+"kech keldi" taxmin qilinmaydi). Kamera yozgan yozuvga tegilmaydi.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import time
 from typing import Any
 
 
@@ -31,12 +34,26 @@ def _pair(row: dict) -> str:
     return str(pair.get("code") or pair.get("name") or "")
 
 
+def _start(row: dict) -> time | None:
+    """lessonPair.start_time ("08:30") -> time; noto'g'ri qiymat — None."""
+    raw = str((row.get("lessonPair") or {}).get("start_time") or "").strip()
+    try:
+        hours, minutes = raw.split(":")[:2]
+        return time(int(hours), int(minutes))
+    except (ValueError, TypeError):
+        return None
+
+
 @dataclass
 class DayAttendance:
     # HEMIS talaba id (student-list "id") -> "keldi" | "kelmadi"
     students: dict[Any, str] = field(default_factory=dict)
     # Dars o'tgan o'qituvchilar (employee-list "id")
     teachers: set = field(default_factory=set)
+    # Kelish vaqti: talaba — birinchi qatnashgan darsi, o'qituvchi — birinchi
+    # o'tgan darsi boshlanishi (vaqti noma'lum bo'lsa — yo'q).
+    student_times: dict[Any, time] = field(default_factory=dict)
+    teacher_times: dict[Any, time] = field(default_factory=dict)
     groups_checked: int = 0
     groups_without_students: int = 0
 
@@ -45,15 +62,21 @@ def day_attendance(controls: list[dict], absences: list[dict], students_by_group
     """Toza funksiya — sinovlanadi. `students_by_group` — HEMIS guruh id ->
     shu guruhdagi faol talabalar id'lari (student-list)."""
     held: dict[Any, set[str]] = defaultdict(set)
+    starts: dict[str, time] = {}
     out = DayAttendance()
     for row in controls:
         group = _id(row.get("group"))
         if group is None:
             continue
-        held[group].add(_pair(row))
+        pair, start = _pair(row), _start(row)
+        held[group].add(pair)
+        if start is not None and (pair not in starts or start < starts[pair]):
+            starts[pair] = start
         teacher = _id(row.get("employee"))
         if teacher is not None:
             out.teachers.add(teacher)
+            if start is not None and (teacher not in out.teacher_times or start < out.teacher_times[teacher]):
+                out.teacher_times[teacher] = start
     missed: dict[Any, set[str]] = defaultdict(set)
     for row in absences:
         if (row.get("absent_on") or 0) + (row.get("absent_off") or 0) <= 0:
@@ -68,5 +91,9 @@ def day_attendance(controls: list[dict], absences: list[dict], students_by_group
             continue
         out.groups_checked += 1
         for student in members:
-            out.students[student] = "kelmadi" if pairs <= missed.get(student, set()) else "keldi"
+            attended = pairs - missed.get(student, set())
+            out.students[student] = "keldi" if attended else "kelmadi"
+            times = [starts[p] for p in attended if p in starts]
+            if times:
+                out.student_times[student] = min(times)
     return out
