@@ -946,6 +946,7 @@ async def arrivals_without_time(db: AsyncSession, day: date_type) -> dict[str, i
     yig'indisi "Keldi" bilan mos kelmasdi."""
     rows = await db.execute(
         select(StudentStaff.type, func.count())
+        .select_from(AttendanceRecord)
         .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
         .where(AttendanceRecord.date == day)
         .where(AttendanceRecord.check_in.is_(None))
