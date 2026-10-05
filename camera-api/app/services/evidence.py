@@ -72,15 +72,6 @@ def pose_box(points: np.ndarray, *, min_visibility: float = 0.3, label: str = ""
     )
 
 
-def zone_polygon(polygon: Sequence, label: str = "") -> Polygon | None:
-    """Kameraning restricted_zone_polygon qiymati ([[x, y], ...], 0..1)."""
-    try:
-        points = tuple((float(point[0]), float(point[1])) for point in polygon)
-    except (TypeError, ValueError, IndexError):
-        return None
-    return Polygon(points, label=label) if len(points) >= 3 else None
-
-
 def annotate_snapshot(frame_bytes: bytes, shapes: Sequence[Shape]) -> bytes:
     """Ramka va poligonlar chizilgan JPEG. Xato bo'lsa asl kadr qaytadi —
     chizilmagan kadr dalilsiz qolgandan yaxshiroq."""

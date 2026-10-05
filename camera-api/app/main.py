@@ -23,8 +23,6 @@ from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
 from app.jobs.teacher_punctuality_ai import teacher_punctuality_ai_loop
 from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
 from app.jobs.unified_face_sweep import unified_face_sweep_loop
-from app.jobs.vision_ai import vision_ai_loop
-from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.jobs.access_poll import access_poll_loop
 from app.jobs.event_escalation import event_escalation_loop
 from app.jobs.hemis_photos import hemis_photos_loop
@@ -189,7 +187,6 @@ def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
             if settings.unified_face_sweep_enabled
             else [
                 attendance_ai_loop(),
-                vision_ai_loop(),
                 unauthorized_person_ai_loop(),
             ]
         )
@@ -197,7 +194,6 @@ def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
             camera_health_loop(),
             *face_loops,
             teacher_punctuality_ai_loop(),
-            zone_entry_ai_loop(),
             lesson_quality_ai_loop(),
             lesson_attendance_loop(),
             *standalone_sweep_loops(),

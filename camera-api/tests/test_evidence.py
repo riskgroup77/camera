@@ -3,7 +3,7 @@
 import cv2
 import numpy as np
 
-from app.services.evidence import Box, Polygon, annotate_snapshot, pose_box, zone_polygon
+from app.services.evidence import Box, Polygon, annotate_snapshot, pose_box
 
 
 def _jpeg() -> bytes:
@@ -39,8 +39,3 @@ def test_pose_box_needs_three_visible_points():
     assert box is not None and box.normalized
     assert 0.0 <= box.x1 < 0.4 and 0.6 < box.x2 <= 1.0
 
-
-def test_zone_polygon_parsing():
-    assert zone_polygon([[0.1, 0.1], [0.5, 0.1], [0.5, 0.5]]) is not None
-    assert zone_polygon([[0.1, 0.1], [0.5, 0.1]]) is None
-    assert zone_polygon([["x"], None]) is None

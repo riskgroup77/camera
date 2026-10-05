@@ -88,7 +88,9 @@ class Camera(Base):
     last_frame_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    # TT kriteriya 2 ("Taqiqlangan zonaga kirish") — app/jobs/zone_entry_ai.py.
+    # ESKIRGAN: TT kriteriya 2 ("Taqiqlangan zonaga kirish") buyurtmachi
+    # ro'yxatidan olib tashlangan (2026-10-04), kodi ham (2026-10-06). Ustun
+    # eski ma'lumot uchun qoldi; hech narsa o'qimaydi.
     # A list of [x, y] pairs, each normalized 0-1 of the frame's width/height
     # (same convention as app/services/pose_detection.py's landmark
     # coordinates, so no separate coordinate-system conversion is needed

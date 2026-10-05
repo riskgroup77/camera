@@ -8,25 +8,19 @@ import { useAuth } from '../../lib/auth';
 import { appendPoint, validatePolygon } from './zonePolygon';
 import type { CameraConfig } from '../../types';
 
-/** Taqiqlangan zona chizish oynasi (TT kriteriya 2) — jonli video ustiga
- * bosib ko'pburchak nuqtalarini belgilaydi, xuddi
- * FaceDetectionOverlay/computeBoxes'dagi object-cover koordinata
- * matematikasidan foydalanib (bu safar teskari yo'nalishda,
- * ZoneOverlay.tsx'ga qarang). Kamida 3 ta nuqta kerak — kamroq bo'lsa
- * backend (app/routers/cameras.py) 422 bilan rad etadi.
+/** Kirish kamerasining ESHIK HUDUDINI chizish oynasi (Camera.faceRoi): AI
+ * yuzni faqat shu hududda, to'liq sifatda qidiradi — kadrning qolgan qismi
+ * tahlil qilinmaydi. Jonli video ustiga bosib ko'pburchak nuqtalari
+ * belgilanadi (FaceDetectionOverlay/computeBoxes'dagi object-cover
+ * koordinata matematikasi, teskari yo'nalishda — ZoneOverlay.tsx). Kamida 3
+ * ta nuqta kerak — kamroq bo'lsa backend (app/routers/cameras.py) 422 bilan
+ * rad etadi.
  *
- * `mode="faceRoi"` — xuddi shu oyna kirish kamerasining ESHIK HUDUDINI
- * chizadi (Camera.faceRoi): AI yuzni faqat shu hududda, to'liq sifatda
- * qidiradi — kadrning qolgan qismi tahlil qilinmaydi. */
-type ZoneMode = 'restricted' | 'faceRoi';
+ * Ilgari shu oyna "taqiqlangan zona"ni (2-kriteriya) ham chizardi — u
+ * buyurtmachi ro'yxatidan olib tashlangan (2026-10-04). */
+type ZoneMode = 'faceRoi';
 
 const MODE_TEXT: Record<ZoneMode, { title: string; endpoint: string; hint: string; clear: string }> = {
-  restricted: {
-    title: 'Taqiqlangan zona',
-    endpoint: 'zone-polygon',
-    hint: 'Video ustiga bosib nuqta qo‘ying (kamida 3 ta).',
-    clear: 'Zonani olib tashlash',
-  },
   faceRoi: {
     title: 'Eshik hududi (yuz qidiriladigan joy)',
     endpoint: 'face-roi',
@@ -40,7 +34,7 @@ export default function CameraZoneModal({
   camera,
   onClose,
   onSave,
-  mode = 'restricted',
+  mode = 'faceRoi',
 }: {
   open: boolean;
   camera: CameraConfig | null;
@@ -63,7 +57,7 @@ export default function CameraZoneModal({
 
   useEffect(() => {
     if (open) {
-      const current = (mode === 'faceRoi' ? camera?.faceRoi : camera?.restrictedZonePolygon) ?? [];
+      const current = camera?.faceRoi ?? [];
       setPoints(current);
       setSavedPoints(current);
       setError(null);

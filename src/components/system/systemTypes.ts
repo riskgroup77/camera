@@ -139,8 +139,6 @@ const SWEEP_LABELS: Record<string, string> = {
   entrance_exit_attendance: 'Kirish/chiqish davomati',
   unified_face: 'Yuz tanish (umumiy)',
   attendance: 'Davomat',
-  vision_sleep: 'Darsda uxlash',
-  zone_entry: 'Taqiqlangan zona',
   teacher_punctuality: "O'qituvchi punktualligi",
   lesson_quality: 'Dars sifati',
   lesson_attendance: 'Dars davomatini yakunlash',

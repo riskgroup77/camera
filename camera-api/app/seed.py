@@ -108,11 +108,14 @@ DEFAULT_BUILDINGS = [
 # Kalibrlanmagan klassik evristikalar sinov rejimida boshlanadi — mavjud
 # bazalarda buni alembic h1b2c3d4e5f6 bajaradi.
 # 2026-10-04 (buyurtmachi ro'yxati): qoldi 6, 7, 8, 9, 10, 15, 19, 21, 22;
-# 1, 2, 3, 20, 26 olib tashlandi (alembic z1a2b3c4d5e6). Hammasi endi kun
-# oxirida NVR yozuvlaridan hisoblanadi (app/batch/, docs/KUNLIK_VIDEO_TAHLIL.md).
+# 1, 2, 3, 20, 26 olib tashlandi (alembic z1a2b3c4d5e6). Ular kun oxirida
+# NVR yozuvlaridan hisoblanadi (app/batch/, docs/KUNLIK_VIDEO_TAHLIL.md).
+# 2026-10-06: buyurtmachi qarori bilan 1 (begona shaxs) qaytdi — tanilmagan
+# yuzlar "begona shaxs" bo'lib chiqadi (alembic z3a2b3c4d5e6).
 TRIAL_MODULE_CODES = {10, 15, 19, 21}
 
 DEFAULT_AI_MODULES = [
+    {"code": 1, "group": "A", "name": "Notanish/begona shaxsni aniqlash", "description": "Yuzni tanish (Face-ID) — xodimlar/talabalar bazasida yo'q shaxs binoga kirsa signal. attendance_ai.py bilan bir xil InsightFace pipeline, teskari mantiq bilan: mos kelmagan yuz = begona. Ikki kadrli tasdiqlash (bad-angle/yorug'lik xatosini kamaytirish uchun), lekin real kuzatuv/identifikatsiya (tracking) yo'q — bir xil begona odam har safar yangi deb hisoblanishi mumkin", "method": "InsightFace + face_matching (teskari moslik) + ikki-kadrli tasdiqlash (app/jobs/unauthorized_person_ai.py)", "accuracy": 0, "threshold": 70, "sensitivity": "yuqori", "camera_count": 0, "active": True},
     {"code": 6, "group": "B", "name": "Xodim/o'qituvchi davomati", "description": "Ish boshlanish/tugash vaqtini yuz orqali avtomatik qayd etish — kun oxirida kirish/chiqish kameralarining butun kunlik yozuvi (2 kadr/s) tahlil qilinadi; kunning birinchi va oxirgi ishonchli ko'rinishi kelish va ketish vaqti", "method": "Yuz tanish + klip ichida kuzatuv (embedding birlashtirish) + ikki marta tasdiqlash (app/batch/analyzer.py, app/batch/aggregate.py)", "accuracy": 0, "threshold": 88, "sensitivity": "yuqori", "camera_count": 0, "active": True},
     {"code": 7, "group": "B", "name": "Talaba davomati", "description": "Auditoriyaga kirish/darsda ishtirok etish avtomatik qaydi — dars xonasi kamerasining dars vaqtidagi yozuvidan; kamida ikki alohida klipda tanilgan talaba darsda bo'lgan hisoblanadi", "method": "Yuz tanish (sinf kamerasi, dars jadvali bo'yicha kliplar) (app/batch/aggregate.py)", "accuracy": 0, "threshold": 90, "sensitivity": "yuqori", "camera_count": 0, "active": True},
     {"code": 8, "group": "B", "name": "Darsga kechikish", "description": "Belgilangan vaqtdan N daqiqa keyin kirish holati — dars boshlanishidan 10 daqiqa oldin va 20 daqiqa keyin har daqiqada klip; birinchi ko'rinish boshlanish + 5 daqiqadan keyin bo'lsa kechikkan", "method": "Jadval bilan solishtirish (rule-based) (app/batch/aggregate.py)", "accuracy": 0, "threshold": 85, "sensitivity": "o'rta", "camera_count": 0, "active": True},

@@ -91,11 +91,13 @@ class TestMetrics:
 
 
 class TestBuildRegistry:
-    def test_registry_includes_zone_entry_interval(self, monkeypatch):
-        monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
-        registry = ai_scheduler._build_registry()
-        zone = next(e for e in registry if e.name == "zone_entry")
-        assert zone.interval_seconds == ai_scheduler.settings.zone_ai_interval_seconds
+    def test_removed_criteria_sweeps_are_gone(self, monkeypatch):
+        """Buyurtmachi ro'yxatidan olib tashlangan: taqiqlangan zona (2) va
+        darsda uxlash (20) — jarayonlari ham ro'yxatda yo'q."""
+        for unified in (True, False):
+            monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", unified)
+            names = {e.name for e in ai_scheduler._build_registry()}
+            assert not names & {"zone_entry", "vision_sleep"}
 
     def test_removed_heuristic_modules_are_gone(self, monkeypatch):
         """Ishonchsiz evristikalar olib tashlangan (2026-09-24)."""
@@ -107,7 +109,7 @@ class TestBuildRegistry:
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
         registry = ai_scheduler._build_registry()
         critical_names = {e.name for e in registry if e.tier == "critical"}
-        assert {"unified_face", "entrance_exit_attendance", "zone_entry"} <= critical_names
+        assert {"unified_face", "entrance_exit_attendance"} <= critical_names
 
     def test_badge_module_is_gone(self, monkeypatch):
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
@@ -118,7 +120,7 @@ class TestBuildRegistry:
         registry = ai_scheduler._build_registry()
         names = {e.name for e in registry}
         assert "unified_face" not in names
-        assert {"attendance", "vision_sleep", "unauthorized"} <= names
+        assert {"attendance", "unauthorized"} <= names
 
 
 class TestLaggingIncludesChronicSlowness:

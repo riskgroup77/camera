@@ -138,7 +138,6 @@ export function LessonDrawer({ lesson, onClose, onEditSchedule, onDelete }: Less
             { label: 'Bino', value: lesson.building ?? '—' },
             { label: 'Talabalar diqqati', value: <ScoreValue value={lesson.attentionScore} /> },
             { label: "O'qituvchi faolligi", value: <ScoreValue value={lesson.activityScore} /> },
-            { label: 'Uxlash holatlari', value: lesson.sleepIncidents },
             { label: 'AI tekshiruvi (vaqtida)', value: lesson.teacherOnTime === null ? 'Tekshirilmagan' : lesson.teacherOnTime ? 'Ha' : "Yo'q" },
           ]}
         />

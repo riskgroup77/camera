@@ -340,76 +340,6 @@ class TestCameras:
 
 
 @pytest.mark.usefixtures("seeded")
-class TestCameraZonePolygon:
-    async def _create_camera(self, client: AsyncClient, headers: dict[str, str]) -> dict:
-        resp = await client.post(
-            "/api/cameras",
-            headers=headers,
-            json={
-                "name": "Zona kamerasi",
-                "ip": "192.168.9.10",
-                "building": "1-Bino (Asosiy korpus)",
-                "zone": "Hovli",
-                "resolution": "1080p",
-            },
-        )
-        return resp.json()
-
-    async def test_new_camera_has_no_zone_polygon(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        created = await self._create_camera(client, headers)
-        assert created["restrictedZonePolygon"] is None
-
-    async def test_setting_a_valid_polygon_round_trips(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        created = await self._create_camera(client, headers)
-        polygon = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]
-
-        resp = await client.patch(
-            f"/api/cameras/{created['id']}/zone-polygon", headers=headers, json={"polygon": polygon}
-        )
-        assert resp.status_code == 200
-        assert resp.json()["restrictedZonePolygon"] == polygon
-
-        fetched = (await client.get("/api/cameras", headers=headers)).json()["items"][0]
-        assert fetched["restrictedZonePolygon"] == polygon
-
-    async def test_clearing_a_polygon_sets_it_back_to_none(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        created = await self._create_camera(client, headers)
-        await client.patch(
-            f"/api/cameras/{created['id']}/zone-polygon",
-            headers=headers,
-            json={"polygon": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]},
-        )
-
-        resp = await client.patch(
-            f"/api/cameras/{created['id']}/zone-polygon", headers=headers, json={"polygon": None}
-        )
-        assert resp.status_code == 200
-        assert resp.json()["restrictedZonePolygon"] is None
-
-    async def test_fewer_than_three_points_is_rejected(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        created = await self._create_camera(client, headers)
-        resp = await client.patch(
-            f"/api/cameras/{created['id']}/zone-polygon",
-            headers=headers,
-            json={"polygon": [[0.1, 0.1], [0.9, 0.9]]},
-        )
-        assert resp.status_code == 422
-
-    async def test_unknown_camera_is_404(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        resp = await client.patch(
-            "/api/cameras/00000000-0000-0000-0000-000000000000/zone-polygon",
-            headers=headers,
-            json={"polygon": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]},
-        )
-        assert resp.status_code == 404
-
-
-@pytest.mark.usefixtures("seeded")
 class TestCameraExcludedModules:
     async def _create_camera(self, client: AsyncClient, headers: dict[str, str]) -> dict:
         resp = await client.post(
@@ -488,10 +418,11 @@ class TestCameraExcludedModules:
         # 2026-09-15: #12 (beyjik) ham olib tashlandi -> 18.
         # 2026-09-24: ishonchsiz evristikalar (#10, #13, #14, #15, #17, #23) -> 12.
         # 2026-10-04: buyurtmachi ro'yxati — 6, 7, 8, 9, 10, 15, 19, 21, 22 (9 ta);
-        # real vaqt testlari uchun eski 1, 2, 3, 20, 26 ham bor (tests/legacy_modules.py).
+        # 2026-10-06: 1 (begona shaxs) qaytdi -> 10 ta; real vaqt testlari
+        # uchun eski 3, 20, 26 ham bor (tests/legacy_modules.py).
         codes = {row["code"] for row in body}
-        assert {6, 7, 8, 9, 10, 15, 19, 21, 22} <= codes
-        assert len(body) == 14
+        assert {1, 6, 7, 8, 9, 10, 15, 19, 21, 22} <= codes
+        assert len(body) == 13
         assert all("code" in row and "name" in row and "hasDetector" in row for row in body)
         assert not codes & {4, 5, 11, 12, 13, 14, 16, 17, 18, 23, 24, 25}
 

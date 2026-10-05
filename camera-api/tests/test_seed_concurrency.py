@@ -60,7 +60,8 @@ class TestModuleDocsFollowTheCode:
 
 
 async def test_seed_holds_exactly_the_customer_criteria(db_session):
-    """2026-10-04 buyurtmachi ro'yxati: 9 ta kriteriya, 10 va 15 sinov rejimida."""
+    """2026-10-04 buyurtmachi ro'yxati: 9 ta kriteriya + 2026-10-06 dan 1 (begona
+    shaxs); 10, 15, 19, 21 sinov rejimida."""
     from sqlalchemy import select
 
     from app.models import AIModuleConfig
@@ -68,6 +69,6 @@ async def test_seed_holds_exactly_the_customer_criteria(db_session):
 
     await seed_all(db_session)
     rows = {row.code: row for row in (await db_session.execute(select(AIModuleConfig))).scalars()}
-    assert set(rows) == {6, 7, 8, 9, 10, 15, 19, 21, 22}
+    assert set(rows) == {1, 6, 7, 8, 9, 10, 15, 19, 21, 22}
     assert all(row.active for row in rows.values())
     assert {code for code, row in rows.items() if row.mode == "sinov"} == {10, 15, 19, 21}

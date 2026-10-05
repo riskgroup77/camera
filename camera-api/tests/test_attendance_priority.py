@@ -54,8 +54,8 @@ class TestWhichSweepsPause:
     def test_heavy_heuristics_pause_attendance_never(self, monkeypatch):
         self._inside(monkeypatch)
         monkeypatch.setattr(settings, "attendance_priority_enabled", True)
-        monkeypatch.setattr(settings, "attendance_priority_paused_sweeps", "lesson_quality,zone_entry")
-        for name in ("lesson_quality", "zone_entry"):
+        monkeypatch.setattr(settings, "attendance_priority_paused_sweeps", "lesson_quality,lesson_attendance")
+        for name in ("lesson_quality", "lesson_attendance"):
             assert is_paused_for_attendance(name) is True
         # Yong'in — hayot xavfsizligi: sozlamada yozilgan bo'lsa ham to'xtamaydi.
         for name in ("entrance_exit_attendance", "unified_face", "absence_marking"):
@@ -64,7 +64,7 @@ class TestWhichSweepsPause:
     def test_disabled_setting_pauses_nothing(self, monkeypatch):
         self._inside(monkeypatch)
         monkeypatch.setattr(settings, "attendance_priority_enabled", False)
-        assert is_paused_for_attendance("zone_entry") is False
+        assert is_paused_for_attendance("lesson_attendance") is False
 
     async def test_paused_loop_does_not_run_and_is_not_reported_as_lagging(self, monkeypatch):
         calls = {"n": 0}
@@ -75,8 +75,8 @@ class TestWhichSweepsPause:
 
         monkeypatch.setattr(ai_scheduler, "is_paused_for_attendance", lambda name: True)
         monkeypatch.setattr(ai_scheduler, "PAUSE_RECHECK_SECONDS", 0.01)
-        scheduler_metrics.register_sweep("zone_entry", "critical", 30)
-        task = asyncio.create_task(_sweep_loop(_SweepEntry(name="zone_entry", interval_seconds=30, run_once=run, tier="critical"), 0))
+        scheduler_metrics.register_sweep("lesson_attendance", "critical", 30)
+        task = asyncio.create_task(_sweep_loop(_SweepEntry(name="lesson_attendance", interval_seconds=30, run_once=run, tier="critical"), 0))
         await asyncio.sleep(0.1)
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)

@@ -731,12 +731,6 @@ class Settings(BaseSettings):
     # yeyish o'rniga).
     pose_detection_max_worker_crashes: int = 3
 
-    # TT kriteriya 2 ("Taqiqlangan zonaga kirish") —
-    # app/jobs/zone_entry_ai.py / app/services/zone_detection.py.
-    zone_ai_interval_seconds: int = 30
-    zone_dedup_minutes: int = 5
-    zone_min_landmark_visibility: float = 0.5
-
     # TT kriteriya 19 ("Talabaning darsga diqqati") va 21 ("O'qituvchi
     # faolligi") — app/jobs/lesson_quality_ai.py. lesson_duration_minutes
     # defines the "active window" after scheduled_start_time during which

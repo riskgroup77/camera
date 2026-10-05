@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Brain, Clock3, DoorOpen, Moon, UserRound, Users } from 'lucide-react';
+import { Brain, Clock3, DoorOpen, UserRound, Users } from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -112,11 +112,6 @@ export function LessonList({ lessons, onOpen }: { lessons: readonly Lesson[]; on
                   {lesson.late > 0 && <Badge tone="warning">{lesson.late} kech</Badge>}
                   {lesson.absent !== null && lesson.absent > 0 && <Badge tone="danger">{lesson.absent} yo'q</Badge>}
                   <ScoreChip icon={Brain} label="Diqqat" value={lesson.attentionScore} />
-                  {lesson.sleepIncidents > 0 && (
-                    <Badge tone="warning" icon={Moon} title="Uxlash holatlari">
-                      {lesson.sleepIncidents}
-                    </Badge>
-                  )}
                 </div>
               </div>
             </button>
@@ -239,12 +234,6 @@ export function LessonDrawer({
           ))}
         </dl>
         {rate !== null && <ProgressBar value={rate} size="sm" showValue label="Darsdagi davomat" tone={lesson.finalized ? 'auto' : 'primary'} />}
-        {lesson.sleepIncidents > 0 && (
-          <p className="flex items-center gap-2 text-[13px] text-warning">
-            <Moon size={14} aria-hidden="true" />
-            {lesson.sleepIncidents} ta uxlash holati qayd etilgan
-          </p>
-        )}
 
         <section>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-fg">

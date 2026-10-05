@@ -75,7 +75,6 @@ export default function CameraConfigDetailModal({
   }
 
   const customModules = (camera?.excludedModuleCodes?.length ?? 0) > 0;
-  const zonePoints = camera?.restrictedZonePolygon?.length ?? 0;
   const doorPoints = camera?.faceRoi?.length ?? 0;
 
   return (
@@ -167,7 +166,6 @@ export default function CameraConfigDetailModal({
                     </span>
                   ),
                 },
-                ...(zonePoints > 0 ? [{ label: 'Taqiqlangan zona', value: <span className="text-danger">{zonePoints} nuqta</span> }] : []),
                 ...(doorPoints > 0 ? [{ label: 'Eshik hududi', value: <span className="text-success">{doorPoints} nuqta</span> }] : []),
               ]}
             />

@@ -435,7 +435,6 @@ export interface CameraConfig {
    * nisbatan 0-1 oralig'ida normallashtirilgan (TT kriteriya 2 — taqiqlangan
    * zonaga kirish). null/aniqlanmagan bo'lsa app/jobs/zone_entry_ai.py bu
    * kamerani butunlay o'tkazib yuboradi. */
-  restrictedZonePolygon?: [number, number][] | null;
   /** AIModule.code raqamlari — bu kamera ULARDAN chetlashtirilgan (allow-list
    * emas, exclude-list). null/bo'sh massiv = faol modullarning barchasi shu
    * kamerada ishlaydi (standart holat). */

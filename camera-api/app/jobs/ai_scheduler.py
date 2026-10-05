@@ -43,8 +43,6 @@ from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_pause
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
 from app.jobs.unified_face_sweep import run_unified_face_sweep_once
-from app.jobs.vision_ai import run_vision_ai_sweep_once
-from app.jobs.zone_entry_ai import run_zone_entry_ai_sweep_once
 
 logger = logging.getLogger("app.ai_scheduler")
 
@@ -106,7 +104,6 @@ def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]
         ]
     return [
         ("attendance", settings.attendance_ai_interval_seconds, run_attendance_ai_sweep_once, "critical"),
-        ("vision_sleep", settings.vision_ai_interval_seconds, run_vision_ai_sweep_once, "critical"),
         (
             "unauthorized",
             settings.unauthorized_person_ai_interval_seconds,
@@ -118,7 +115,6 @@ def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]
 
 def _build_registry() -> list[_SweepEntry]:
     rest: list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]] = [
-        ("zone_entry", settings.zone_ai_interval_seconds, run_zone_entry_ai_sweep_once, "critical"),
         ("teacher_punctuality", settings.teacher_punctuality_interval_seconds, run_teacher_punctuality_sweep_once, "standard"),
         ("lesson_quality", settings.lesson_quality_ai_interval_seconds, run_lesson_quality_ai_sweep_once, "standard"),
         ("lesson_attendance", settings.lesson_attendance_finalize_interval_seconds, run_lesson_attendance_finalization_once, "standard"),

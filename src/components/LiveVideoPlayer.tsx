@@ -45,9 +45,9 @@ interface LiveVideoPlayerProps {
   showDetections?: boolean;
   /** Har yangi yuz tahlili natijasi — ota komponent hisoblagich ko'rsatishi uchun. */
   onDetection?: (result: LiveDetectionResult | null) => void;
-  /** Berilsa, video ustiga bosish orqali taqiqlangan zona ko'pburchagini
+  /** Berilsa, video ustiga bosish orqali eshik hududi ko'pburchagini
    * chizish rejimi yoqiladi (CameraZoneModal.tsx) — koordinatalar
-   * app/models/camera.py's restricted_zone_polygon bilan bir xil formatda
+   * Camera.face_roi bilan bir xil formatda
    * (0-1 normallashtirilgan) qaytariladi. */
   zoneEditing?: boolean;
   zonePoints?: [number, number][];

@@ -126,7 +126,7 @@ class TestApi:
 
         monkeypatch.setattr(event_bus.manager, "broadcast", capture)
         monkeypatch.setattr(event_bus, "notify_event", no_notify)
-        module = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 2))).scalar_one()
+        module = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 1))).scalar_one()
         module.sop = "Zonani tekshiring\nQo'riqchini yuboring"
         module.mode = "ishchi"
         await db_session.commit()
@@ -137,15 +137,15 @@ class TestApi:
         event = await event_bus.raise_event(
             db_session,
             camera=loaded,
-            module_code=2,
-            module_name="Taqiqlangan zonaga kirish",
+            module_code=1,
+            module_name="Notanish/begona shaxsni aniqlash",
             group="A",
             confidence=99,
             severity="yuqori",
             person_name="Karimov Aziz",
         )
         assert event is not None
-        assert sent and sent[0]["sop"] == ["Zonani tekshiring", "Qo'riqchini yuboring"]
+        assert sent and sent[0]["sop"] == ["Shaxsni tekshiring", "Qo'riqchini yuboring"]
 
     async def test_limits_and_unknown_module(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

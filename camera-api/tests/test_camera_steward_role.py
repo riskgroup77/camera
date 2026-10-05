@@ -160,11 +160,6 @@ class TestStewardCannotDoAnythingElse:
         assert (
             await client.patch(f"/api/cameras/{camera.id}/modules", headers=headers, json={})
         ).status_code == 403
-        assert (
-            await client.patch(
-                f"/api/cameras/{camera.id}/zone-polygon", headers=headers, json={"polygon": None}
-            )
-        ).status_code == 403
 
     async def test_cannot_reach_other_sections(self, client: AsyncClient, steward):
         headers = await auth_headers(client, STEWARD_LOGIN, STEWARD_PASSWORD)

@@ -29,13 +29,14 @@ export function formatModuleSummary(
   return `${enabled}/${runnable} modul (${excludedCount} o'chirilgan)`;
 }
 
+// Buyurtmachi ro'yxati (2026-10-06): 1, 6, 7, 8, 9, 10, 15, 19, 21, 22.
 const GROUP_CODES: Record<AIModuleGroup, number[]> = {
-  A: [1, 2, 3, 4, 5],
+  A: [1],
   B: [6, 7, 8, 9],
-  C: [10, 11, 12, 13],
-  D: [14, 15, 16, 17, 18],
-  E: [19, 20, 21, 22],
-  F: [23, 24, 25],
+  C: [10],
+  D: [15],
+  E: [19, 21, 22],
+  F: [],
 };
 
 export type ModulePresetId = 'all' | 'entrance' | 'indoor' | 'outdoor' | 'security';
@@ -49,22 +50,22 @@ export const MODULE_PRESETS: { id: ModulePresetId; label: string; description: s
   {
     id: 'entrance',
     label: 'Kirish / koridor',
-    description: 'Davomat, begona shaxs, uxlab qolish — auditoriya modullarisiz',
+    description: 'Davomat, erta ketish, begona shaxs, oq xalat, chekish — dars modullarisiz',
   },
   {
     id: 'indoor',
     label: 'Ichki xona / auditoriya',
-    description: 'Transport (hovli) moduli o‘chirilgan',
+    description: 'Dars modullari, oq xalat, chekish — begona shaxs va kirish davomatisiz',
   },
   {
     id: 'outdoor',
     label: 'Hovli / tashqi',
-    description: 'Imtihon va dars sifati modullari o‘chirilgan',
+    description: 'Begona shaxs va chekish — dars modullarisiz',
   },
   {
     id: 'security',
-    label: 'Faqat xavfsizlik (A)',
-    description: 'Faqat A-toifa kriteriyalari yoqilgan',
+    label: 'Faqat begona shaxs (A)',
+    description: 'Faqat begona shaxsni aniqlash yoqilgan',
   },
 ];
 
@@ -74,11 +75,11 @@ export function presetExcludedCodes(preset: ModulePresetId, allCodes: number[]):
 
   const keep = new Set<number>();
   if (preset === 'entrance') {
-    [1, 2, 3, 4, 6, 7, 20].forEach((c) => keep.add(c));
+    [1, 6, 7, 9, 10, 15].forEach((c) => keep.add(c));
   } else if (preset === 'indoor') {
-    allCodes.filter((c) => c !== 25).forEach((c) => keep.add(c));
+    [8, 9, 10, 15, 19, 21, 22].forEach((c) => keep.add(c));
   } else if (preset === 'outdoor') {
-    allCodes.filter((c) => ![16, 19, 21, 22].includes(c)).forEach((c) => keep.add(c));
+    [1, 15].forEach((c) => keep.add(c));
   } else if (preset === 'security') {
     GROUP_CODES.A.forEach((c) => keep.add(c));
   }

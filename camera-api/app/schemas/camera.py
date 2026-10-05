@@ -42,10 +42,6 @@ class CameraOut(CamelModel):
     # recently. The two can disagree (e.g. status='faol' but a cable is
     # unplugged), and that disagreement is the whole point of this field.
     is_reachable: bool = False
-    # List of [x, y] pairs, each normalized 0-1 against frame width/height —
-    # see app/models/camera.py's Camera.restricted_zone_polygon docstring.
-    # None/empty means app/jobs/zone_entry_ai.py skips this camera entirely.
-    restricted_zone_polygon: list[list[float]] | None = None
     # AIModuleConfig.code integers this camera is EXCLUDED from — see
     # app/models/camera.py's Camera.excluded_module_codes docstring. Empty/
     # None means every active module still runs on this camera (today's
@@ -208,9 +204,8 @@ class CameraZoneOut(CamelModel):
 
 
 class CameraZonePolygonIn(CamelModel):
-    """PUT body for app/routers/cameras.py's zone-polygon endpoint.
-    An empty/None polygon clears the restriction (camera stops being
-    swept by app/jobs/zone_entry_ai.py)."""
+    """PATCH body for app/routers/cameras.py's face-roi endpoint (eshik
+    hududi). An empty/None polygon clears it — the whole frame is searched."""
 
     polygon: list[list[float]] | None = None
 

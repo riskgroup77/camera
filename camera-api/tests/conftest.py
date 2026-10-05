@@ -182,7 +182,7 @@ async def seeded(request, db_session: AsyncSession) -> None:
     permission matrix, starting faculties/buildings.
 
     Real vaqt rejimi testlari uchun (``daily_mode`` belgisi yo'q) eski
-    kriteriyalar (1, 2, 3, 20, 26) ham qo'shiladi — tests/legacy_modules.py."""
+    kriteriyalar (3, 20, 26) ham qo'shiladi — tests/legacy_modules.py."""
     await seed_all(db_session)
     if not request.node.get_closest_marker("daily_mode"):
         await seed_legacy_modules(db_session)

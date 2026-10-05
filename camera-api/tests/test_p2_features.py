@@ -10,7 +10,6 @@ class TestAISchedulerRegistry:
     def test_build_registry_includes_core_modules(self):
         registry = _build_registry()
         names = {e.name for e in registry}
-        assert "zone_entry" in names
         assert "teacher_punctuality" in names
         if __import__("app.config", fromlist=["settings"]).settings.unified_face_sweep_enabled:
             assert "unified_face" in names

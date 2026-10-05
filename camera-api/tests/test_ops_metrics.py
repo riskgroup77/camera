@@ -224,19 +224,19 @@ class TestContent:
 
 class TestAiRuntime:
     async def test_sweep_stats_exported(self, client: AsyncClient):
-        scheduler_metrics.register_sweep("zone_entry", "critical", 30)
-        scheduler_metrics.record_sweep_started("zone_entry")
-        scheduler_metrics.record_sweep_finished("zone_entry", duration_seconds=2.5, result=3)
+        scheduler_metrics.register_sweep("lesson_attendance", "critical", 30)
+        scheduler_metrics.record_sweep_started("lesson_attendance")
+        scheduler_metrics.record_sweep_finished("lesson_attendance", duration_seconds=2.5, result=3)
         scheduler_metrics.register_sweep("teacher_punctuality", "standard", 60)
         scheduler_metrics.record_sweep_started("teacher_punctuality")
         scheduler_metrics.record_sweep_finished("teacher_punctuality", duration_seconds=1.0, result=0, error="boom")
 
         s = _samples((await client.get("/metrics")).text)
-        assert _value(s, "sm_ai_sweep_runs", name="zone_entry", tier="critical") == 1
-        assert _value(s, "sm_ai_sweep_last_duration_seconds", name="zone_entry", tier="critical") == 2.5
+        assert _value(s, "sm_ai_sweep_runs", name="lesson_attendance", tier="critical") == 1
+        assert _value(s, "sm_ai_sweep_last_duration_seconds", name="lesson_attendance", tier="critical") == 2.5
         assert _value(s, "sm_ai_sweep_failures", name="teacher_punctuality", tier="standard") == 1
-        assert _value(s, "sm_ai_sweep_lagging", name="zone_entry", tier="critical") == 0
-        assert _value(s, "sm_ai_sweep_last_finished_timestamp_seconds", name="zone_entry", tier="critical") is not None
+        assert _value(s, "sm_ai_sweep_lagging", name="lesson_attendance", tier="critical") == 0
+        assert _value(s, "sm_ai_sweep_last_finished_timestamp_seconds", name="lesson_attendance", tier="critical") is not None
         assert _value(s, "sm_ai_stream_readers") is not None
         # AI (leader) surati yo'q — shu jarayon o'lchanmaydi.
         assert _value(s, "sm_ai_entrance_watchers") is None

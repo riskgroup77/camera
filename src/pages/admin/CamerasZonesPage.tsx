@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Cpu, DoorOpen, Eye, FileUp, MapPin, MapPinned, Plus, ScanFace, Settings2, Sparkles, Video, type LucideIcon } from 'lucide-react';
+import { Cpu, DoorOpen, Eye, FileUp, MapPin, Plus, ScanFace, Settings2, Sparkles, Video, type LucideIcon } from 'lucide-react';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraImportModal from '../../components/admin/CameraImportModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
@@ -150,7 +150,6 @@ export default function CamerasZonesPage() {
   // oynasida bu maydonlar yo'q, u ulanishni tahrirlaydi).
   const [locating, setLocating] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
-  const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
   const [drawingDoor, setDrawingDoor] = useState<CameraConfig | null>(null);
   const [editingModules, setEditingModules] = useState<CameraConfig | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -328,11 +327,10 @@ export default function CamerasZonesPage() {
     toast.success(`${saved.name}: joylashuv saqlandi`);
   }
 
-  function handleZoneSaved(saved: CameraConfig, kind: 'zone' | 'door') {
+  function handleDoorSaved(saved: CameraConfig) {
     refreshCameras();
-    const has = kind === 'zone' ? (saved.restrictedZonePolygon?.length ?? 0) > 0 : (saved.faceRoi?.length ?? 0) > 0;
-    const what = kind === 'zone' ? 'Taqiqlangan zona' : 'Eshik hududi';
-    toast.success(`${saved.name}: ${what} ${has ? 'saqlandi' : 'olib tashlandi'}`);
+    const has = (saved.faceRoi?.length ?? 0) > 0;
+    toast.success(`${saved.name}: Eshik hududi ${has ? 'saqlandi' : 'olib tashlandi'}`);
   }
 
   const allOnPageSelected = cameras.length > 0 && cameras.every((camera) => selected.has(camera.id));
@@ -459,7 +457,6 @@ export default function CamerasZonesPage() {
       mobileLabel: 'Amallar',
       cell: (c) => {
         const custom = (c.excludedModuleCodes?.length ?? 0) > 0;
-        const hasZone = (c.restrictedZonePolygon?.length ?? 0) > 0;
         const hasDoor = (c.faceRoi?.length ?? 0) > 0;
         return (
           <div onClick={(event) => event.stopPropagation()} className="flex justify-end gap-0.5">
@@ -476,13 +473,6 @@ export default function CamerasZonesPage() {
             )}
             {canManage && (
               <>
-                <RowAction
-                  icon={MapPinned}
-                  label="Zona"
-                  title={hasZone ? 'Zona belgilangan' : 'Zonani belgilash'}
-                  tone={hasZone ? 'danger' : undefined}
-                  onClick={() => setDrawingZone(c)}
-                />
                 <RowAction
                   icon={Cpu}
                   label="Modullar"
@@ -612,17 +602,11 @@ export default function CamerasZonesPage() {
         }
       />
       <CameraZoneModal
-        open={!!drawingZone}
-        camera={drawingZone}
-        onClose={() => setDrawingZone(null)}
-        onSave={(saved) => handleZoneSaved(saved, 'zone')}
-      />
-      <CameraZoneModal
         mode="faceRoi"
         open={!!drawingDoor}
         camera={drawingDoor}
         onClose={() => setDrawingDoor(null)}
-        onSave={(saved) => handleZoneSaved(saved, 'door')}
+        onSave={handleDoorSaved}
       />
       <CameraModulesModal open={!!editingModules} camera={editingModules} onClose={() => setEditingModules(null)} onSave={handleModulesSaved} />
       <CameraLocationModal
