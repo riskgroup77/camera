@@ -26,10 +26,12 @@ import type { PersonType } from '../../lib/situationApi';
 const TOP = 34; // chiziqlar yozuvi uchun joy
 const BOTTOM = 22; // soat yozuvlari
 const SIDE = 6;
-const FALLBACK = { width: 520, height: 168 };
 // Grafik panelda qolgan joyni egallaydi, lekin shu oraliqda qoladi.
 const MIN_HEIGHT = 112;
 const MAX_HEIGHT = 360;
+// O'lchov kelguncha — eng kichik balandlik: zaxira konteynerdan baland
+// bo'lsa, SVG pastdagi izoh ustiga chiqib qolardi (2026-10-06 skrinshot).
+const FALLBACK = { width: 520, height: MIN_HEIGHT };
 
 /** Konteyner o'lchami (ResizeObserver; jsdom va eski brauzerda — zaxira). */
 function useSize<T extends HTMLElement>() {
@@ -38,15 +40,19 @@ function useSize<T extends HTMLElement>() {
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const measure = () => {
-      const rect = element.getBoundingClientRect();
-      const width = Math.round(rect.width);
-      const height = Math.round(rect.height);
+    // contentRect — CSS o'lchami; getBoundingClientRect esa panel ochilish
+    // animatsiyasining transform'i (scale) bilan buziladi.
+    const apply = (rawWidth: number, rawHeight: number) => {
+      const width = Math.round(rawWidth);
+      const height = Math.round(rawHeight);
       if (width > 0) setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
     };
-    measure();
+    apply(element.clientWidth, element.clientHeight);
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[entries.length - 1]?.contentRect;
+      if (box) apply(box.width, box.height);
+    });
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -58,6 +64,7 @@ export default function ArrivalsChart({
   who,
   lateAfter,
   isToday,
+  untimed = 0,
   onPick,
   className,
 }: {
@@ -66,12 +73,16 @@ export default function ArrivalsChart({
   /** Kechikish chegarasi "HH:MM" (overview.lateAfterStudents / lateAfterStaff). */
   lateAfter: string | null | undefined;
   isToday: boolean;
+  /** Kelgan, lekin kelish vaqti noma'lum (HEMIS davomati, qo'lda kiritilgan)
+   *  — soatlarga taqsimlanmaydi, sarlavhada alohida aytiladi. */
+  untimed?: number;
   onPick?: (hour: number) => void;
   className?: string;
 }) {
   const [ref, size] = useSize<HTMLDivElement>();
   const width = size.width;
-  const HEIGHT = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, size.height || FALLBACK.height));
+  // Konteynerdan baland bo'lmaydi (u CSS bilan kamida MIN_HEIGHT).
+  const HEIGHT = Math.min(MAX_HEIGHT, size.height > 0 ? size.height : MIN_HEIGHT);
   const clipBase = useId();
   const now = useSharedNow(isToday);
   const nowMinutes = tashkentMinutes(now);
@@ -79,10 +90,15 @@ export default function ArrivalsChart({
   const [hovered, setHovered] = useState<number | null>(null);
 
   const people = who === 'xodim' ? 'xodim' : 'talaba';
+  const untimedText = untimed > 0 ? `${untimed.toLocaleString('ru-RU')} kishining kelish vaqti noma’lum` : null;
   if (bars.length === 0) {
     return (
       <div className={cn('rounded-control border border-dashed border-border px-3 py-4 text-center text-[12px] text-muted', className)}>
-        {isToday ? `Bugun hali birorta ${people} kamerada tanilmagan` : `Bu kuni ${people}larning kelish yozuvi yo‘q`}
+        {untimedText
+          ? `Kelish vaqtlari yozilmagan — ${untimedText} (HEMIS davomati yoki qo‘lda kiritilgan)`
+          : isToday
+            ? `Bugun hali birorta ${people} kamerada tanilmagan`
+            : `Bu kuni ${people}larning kelish yozuvi yo‘q`}
       </div>
     );
   }
@@ -118,16 +134,27 @@ export default function ArrivalsChart({
     <div className={cn('flex flex-col rounded-control border border-border bg-surface px-3 pb-2 pt-2.5', className)}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[13px] font-semibold text-fg">Kelish oqimi</span>
-        <span className="text-[11px] text-muted">soatlar bo‘yicha</span>
+        <span className="text-right text-[11px] text-muted">
+          {untimedText ? (
+            <span
+              title="HEMIS davomati yoki qo‘lda kiritilgan yozuvlar: kelgan, lekin kamera vaqtini yozmagan — soatlarga taqsimlanmaydi"
+              className="cursor-help underline decoration-dotted decoration-subtle underline-offset-2"
+            >
+              jami {(total + untimed).toLocaleString('ru-RU')} · {untimedText}
+            </span>
+          ) : (
+            'soatlar bo‘yicha'
+          )}
+        </span>
       </div>
       {/* O'lchanadigan maydon: kenglik ham, balandlik ham shundan (min/max bilan). */}
-      <div ref={ref} className="relative mt-1 min-h-[112px] w-full flex-1">
+      <div ref={ref} className="relative mt-1 min-h-[112px] w-full flex-1 overflow-hidden">
         <svg
           width={width}
           height={HEIGHT}
           viewBox={`0 0 ${width} ${HEIGHT}`}
           role="group"
-          aria-label={`Soatlar bo‘yicha kelganlar: jami ${total}, shundan ${late} tasi kech`}
+          aria-label={`Soatlar bo‘yicha kelganlar: jami ${total}, shundan ${late} tasi kech${untimed > 0 ? `; yana ${untimed} kishining kelish vaqti noma’lum` : ''}`}
           className="absolute inset-x-0 top-0 block select-none overflow-visible"
         >
           <line x1={SIDE} x2={width - SIDE} y1={TOP + plotHeight} y2={TOP + plotHeight} className="stroke-border" strokeWidth={1} />

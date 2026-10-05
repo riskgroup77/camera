@@ -93,6 +93,18 @@ async def test_arrivals_by_hour_and_last_arrivals(client, world, admin):
     assert next(a for a in last if a["fullName"] == "Botirova Nigora")["photoUrl"] is None
 
 
+async def test_untimed_arrivals_are_counted_apart_from_the_hours(client, world, admin, db_session):
+    """HEMIS davomati (source=hemis) kelish vaqtisiz: soatlik ustunlarga
+    tushmaydi, lekin grafik ularni alohida sanaydi — ustunlar + vaqtsizlar =
+    kelganlar."""
+    db_session.add(AttendanceRecord(student_staff_id=world.people.davronov.id, date=world.today, status="keldi",
+                                    source="hemis"))
+    await db_session.commit()
+    body = (await client.get(URL, headers=admin)).json()
+    assert body["arrivalsUntimedStudents"] == 1 and body["arrivalsUntimedStaff"] == 0
+    assert sum(b["students"] for b in body["arrivalsByHour"]) == 6  # faqat vaqti borlar
+
+
 async def test_past_date_has_no_waiting_people(client, world, admin):
     body = (await client.get(URL, params={"date": world.yesterday.isoformat()}, headers=admin)).json()
     assert body["isToday"] is False

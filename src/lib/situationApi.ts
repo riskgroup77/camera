@@ -103,6 +103,9 @@ export interface Overview {
   /** Kechikish chegarasi "HH:MM" (ish vaqti sozlamasidan) — kelish grafigidagi chiziq. */
   lateAfterStudents?: string | null;
   lateAfterStaff?: string | null;
+  /** Kelgan, lekin kelish vaqti noma'lum (HEMIS davomati, qo'lda) — soatlarda yo'q. */
+  arrivalsUntimedStudents?: number;
+  arrivalsUntimedStaff?: number;
 }
 
 // ───────────────────────────────────────────── 2–4. Fakultet / guruh

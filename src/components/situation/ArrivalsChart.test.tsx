@@ -38,6 +38,19 @@ describe('ArrivalsChart', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
+  it('counts arrivals without a time (HEMIS) apart from the hourly bars', () => {
+    render(<ArrivalsChart buckets={buckets} who="talaba" lateAfter="08:10" isToday={false} untimed={4802} />);
+    // Ustunlar — 134 (vaqti bor), jami — 4 936.
+    expect(screen.getByText(/jami 4\s936 · 4\s802 kishining kelish vaqti noma’lum/)).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /yana 4802 kishining kelish vaqti noma’lum/ })).toBeInTheDocument();
+  });
+
+  it('explains a day where only untimed arrivals exist', () => {
+    const empty = buckets.map((b) => ({ ...b, students: 0, studentsLate: 0 }));
+    render(<ArrivalsChart buckets={empty} who="talaba" lateAfter="08:10" isToday={false} untimed={50} />);
+    expect(screen.getByText(/Kelish vaqtlari yozilmagan — 50 kishining kelish vaqti noma’lum/)).toBeInTheDocument();
+  });
+
   it('says so plainly when nobody has arrived', () => {
     const empty = buckets.map((b) => ({ ...b, students: 0, studentsLate: 0 }));
     render(<ArrivalsChart buckets={empty} who="talaba" lateAfter="08:10" isToday />);

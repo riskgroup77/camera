@@ -104,6 +104,7 @@ async def _build_overview(db: AsyncSession, day) -> OverviewOut:
     names = await svc.faculty_names(db)
     students = svc.type_counts(rows, "talaba", pending)
     policy = await load_policy(db)
+    untimed = await svc.arrivals_without_time(db, day)
     return OverviewOut(
         date=day.isoformat(),
         is_today=day == svc.today(),
@@ -121,6 +122,8 @@ async def _build_overview(db: AsyncSession, day) -> OverviewOut:
         last_arrivals=[ArrivalOut(**r) for r in await svc.last_arrivals(db, day)],
         late_after_students=policy.late_after("talaba").strftime("%H:%M"),
         late_after_staff=policy.late_after("xodim").strftime("%H:%M"),
+        arrivals_untimed_students=untimed["students"],
+        arrivals_untimed_staff=untimed["staff"],
     )
 
 

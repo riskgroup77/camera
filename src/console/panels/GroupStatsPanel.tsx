@@ -234,6 +234,7 @@ export default function GroupStatsPanel({
           buckets={overview.arrivalsByHour}
           who={who}
           lateAfter={students ? overview.lateAfterStudents : overview.lateAfterStaff}
+          untimed={(students ? overview.arrivalsUntimedStudents : overview.arrivalsUntimedStaff) ?? 0}
           isToday={isToday}
           onPick={setArrivalHour}
           className="min-h-[190px] flex-1"

@@ -124,6 +124,10 @@ class OverviewOut(CamelModel):
     # birinchi ko'rinish — "kech keldi". Kelish grafigidagi chiziq.
     late_after_students: str | None = None
     late_after_staff: str | None = None
+    # Kelgan, lekin kelish vaqti noma'lum (HEMIS davomati, qo'lda kiritilgan)
+    # — soatlik grafikda yo'q, alohida ko'rsatiladi.
+    arrivals_untimed_students: int = 0
+    arrivals_untimed_staff: int = 0
 
 
 # ─────────────────────────────────────────── 2-3. Fakultet va guruhlar

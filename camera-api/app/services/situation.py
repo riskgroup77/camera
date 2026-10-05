@@ -939,6 +939,26 @@ async def arrivals_by_hour(db: AsyncSession, day: date_type) -> list[dict]:
     return [{"hour": h, **buckets.get(h, EMPTY_HOUR)} for h in range(first, last + 1)]
 
 
+async def arrivals_without_time(db: AsyncSession, day: date_type) -> dict[str, int]:
+    """Kelgan, lekin kelish vaqti yo'q yozuvlar (HEMIS davomati —
+    scripts/hemis_davomat.py, qo'lda kiritilgan) — soatlik grafikka
+    tushmaydi; grafik ular sonini alohida aytadi, aks holda ustunlar
+    yig'indisi "Keldi" bilan mos kelmasdi."""
+    rows = await db.execute(
+        select(StudentStaff.type, func.count())
+        .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
+        .where(AttendanceRecord.date == day)
+        .where(AttendanceRecord.check_in.is_(None))
+        .where(AttendanceRecord.status.in_(("keldi", "kech_keldi")))
+        .where(StudentStaff.active.is_(True))
+        .group_by(StudentStaff.type)
+    )
+    counts = {"students": 0, "staff": 0}
+    for type_, n in rows.all():
+        counts["students" if type_ == "talaba" else "staff"] += n
+    return counts
+
+
 async def last_arrivals(db: AsyncSession, day: date_type, limit: int = 10) -> list[dict]:
     rows = await db.execute(
         select(
