@@ -49,13 +49,15 @@ describe('visibleBars', () => {
     expect(visibleBars(late, { isToday: true, nowHour: 23 }).map((b) => b.hour).at(-1)).toBe(20);
   });
 
-  it('ends at the last arrival on a past day', () => {
-    expect(visibleBars(bars, { isToday: false, nowHour: 23 }).map((b) => b.hour)).toEqual([7, 8, 9]);
+  it('draws the whole working day (07–17) on a past day', () => {
+    expect(visibleBars(bars, { isToday: false, nowHour: 23 }).map((b) => b.hour)).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+    const late = arrivalBars([{ hour: 8, students: 3, staff: 0 }, { hour: 20, students: 1, staff: 0 }], 'talaba');
+    expect(visibleBars(late, { isToday: false, nowHour: 0 }).map((b) => b.hour).at(-1)).toBe(20);
   });
 
   it('starts earlier when someone came before 07:00 and is empty when nobody came', () => {
     const early = arrivalBars([{ hour: 6, students: 1, staff: 0 }, { hour: 8, students: 3, staff: 0 }], 'talaba');
-    expect(visibleBars(early, { isToday: false, nowHour: 0 }).map((b) => b.hour)).toEqual([6, 7, 8]);
+    expect(visibleBars(early, { isToday: false, nowHour: 0 }).map((b) => b.hour).slice(0, 3)).toEqual([6, 7, 8]);
     expect(visibleBars(arrivalBars([{ hour: 8, students: 0, staff: 0 }], 'talaba'), { isToday: true, nowHour: 9 })).toEqual([]);
   });
 });
@@ -70,10 +72,10 @@ describe('time helpers', () => {
   });
 
   it('places a time on the visible axis', () => {
-    const bars = visibleBars(arrivalBars(buckets, 'talaba'), { isToday: false, nowHour: 0 }); // 07..09
-    expect(timeFraction(clockMinutes('08:10'), bars)).toBeCloseTo((70 / 180), 5);
+    const bars = visibleBars(arrivalBars(buckets, 'talaba'), { isToday: false, nowHour: 0 }); // 07..17
+    expect(timeFraction(clockMinutes('08:10'), bars)).toBeCloseTo(70 / 660, 5);
     expect(timeFraction(clockMinutes('06:00'), bars)).toBeNull();
-    expect(timeFraction(clockMinutes('11:00'), bars)).toBeNull();
+    expect(timeFraction(clockMinutes('19:00'), bars)).toBeNull();
   });
 
   it('reads Tashkent time regardless of the browser zone', () => {

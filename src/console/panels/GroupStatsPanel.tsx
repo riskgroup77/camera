@@ -256,7 +256,6 @@ export default function GroupStatsPanel({
         <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>{error ?? 'Yuklanmoqda…'}</div>
       )}
       {overview && error && <p className="text-[11px] text-danger">{error}</p>}
-      {students && <p className="text-[11px] text-muted">Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.</p>}
     </div>
   );
 

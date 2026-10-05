@@ -67,39 +67,10 @@ async def get_policy(db: DbDep, _user: Annotated[CurrentUser, Depends(get_curren
     return _out(await load_policy(db, force=True))
 
 
-@router.put("")
-async def put_policy(
-    body: PolicyIn,
-    request: Request,
-    db: DbDep,
-    current_user: Annotated[CurrentUser, Depends(require_permission("manageAttendance"))],
-) -> dict:
-    if body.work_end <= body.staff_start:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Ish tugash vaqti boshlanishidan keyin bo'lishi kerak")
-    # Ish kuni settings.day_start_hour (06:00) da almashadi — undan oldingi
-    # boshlanish kechagi ish kuniga tushib, hamma "kech keldi" bo'lardi.
-    earliest = time_type(settings.day_start_hour, 0)
-    if body.staff_start < earliest or body.student_start < earliest:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            f"Boshlanish vaqti {settings.day_start_hour:02d}:00 dan oldin bo'lishi mumkin emas — ish kuni shu soatda almashadi",
-        )
-    row = await db.get(AttendancePolicy, 1)
-    if row is None:
-        row = AttendancePolicy(id=1)
-        db.add(row)
-    row.staff_start = body.staff_start
-    row.student_start = body.student_start
-    row.grace_minutes = body.grace_minutes
-    row.work_end = body.work_end
-    row.work_days = ",".join(str(d) for d in body.work_days)
-    row.track_last_seen = body.track_last_seen
-    # Bayram kunlari saqlanadi — ular alohida jadvalda (holidays). Bu jarayon
-    # qoidani hali yuklamagan bo'lishi mumkin: bazadan yangidan o'qiladi.
-    holidays = (await load_policy(db, force=True)).holidays
-    await db.flush()
-    policy = replace(from_row(row), holidays=holidays)
-
+async def recompute_statuses(db: AsyncSession, policy) -> int:
+    """Oxirgi RECOMPUTE_DAYS kun yozuvlarining holatini (keldi / kech_keldi)
+    yangi qoida bilan qayta hisoblaydi; o'zgarganlar soni. Commit — chaqiruvchida.
+    Ish vaqti sahifasi (PUT) va scripts/ish_vaqti.py bir xil yo'ldan."""
     since = business_today() - timedelta(days=RECOMPUTE_DAYS)
     rows = (
         await db.execute(
@@ -142,7 +113,43 @@ async def put_policy(
             await db.execute(
                 update(AttendanceRecord).where(AttendanceRecord.id.in_(chunk)).values(status=new_status)
             )
-    recomputed = sum(len(v) for v in changed.values())
+    return sum(len(v) for v in changed.values())
+
+
+@router.put("")
+async def put_policy(
+    body: PolicyIn,
+    request: Request,
+    db: DbDep,
+    current_user: Annotated[CurrentUser, Depends(require_permission("manageAttendance"))],
+) -> dict:
+    if body.work_end <= body.staff_start:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Ish tugash vaqti boshlanishidan keyin bo'lishi kerak")
+    # Ish kuni settings.day_start_hour (06:00) da almashadi — undan oldingi
+    # boshlanish kechagi ish kuniga tushib, hamma "kech keldi" bo'lardi.
+    earliest = time_type(settings.day_start_hour, 0)
+    if body.staff_start < earliest or body.student_start < earliest:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"Boshlanish vaqti {settings.day_start_hour:02d}:00 dan oldin bo'lishi mumkin emas — ish kuni shu soatda almashadi",
+        )
+    row = await db.get(AttendancePolicy, 1)
+    if row is None:
+        row = AttendancePolicy(id=1)
+        db.add(row)
+    row.staff_start = body.staff_start
+    row.student_start = body.student_start
+    row.grace_minutes = body.grace_minutes
+    row.work_end = body.work_end
+    row.work_days = ",".join(str(d) for d in body.work_days)
+    row.track_last_seen = body.track_last_seen
+    # Bayram kunlari saqlanadi — ular alohida jadvalda (holidays). Bu jarayon
+    # qoidani hali yuklamagan bo'lishi mumkin: bazadan yangidan o'qiladi.
+    holidays = (await load_policy(db, force=True)).holidays
+    await db.flush()
+    policy = replace(from_row(row), holidays=holidays)
+
+    recomputed = await recompute_statuses(db, policy)
     await log_action(
         db, request, current_user.id,
         f"Ish vaqti qoidasini o'zgartirdi: xodim {body.staff_start:%H:%M}, talaba {body.student_start:%H:%M}, "

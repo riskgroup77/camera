@@ -16,8 +16,12 @@ describe('ArrivalsChart', () => {
     expect(screen.getByRole('button', { name: '08:00–08:59 · 64 kishi keldi, shundan 49 tasi kech' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '07:00–07:59 · 12 kishi keldi, hammasi o‘z vaqtida' })).toBeInTheDocument();
     expect(screen.getByText('08:10 kechikish')).toBeInTheDocument();
-    expect(screen.getByText('kech (08:10 dan keyin)')).toBeInTheDocument();
-    // O'tgan kun: oxirgi kelish (09) bilan tugaydi, "hozir" chizilmaydi.
+    // Rang izohi sarlavhada; pastdagi izoh qatori yo'q.
+    expect(screen.getByText('o‘z vaqtida')).toBeInTheDocument();
+    expect(screen.queryByText(/dan keyin\)/)).toBeNull();
+    expect(screen.queryByText('Ustunni bosing — o‘sha soatda kelganlar')).toBeNull();
+    // O'tgan kun: butun ish kuni chiziladi (bo'sh soat tugma emas), "hozir" yo'q.
+    expect(screen.getByText('17')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^10:00/ })).toBeNull();
     expect(screen.queryByText(/^hozir/)).toBeNull();
   });

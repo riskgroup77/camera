@@ -42,8 +42,8 @@ export function arrivalBars(buckets: readonly HourBucket[], who: PersonType): Ar
 /**
  * Ko'rsatiladigan soatlar: 07:00 (yoki undan oldingi birinchi kelish) dan
  * bugun uchun — hozirgi soatgacha (18:00 dan keyin — faqat kelish bo'lsa),
- * o'tgan kun uchun — oxirgi kelishgacha. Ortidagi bo'sh soatlar kichik
- * ustunlarni siqib qo'ymasin. Hech kim kelmagan — bo'sh ro'yxat (izoh).
+ * o'tgan kun uchun — 17:00 gacha (kechroq kelish bo'lsa — o'shagacha).
+ * Hech kim kelmagan — bo'sh ro'yxat (izoh).
  */
 export function visibleBars(bars: readonly ArrivalBar[], opts: { isToday: boolean; nowHour: number }): ArrivalBar[] {
   const withData = bars.filter((b) => b.total > 0);
@@ -51,7 +51,9 @@ export function visibleBars(bars: readonly ArrivalBar[], opts: { isToday: boolea
   const byHour = new Map(bars.map((b) => [b.hour, b]));
   const first = Math.min(DAY_START_HOUR, ...withData.map((b) => b.hour));
   const lastData = Math.max(...withData.map((b) => b.hour));
-  const last = Math.min(23, opts.isToday ? Math.max(lastData, Math.min(opts.nowHour, DAY_END_HOUR)) : lastData);
+  // O'tgan kun ham butun ish kuni (07–17) chiziladi — guruh va institut
+  // grafiklari bir xil o'qiladi (bitta ustunli siqiq grafik bo'lmasin).
+  const last = Math.min(23, opts.isToday ? Math.max(lastData, Math.min(opts.nowHour, DAY_END_HOUR)) : Math.max(lastData, DAY_END_HOUR - 1));
   const out: ArrivalBar[] = [];
   for (let hour = first; hour <= Math.max(first, last); hour += 1) {
     out.push(byHour.get(hour) ?? { hour, total: 0, late: 0, onTime: 0 });

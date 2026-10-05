@@ -143,12 +143,19 @@ export default function ArrivalsChart({
               jami {(total + untimed).toLocaleString('ru-RU')} · {untimedText}
             </span>
           ) : (
-            'soatlar bo‘yicha'
+            <span className="inline-flex items-center gap-2">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-[2px] bg-success" aria-hidden="true" />o‘z vaqtida
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-[2px] bg-warning" aria-hidden="true" />kech
+              </span>
+            </span>
           )}
         </span>
       </div>
       {/* O'lchanadigan maydon: kenglik ham, balandlik ham shundan (min/max bilan). */}
-      <div ref={ref} className="relative mt-1 min-h-[112px] w-full flex-1 overflow-hidden">
+      <div ref={ref} className="relative mt-1 min-h-[112px] w-full flex-1 overflow-hidden" title={onPick ? 'Ustunni bosing — o‘sha soatda kelganlar' : undefined}>
         <svg
           width={width}
           height={HEIGHT}
@@ -221,16 +228,6 @@ export default function ArrivalsChart({
             </g>
           )}
         </svg>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-[3px] bg-success" aria-hidden="true" /> o‘z vaqtida
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-[3px] bg-warning" aria-hidden="true" /> kech
-          {lateMinutes !== null ? ` (${formatClock(lateMinutes)} dan keyin)` : ''}
-        </span>
-        {onPick && <span className="ms-auto">Ustunni bosing — o‘sha soatda kelganlar</span>}
       </div>
     </div>
   );
