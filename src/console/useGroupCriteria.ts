@@ -32,7 +32,7 @@ export function useGroupCriteria(group: string, date: string, pulse: number, ena
         if (controller.signal.aborted) return;
         setError(
           err instanceof ApiError && err.status === 403
-            ? 'Kriteriyalarni ko‘rish uchun hisobotlarni ko‘rish huquqi kerak'
+            ? 'Kriteriyalarni ko‘rish uchun davomat yoki hisobotlarni ko‘rish huquqi kerak'
             : err instanceof ApiError
               ? err.message
               : "Ma'lumotni olib bo'lmadi",

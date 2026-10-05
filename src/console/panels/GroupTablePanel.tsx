@@ -240,7 +240,7 @@ export default function GroupTablePanel({
   const groupColumns: DataTableColumn<GroupStat>[] = [
     { key: 'name', header: 'Guruh', sortValue: (r) => r.name, cell: (r) => <b>{r.name}</b> },
     { key: 'course', header: 'Kurs', sortValue: (r) => r.course ?? 0, cell: (r) => r.course ?? '—', align: 'center' },
-    { key: 'total', header: <Hint text="Guruhdagi barcha faol talabalar">Jami</Hint>, sortValue: (r) => r.total, align: 'right', cell: (r) => countCell(r, 'hammasi', r.total, 'text-fg') },
+    { key: 'total', header: <Hint text="Guruhdagi barcha faol talabalar">Jami</Hint>, sortValue: (r) => r.total, sortFirst: 'desc', align: 'right', cell: (r) => countCell(r, 'hammasi', r.total, 'text-fg') },
     { key: 'present', header: <Hint text="Kelganlar — kech kelganlar ham shu songa kiradi">Keldi</Hint>, sortValue: (r) => r.present, align: 'right', cell: (r) => countCell(r, 'kelgan', r.present, 'text-success') },
     { key: 'late', header: <Hint text="Kelganlardan kech kelganlari (ish boshlanishi + ruxsat etilgan daqiqalardan keyin)">Kech</Hint>, sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
     { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
@@ -464,7 +464,8 @@ export default function GroupTablePanel({
           error={loadError}
           emptyTitle="Guruh topilmadi"
           fill
-          defaultSort={{ key: 'name', dir: 'asc' }}
+          // Eng katta guruhlar tepada (Jami — ko'pidan kamiga).
+          defaultSort={{ key: 'total', dir: 'desc' }}
           dense
         />
       </div>

@@ -2,7 +2,8 @@ import { api, buildQuery, type CallOptions } from './apiClient';
 
 /**
  * Nazorat → guruh: har talaba qatorida hamma kriteriyalar
- * (GET /api/hisobot/guruh — hisobot bilan bir xil hisob).
+ * (GET /api/situation/group-criteria — hisobot bilan bir xil hisob, Nazorat
+ * ruxsati bilan, hisobotlar parolisiz).
  */
 
 export type CriterionTone = 'success' | 'warning' | 'danger' | 'neutral';
@@ -47,7 +48,7 @@ export interface GroupCriteria {
 }
 
 export function getGroupCriteria(group: string, date: string, opts?: CallOptions): Promise<GroupCriteria> {
-  return api.get<GroupCriteria>(`/api/hisobot/guruh${buildQuery({ group, from: date, to: date })}`, undefined, opts);
+  return api.get<GroupCriteria>(`/api/situation/group-criteria${buildQuery({ group, date })}`, undefined, opts);
 }
 
 /** Jadval ustuni uchun qisqa nom (to'liq nomi — sarlavha izohida). */

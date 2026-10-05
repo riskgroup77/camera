@@ -386,7 +386,7 @@ def test_matrix_cell_reads_like_a_register():
 
 
 async def test_group_matrix_lists_every_student_with_every_criterion(client, admin, world, db_session):
-    res = await client.get("/api/hisobot/guruh", params={"group": "DI-2301"}, headers=admin)
+    res = await client.get("/api/situation/group-criteria", params={"group": "DI-2301"}, headers=admin)
     assert res.status_code == 200, res.text
     body = res.json()
     names = [p["full_name"] for p in body["people"]]
@@ -406,11 +406,16 @@ async def test_group_matrix_lists_every_student_with_every_criterion(client, adm
 
     db_session.add(DailyPersonCriteria(student_staff_id=world.people.aliyev.id, day=world.today, coat_status="kiymagan"))
     await db_session.commit()
-    body = (await client.get("/api/hisobot/guruh", params={"group": "DI-2301"}, headers=admin)).json()
+    body = (await client.get("/api/situation/group-criteria", params={"group": "DI-2301"}, headers=admin)).json()
     cells = {p["full_name"]: p["cells"] for p in body["people"]}
     assert body["analysed"] is True
     assert cells["Aliyev Anvar"]["forma"]["value"] == "1" and cells["Botirova Nigora"]["forma"]["value"] == "0"
 
 
-async def test_group_matrix_requires_reports_permission(client, world):
-    assert (await client.get("/api/hisobot/guruh", params={"group": "DI-2301"})).status_code in (401, 403)
+async def test_group_matrix_requires_login_but_not_the_report_password(client, admin, world, monkeypatch):
+    assert (await client.get("/api/situation/group-criteria", params={"group": "DI-2301"})).status_code in (401, 403)
+    # Hisobotlar paroli yoqilgan bo'lsa ham Nazorat kriteriyalari ochiladi.
+    from app.config import settings
+    monkeypatch.setattr(settings, "report_password_hash", "qulf")
+    res = await client.get("/api/situation/group-criteria", params={"group": "MD-134/25"}, headers=admin)
+    assert res.status_code == 200 and res.json()["people"] == []

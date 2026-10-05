@@ -239,6 +239,21 @@ async def _groups_list(db, day, faculty_id, course, search) -> list[GroupStatOut
 
 # ─────────────────────────────────────────── 4. Guruh
 
+@router.get("/group-criteria")
+async def group_criteria(
+    db: DbDep, _: ReadDep, group: Annotated[str, Query(min_length=1, max_length=300)], date: DateQuery = None,
+) -> dict:
+    """Nazorat → guruh → "Kriteriyalar": har talaba qatorida hamma
+    kriteriyalar va video dalillar (app/services/hisobot.group_matrix —
+    hisobot bilan bir xil hisob). Nazorat ruxsati bilan, hisobotlar
+    parolisiz: bu bitta guruhning kunlik ko'rinishi. Guruh nomida "/"
+    bo'lishi mumkin ("MD-134/25") — shuning uchun so'rov parametri."""
+    from app.services import hisobot
+
+    day = svc.resolve_day(date)
+    return await hisobot.group_matrix(db, group.strip(), day, day)
+
+
 @router.get("/groups/{group_name:path}", response_model=GroupDetailOut)
 async def group_detail(group_name: str, db: DbDep, _: ReadDep, date: DateQuery = None) -> GroupDetailOut:
     """Guruh: talabalar yuz setkasi (shu kungi holati bilan), shu kungi

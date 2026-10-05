@@ -2,7 +2,6 @@
 
   GET /api/hisobot/filters?kind=talaba|xodim      — filtr variantlari
   GET /api/hisobot/report?kind=&from=&to=&criterion=&faculty=&course=&group=&unit_kind=&unit=&q=
-  GET /api/hisobot/guruh?group=&from=&to=           — guruh: talaba × mezon (Nazorat)
   GET /api/hisobot/export.xlsx (report bilan bir xil parametrlar) — Excel
   GET /api/hisobot/tabel?kind=&oy=YYYY-MM&<filtrlar>  — oylik davomat tabeli
   GET /api/hisobot/tabel.xlsx (tabel bilan bir xil parametrlar) — chop etish uchun
@@ -55,17 +54,6 @@ async def report(
 ) -> dict:
     start, end = svc.resolve_range(date_from, date_to, default_days=1)
     return await hisobot.report(db, kind, start, end, _filters(faculty, course, group, unit_kind, unit, q), criterion)
-
-
-@router.get("/guruh")
-async def group_criteria(
-    db: DbDep, _: ReadDep, group: Annotated[str, Query(min_length=1, max_length=300)],
-    date_from: Annotated[str | None, Query(alias="from")] = None,
-    date_to: Annotated[str | None, Query(alias="to")] = None,
-) -> dict:
-    """Nazorat → guruh: har talaba qatorida hamma mezonlar va video dalillar."""
-    start, end = svc.resolve_range(date_from, date_to, default_days=1)
-    return await hisobot.group_matrix(db, group.strip(), start, end)
 
 
 @router.get("/export.xlsx")

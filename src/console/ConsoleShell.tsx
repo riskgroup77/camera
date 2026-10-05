@@ -112,8 +112,8 @@ function Console() {
   const canPeople = canAttendance || canReports;
   // Guruh ma'lumoti faqat talabalar uchun (xodimlarda `group` — kafedra id si).
   const groupLive = useGroupLive(canPeople && selection.who === 'talaba' ? selection.group : '', date, isToday, pulse);
-  // Guruh kriteriyalari — hisobot bilan bir xil hisob, shuning uchun hisobot huquqi bilan.
-  const groupCriteria = useGroupCriteria(selection.who === 'talaba' ? selection.group : '', date, pulse, canReports);
+  // Guruh kriteriyalari — Nazorat ruxsati bilan (hisobotlar parolisiz).
+  const groupCriteria = useGroupCriteria(selection.who === 'talaba' ? selection.group : '', date, pulse, canPeople);
 
   // Jonli xabar kelganda raqamlar yangilanadi. Ulanish HOLATI hodisalar
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni
@@ -221,7 +221,7 @@ function Console() {
             selection={selection}
             live={groupLive}
             criteria={groupCriteria}
-            canCriteria={canReports}
+            canCriteria={canPeople}
             date={date}
             setDate={filter.setDate}
             isToday={isToday}
@@ -246,7 +246,7 @@ function Console() {
             selection={selection}
             live={groupLive}
             criteria={groupCriteria}
-            canCriteria={canReports}
+            canCriteria={canPeople}
             date={date}
             isToday={isToday}
             pulse={pulse}
