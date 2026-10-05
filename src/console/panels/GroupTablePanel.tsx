@@ -170,6 +170,17 @@ export default function GroupTablePanel({
       ),
     [groups, faculty, course],
   );
+  const groupTotals = useMemo(() => {
+    const sum = (pick: (g: GroupStat) => number) => filteredGroups.reduce((acc, g) => acc + pick(g), 0);
+    return {
+      hammasi: sum((g) => g.total),
+      kelgan: sum((g) => g.present),
+      kech_keldi: sum((g) => g.late),
+      kelmadi: sum((g) => g.absent),
+      kutilmoqda: sum((g) => g.notYet),
+      yuzsiz: sum((g) => g.total - g.enrolled),
+    } as Record<CounterKey, number>;
+  }, [filteredGroups]);
   // Ochiluvchi ro'yxatda har guruh yonida: kelgan (yashil), kelmagan (qizil), ma'lumotsiz (kulrang).
   // HEMIS guruhlari (kursi va fakulteti ma'lum) birinchi, o'zi ro'yxatdan
   // o'tganda qo'lda yozilgan noaniq nomlar ("1", "20.26 gurux") — alohida pastda.
@@ -448,6 +459,16 @@ export default function GroupTablePanel({
     );
   } else {
     body = (
+      <>
+        {/* Xodimlardagi kabi umumiy sanoq — jadvaldagi guruhlar yig'indisi
+            (fakultet/kurs filtri bilan); son bosilsa — shu holatdagilar ro'yxati. */}
+        <StatusCounters
+          items={DAY_KEYS.map((key) => ({ key, value: groups ? groupTotals[key] : null }))}
+          active={status}
+          onPick={setStatus}
+          size="sm"
+          className="shrink-0"
+        />
       <div className="min-h-0 flex-1">
         <DataTable
           columns={groupColumns}
@@ -463,6 +484,7 @@ export default function GroupTablePanel({
           dense
         />
       </div>
+      </>
     );
   }
 

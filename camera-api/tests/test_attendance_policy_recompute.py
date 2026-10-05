@@ -58,7 +58,8 @@ class TestPolicyRecomputeCoversLegacyRows:
         legacy = await _person(db_session, "Eski Yozuv")      # source NULL
         camera = await _person(db_session, "Kamera Yozuvi")   # source 'kamera'
         manual = await _person(db_session, "Qolda Yozuv")     # source 'qolda'
-        for person, source in ((legacy, None), (camera, "kamera"), (manual, "qolda")):
+        hemis = await _person(db_session, "Hemis Yozuv")      # source 'hemis' — dars boshlanishi
+        for person, source in ((legacy, None), (camera, "kamera"), (manual, "qolda"), (hemis, "hemis")):
             db_session.add(
                 AttendanceRecord(
                     student_staff_id=person.id, date=day, status="keldi",
@@ -86,4 +87,5 @@ class TestPolicyRecomputeCoversLegacyRows:
         )
         assert rows[camera.id] == "kech_keldi"
         assert rows[manual.id] == "keldi", "qo'lda kiritilgan yozuvga tegilmaydi"
+        assert rows[hemis.id] == "keldi", "HEMIS davomati vaqti — dars boshlanishi, kechikish emas"
         assert resp.json()["recomputed"] == 2

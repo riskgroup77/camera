@@ -115,10 +115,13 @@ async def put_policy(
             # yozuvning manbasi NULL, faqat 5 tasi 'kamera' edi — ya'ni "Ish
             # vaqti" sahifasi saqlanganda muvaffaqiyat deb aytardi-yu, amalda
             # deyarli hech nimani qayta hisoblamasdi.
+            # HEMIS davomati (source='hemis', scripts/hemis_davomat.py) ham
+            # tegilmaydi: uning vaqti — DARS boshlanishi (13:00 — ikkinchi
+            # smena), "kech" emas; holati darsga qatnashganidan olingan.
             .where(
                 or_(
                     AttendanceRecord.source.is_(None),
-                    AttendanceRecord.source != "qolda",
+                    AttendanceRecord.source.not_in(("qolda", "hemis")),
                 )
             )
         )
