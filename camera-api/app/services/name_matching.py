@@ -15,6 +15,7 @@ kirill yozuvi ("Махаматова Умидахон"), otasining ismi yozilmag
 from __future__ import annotations
 
 import re
+import unicodedata
 from difflib import SequenceMatcher
 
 _APOSTROPHES = "‘’`ʻʼ´"
@@ -27,6 +28,9 @@ _CYRILLIC = {
 }
 # Otasining ismidan keyingi qo'shimchalar (fuzzy_word'dan keyingi shaklda)
 _PARTICLES = {"ogli", "ugli", "ogil", "kizi", "kiz"}
+# HEMIS chet ellik talabaning yo'q ism qismi o'rniga "Xxx" yozadi
+# ("Xxx Md Arif Raza Xxx") — bu so'z emas.
+_PLACEHOLDER = re.compile(r"^x{2,}$")
 
 
 def name_key(full_name: str | None) -> str:
@@ -40,8 +44,10 @@ def name_key(full_name: str | None) -> str:
 
 def fuzzy_word(word: str) -> str:
     """Bir so'zni yozilish farqlaridan tozalaydi: kirill -> lotin, tutuq va
-    chiziqchalar, x/h, q/k, ye/yo/yu/ya, qo'sh harflar."""
+    chiziqchalar, x/h, q/k, ye/yo/yu/ya, qo'sh harflar, diakritika
+    (telefonda "o'g'li" o'rniga terilgan "òĝli")."""
     text = "".join(_CYRILLIC.get(ch, ch) for ch in word.lower())
+    text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
     text = re.sub(r"[‘’`ʻʼ´'\-.]", "", text)
     for old, new in (("ye", "e"), ("yo", "o"), ("yu", "u"), ("ya", "a"), ("x", "h"), ("q", "k")):
         text = text.replace(old, new)
@@ -49,7 +55,8 @@ def fuzzy_word(word: str) -> str:
 
 
 def name_tokens(full_name: str | None) -> list[str]:
-    tokens = [fuzzy_word(t) for t in re.split(r"[\s\-]+", full_name or "") if t.strip(" '‘’`ʻʼ")]
+    words = [t for t in re.split(r"[\s\-]+", full_name or "") if t.strip(" '‘’`ʻʼ")]
+    tokens = [fuzzy_word(t) for t in words if not _PLACEHOLDER.match(t.lower())]
     return [t for t in tokens if t and t not in _PARTICLES]
 
 

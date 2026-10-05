@@ -210,13 +210,28 @@ async def cmd_qollash(path: str, dry_run: bool) -> None:
     pairs = read_decisions(path)
     keepers = Counter(keep for keep, _, _ in pairs)
     dups = Counter(dup for _, dup, _ in pairs)
+    # Bitta HEMIS qatoriga bir nechta yozuv — faqat ular o'zaro bitta odam
+    # bo'lsa (ikki marta ro'yxatdan o'tgan); aks holda hech biri.
+    shared = {keep for keep, n in keepers.items() if n > 1}
+    if shared:
+        async with SessionLocal() as db:
+            rows = {
+                r["id"]: r for r in (dict(x._mapping) for x in (await db.execute(
+                    text("select id, full_name, pinfl, biometric_embedding from students_staff where id = any(:ids)"),
+                    {"ids": [dup for keep, dup, _ in pairs if keep in shared]},
+                )).all())
+            }
+        for keep in list(shared):
+            people = [rows[dup] for k, dup, _ in pairs if k == keep and dup in rows]
+            if rec.mutually_same(people):
+                shared.discard(keep)
     print(f"Faylda birlashtiriladigan juftliklar: {len(pairs)}{'  (SINOV — bazaga yozilmaydi)' if dry_run else ''}")
     merged = 0
     totals: Counter = Counter()
     errors: list[str] = []
     for keep_id, dup_id, sheet in pairs:
-        if keepers[keep_id] > 1:
-            errors.append(f"{keep_id}: bitta HEMIS qatoriga bir nechta odam tanlangan — o'tkazildi")
+        if keep_id in shared:
+            errors.append(f"{keep_id}: bitta HEMIS qatoriga bir-biridan farqli odamlar tanlangan — o'tkazildi")
             continue
         if dups[dup_id] > 1:
             errors.append(f"{dup_id}: bitta odamga bir nechta HEMIS nomzodi tanlangan — o'tkazildi")

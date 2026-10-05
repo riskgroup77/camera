@@ -91,12 +91,38 @@ def test_inactive_hemis_record_needs_review():
     assert "faol emas" in p.reason
 
 
-def test_two_people_claiming_one_hemis_record_need_review():
+def test_one_person_registered_twice_merges_both_into_hemis():
     proposals = reconcile(
         [_person("Aliyev Anvar", id_="a"), _person("Anvar Aliyev", id_="b")], [_hemis("Aliyev Anvar Botirovich")]
     )
+    assert [p.verdict for p in proposals] == [MERGE, MERGE]
+    assert all("2 marta" in p.reason for p in proposals)
+
+
+def test_two_different_people_claiming_one_hemis_record_need_review():
+    proposals = reconcile(
+        [_person("Aliyev Anvar", id_="a", pinfl="11111111111111"), _person("Aliyev Anvar", id_="b", pinfl="99999999999999")],
+        [_hemis("Aliyev Anvar Botirovich")],
+    )
     assert [p.verdict for p in proposals] == [REVIEW, REVIEW]
     assert all("yana 1 kishi" in p.reason for p in proposals)
+
+
+def test_hemis_placeholder_and_phone_diacritics():
+    # HEMIS chet ellik talabaning yo'q ism qismini "Xxx" bilan to'ldiradi.
+    assert _one([_person("Md Arif Raza")], [_hemis("Xxx Md Arif Raza Xxx")]).verdict == MERGE
+    # "òĝli" — telefonda terilgan "o'g'li".
+    p = _one([_person("Abduvahobov Diyorbek Abduqahhor òĝli")], [_hemis("Abduvahobov Diyorbek Abduqahhor o'g'li")])
+    assert p.verdict == MERGE
+
+
+def test_spelling_difference_goes_to_review_never_merges():
+    p = _one([_person("Abdurashidov Abdulaziz", "2301")], [_hemis("Abdurashitov Abdulaziz Karimovich", "2-kurs, DI-2301")])
+    assert p.verdict == REVIEW
+    assert p.hemis is not None and "imlo" in p.reason and "guruh kodi mos" in p.reason
+    # Otasining ismi boshqa — imlo emas, boshqa odam.
+    p = _one([_person("Abdurashidov Abdulaziz Olimovich")], [_hemis("Abdurashitov Abdulaziz Karimovich")])
+    assert p.verdict == NOT_FOUND
 
 
 def test_merges_come_first():
@@ -104,3 +130,14 @@ def test_merges_come_first():
         [_person("Zokirov Bek"), _person("Aliyev Anvar")], [_hemis("Zokirov Bek")]
     )
     assert [p.verdict for p in proposals] == [MERGE, NOT_FOUND]
+
+
+def test_same_group_with_a_differently_written_name_goes_to_review():
+    hemis = [_hemis("Boymamatov Shamsiddin Bobomurod o'g'li", "1-kurs, S-6226"), _hemis("Karimov Sardor", "1-kurs, S-6226")]
+    p = _one([_person("boymamatovshamsiddinbobomurodogli", "6226")], hemis)
+    assert p.verdict == REVIEW and "Guruh kodi mos" in p.reason
+    assert p.hemis["full_name"].startswith("Boymamatov")
+    p = _one([_person("Turaboyev Bunyodjon Popvonjonugʻli", "1-kurs, DI-3426")], [_hemis("Turaboyev Bunyodjon Polvonjon o'g'li", "1-kurs, DI-3426")])
+    assert p.verdict == REVIEW
+    # Boshqa guruhda — dalil yo'q.
+    assert _one([_person("boymamatovshamsiddin", "1111")], hemis).verdict == NOT_FOUND
