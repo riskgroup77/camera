@@ -66,12 +66,6 @@ export const CRITERION_SHORT: Record<string, string> = {
   faollik: 'Faollik',
 };
 
-/** Faqat hisoblanayotgan kriteriyalar (o'chiq yoki shu kun tahlil
- *  qilinmaganlari ustun bo'lib "—" bilan turmaydi). */
-export function workingCriteria(criteria: readonly GroupCriterion[]): GroupCriterion[] {
-  return criteria.filter((c) => !c.unavailable);
-}
-
 export function criterionShort(c: Pick<GroupCriterion, 'key' | 'label'>): string {
   return CRITERION_SHORT[c.key] ?? c.label;
 }

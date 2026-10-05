@@ -14,7 +14,7 @@ import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import PdfButton from '../../components/situation/PdfButton';
 import ArrivalsChart from '../../components/situation/ArrivalsChart';
 import { bucketsFromPeople, hourRange } from '../../lib/arrivals';
-import { TONE_TEXT, criterionShort, workingCriteria } from '../../lib/groupCriteriaApi';
+import { TONE_TEXT, criterionShort } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { GroupCriteriaState } from '../useGroupCriteria';
@@ -111,7 +111,7 @@ function CriteriaSummary({ criteria, onOpen }: { criteria: GroupCriteriaState; o
         </button>
       </div>
       <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
-        {workingCriteria(criteria.data.criteria).map((c) => (
+        {criteria.data.criteria.map((c) => (
           <button
             key={c.key}
             type="button"
@@ -123,7 +123,7 @@ function CriteriaSummary({ criteria, onOpen }: { criteria: GroupCriteriaState; o
               {c.code ? <span className="me-1 text-[10px] text-subtle">{c.code}</span> : null}
               {criterionShort(c)}
             </span>
-            <b className={cn('shrink-0 tabular-nums', TONE_TEXT[c.tone])}>{c.indicator}</b>
+            <b className={cn('shrink-0 tabular-nums', c.unavailable ? 'font-normal text-subtle' : TONE_TEXT[c.tone])}>{c.indicator}</b>
           </button>
         ))}
       </div>

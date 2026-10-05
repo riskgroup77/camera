@@ -4,7 +4,6 @@ import { DataTable, cn, type DataTableColumn } from '../../ui';
 import {
   TONE_TEXT,
   criterionShort,
-  workingCriteria,
   type CriterionCell,
   type CriterionTone,
   type GroupCriteria,
@@ -15,8 +14,8 @@ import {
  * Nazorat → guruh → "Kriteriyalar": har talaba qatorida hamma kriteriyalar.
  * Qiymat rangi — holat (yashil yaxshi, sariq ogohlantirish, qizil muammo),
  * kamera belgisi — 2 daqiqalik video dalillar (talaba sahifasida ko'riladi).
- * Faqat hisoblanayotgan kriteriyalar ustun bo'ladi (o'chiq yoki shu kun
- * tahlil qilinmaganlari — GroupTablePanel izohida, sababi bilan).
+ * Hamma yoqilgan kriteriyalar ustun bo'ladi; shu kun hisoblanmaganida —
+ * kataklarda "—", sarlavha izohida sababi (buyurtmachi qarori, 2026-10-06).
  */
 
 const SEVERITY: Record<CriterionTone, number> = { danger: 3, warning: 2, neutral: 1, success: 0 };
@@ -57,7 +56,7 @@ export default function GroupCriteriaTable({
   loading: boolean;
   error: string | null;
 }) {
-  const criteria = workingCriteria(data?.criteria ?? []);
+  const criteria = data?.criteria ?? [];
   const columns: DataTableColumn<GroupCriteriaPerson>[] = [
     { key: 'n', header: '№', width: '2.5rem', cell: (_r, i) => i + 1, mono: true },
     {
@@ -78,7 +77,10 @@ export default function GroupCriteriaTable({
         header: (
           <span
             title={`${c.code ? `${c.code}. ` : ''}${c.label} — ${c.unavailable ?? c.description}`}
-            className="cursor-help whitespace-nowrap underline decoration-dotted decoration-subtle underline-offset-2"
+            className={cn(
+              'cursor-help whitespace-nowrap underline decoration-dotted decoration-subtle underline-offset-2',
+              c.unavailable && 'text-subtle',
+            )}
           >
             {c.code ? <span className="me-1 text-[10px] text-subtle">{c.code}</span> : null}
             {criterionShort(c)}
