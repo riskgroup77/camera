@@ -19,6 +19,7 @@ import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import PdfButton from '../../components/situation/PdfButton';
 import GroupCriteriaTable from '../../components/situation/GroupCriteriaTable';
+import { criterionShort } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { GroupCriteriaState } from '../useGroupCriteria';
@@ -389,6 +390,7 @@ export default function GroupTablePanel({
     </div>
   );
 
+  const hiddenCriteria = (criteria.data?.criteria ?? []).filter((c) => c.unavailable);
   const criteriaRows = criteria.data
     ? { ...criteria.data, people: criteria.data.people.filter((p) => !needle || p.full_name.toLowerCase().includes(needle)) }
     : null;
@@ -397,10 +399,13 @@ export default function GroupTablePanel({
   if (criteriaMode) {
     body = (
       <>
-        {criteria.data && !criteria.data.analysed && (
-          <p className="shrink-0 rounded-control bg-warning-soft px-2.5 py-1.5 text-[12px] text-fg">
-            Bu kun hali kunlik video tahlil qilinmagan: oq xalat va chekish ustunlarida «—». Davomat va darsga oid
-            kriteriyalar jonli kuzatuvdan.
+        {hiddenCriteria.length > 0 && (
+          <p
+            className="shrink-0 text-[11px] leading-snug text-muted"
+            title={hiddenCriteria.map((c) => `${c.code ? `${c.code}. ` : ''}${c.label}: ${c.unavailable}`).join(' · ')}
+          >
+            Hozir hisoblanmayotgan {hiddenCriteria.length} ta kriteriya ko‘rsatilmadi:{' '}
+            {hiddenCriteria.map((c) => criterionShort(c)).join(', ')} — sababi uchun sichqonchani shu yerga olib boring.
           </p>
         )}
         <div className="min-h-0 flex-1">
@@ -409,7 +414,7 @@ export default function GroupTablePanel({
         <p className="shrink-0 text-[11px] leading-snug text-muted">
           Rang: <span className="text-success">yashil</span> — yaxshi, <span className="text-warning">sariq</span> — ogohlantirish,{' '}
           <span className="text-danger">qizil</span> — muammo · kamera belgisi — 2 daqiqalik video dalil (talaba sahifasida) ·
-          «—» — hisoblanmagan, sababi sarlavha izohida. Ustunni bosing — muammolilar tepaga chiqadi.
+          «—» — shu talaba uchun yozuv yo‘q. Ustunni bosing — muammolilar tepaga chiqadi.
         </p>
       </>
     );

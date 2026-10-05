@@ -46,7 +46,8 @@ describe('GroupCriteriaTable', () => {
     // Sarlavha: buyurtmachi raqami + qisqa nom, izohda — sabab.
     const table = screen.getByRole('table');
     expect(within(table).getByTitle('7. Kelgan-kelmagani — kun davomida')).toHaveTextContent('7Davomat');
-    expect(within(table).getByTitle('10. Oq xalatsiz yurganlar — Bu kun hali video tahlil qilinmagan')).toBeInTheDocument();
+    // Hisoblanmayotgan kriteriya (oq xalat — tahlil o'tmagan) ustun bo'lmaydi.
+    expect(within(table).queryByText('Oq xalat')).toBeNull();
     const anvar = within(table).getByText('Aliyev Anvar').closest('tr')!;
     expect(within(anvar).getByText('kech')).toHaveClass('text-warning');
     expect(within(anvar).getByTitle('1 ta 2 daqiqalik video dalil — talaba sahifasida')).toBeInTheDocument();

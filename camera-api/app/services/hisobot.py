@@ -844,7 +844,8 @@ def _att_values(data: Data):
 
 
 STATUS_LABEL = {"keldi": "Keldi", "kech_keldi": "Kech keldi", "kelmadi": "Kelmadi", "dam_olish": "Dam olish"}
-SOURCE_LABEL = {"kamera": "kamera", "turniket": "turniket", "qolda": "qo'lda kiritilgan", "dars": "dars kamerasi"}
+SOURCE_LABEL = {"kamera": "kamera", "turniket": "turniket", "qolda": "qo'lda kiritilgan", "dars": "dars kamerasi",
+                "hemis": "HEMIS davomati"}
 
 
 def _day_spec(data: Data, key: str) -> Spec:

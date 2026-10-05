@@ -4,6 +4,7 @@ import { DataTable, cn, type DataTableColumn } from '../../ui';
 import {
   TONE_TEXT,
   criterionShort,
+  workingCriteria,
   type CriterionCell,
   type CriterionTone,
   type GroupCriteria,
@@ -14,7 +15,8 @@ import {
  * Nazorat → guruh → "Kriteriyalar": har talaba qatorida hamma kriteriyalar.
  * Qiymat rangi — holat (yashil yaxshi, sariq ogohlantirish, qizil muammo),
  * kamera belgisi — 2 daqiqalik video dalillar (talaba sahifasida ko'riladi).
- * Hisoblanmayotgan ustunda "—" va sarlavha izohida sababi.
+ * Faqat hisoblanayotgan kriteriyalar ustun bo'ladi (o'chiq yoki shu kun
+ * tahlil qilinmaganlari — GroupTablePanel izohida, sababi bilan).
  */
 
 const SEVERITY: Record<CriterionTone, number> = { danger: 3, warning: 2, neutral: 1, success: 0 };
@@ -55,7 +57,7 @@ export default function GroupCriteriaTable({
   loading: boolean;
   error: string | null;
 }) {
-  const criteria = data?.criteria ?? [];
+  const criteria = workingCriteria(data?.criteria ?? []);
   const columns: DataTableColumn<GroupCriteriaPerson>[] = [
     { key: 'n', header: '№', width: '2.5rem', cell: (_r, i) => i + 1, mono: true },
     {
