@@ -74,6 +74,18 @@ async def fetch_photo(client: httpx.AsyncClient, url: str) -> tuple[int, str, by
         return response.status_code, content_type, b"".join(chunks)
 
 
+def photo_candidates(url: str) -> list[str]:
+    """Rasm manzili va uning zaxira varianti.
+
+    fjsti HEMIS'i (2026-10-06) xodim rasmini ".../static/uploads/pi/x/y/f.jpg"
+    deb beradi — bu manzil 404, rasm esa ".../static/pi/x/y/f.jpg" da (talaba
+    rasmlari shu shaklda keladi). Manzilning o'zi bazada o'zgartirilmaydi:
+    HEMIS sinxroni uni har kuni qaytarib yozadi va "yangi rasm" deb qayta
+    tekshirtirardi — shuning uchun variant faqat yuklashda sinanadi."""
+    variant = url.replace("/static/uploads/", "/static/", 1)
+    return [url] if variant == url else [url, variant]
+
+
 def allowed_photo_host(url: str) -> bool:
     """Rasm HEMIS bilan bir xil asosiy domendan (student.fjsti.uz -> fjsti.uz)."""
     base = urlsplit(settings.hemis_base_url).hostname or ""
@@ -274,7 +286,10 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                     if not allowed_photo_host(url):
                         raise ValueError("Rasm manzili HEMIS domenidan emas")
                     try:
-                        code, content_type, body = await fetch_photo(client, url)
+                        for candidate in photo_candidates(url):
+                            code, content_type, body = await fetch_photo(client, candidate)
+                            if code != 404:
+                                break
                     except httpx.TransportError as error:
                         raise TransientDownloadError(type(error).__name__) from error
                     if code >= 500 or code == 429:
