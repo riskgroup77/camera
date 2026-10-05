@@ -144,12 +144,13 @@ main() {
       ok "Rejalashtirgich ishga tushgan"
       registered=$(echo "$started_line" | grep -o '"[a-z_]*"' | tr -d '"' | tr '\n' ' ')
       missing=""
-      for sweep in fire zone_entry fight teacher_punctuality disorder dress_code badge ppe smoking \
-                   lesson_quality lesson_attendance absence_marking; do
+      # Buyurtmachi ro'yxati (2026-10-06): yong'in, jang, kiyim, beyjik, PPE,
+      # chekish (real vaqt), zona va uxlash jarayonlari olib tashlangan.
+      for sweep in teacher_punctuality lesson_quality lesson_attendance absence_marking; do
         echo " $registered " | grep -q " $sweep " || missing="$missing $sweep"
       done
       if echo " $registered " | grep -q " unified_face "; then :; else
-        for sweep in attendance vision_sleep unauthorized; do
+        for sweep in attendance unauthorized; do
           echo " $registered " | grep -q " $sweep " || missing="$missing $sweep"
         done
       fi

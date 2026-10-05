@@ -165,7 +165,10 @@ main() {
     # konteyneri to'xtaguncha bir necha soniya kutishi mumkin).
     local elected=""
     for _ in $(seq 1 24); do
-      if "${compose[@]}" logs --since 10m ai-worker 2>/dev/null | grep -q leader_elected; then elected=1; break; fi
+      # grep -q EMAS: u birinchi moslikda chiqib ketadi, log katta bo'lsa
+      # `compose logs` SIGPIPE oladi va pipefail tufayli tekshiruv "topilmadi"
+      # deb yolg'on ogohlantirardi (2026-10-05). grep hammasini o'qiydi.
+      if "${compose[@]}" logs --since 10m ai-worker 2>/dev/null | grep leader_elected >/dev/null; then elected=1; break; fi
       sleep 5
     done
     if [[ -n "$elected" ]]; then
