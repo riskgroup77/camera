@@ -1561,15 +1561,17 @@ def matrix_cell(data: Data, key: str, pid: uuid.UUID) -> dict:
                  clips)
 
 
-def coat_cell(seen_with: int, seen_without: int, base: dict) -> dict:
-    """Oq xalat: kechki tahlil xalatsiz ko'rgan bo'lsa — son (qizil); faqat
-    xalatda ko'rgan bo'lsa — ✓; umuman ko'rmagan bo'lsa — "—" (tekshirilmagan
-    talabaga ✓ qo'yilmaydi)."""
+def coat_cell(seen_with: int, seen_without: int, base: dict, analysed: bool) -> dict:
+    """Oq xalat (buyurtmachi qarori, 2026-10-06): qoidabuzarlik qayd
+    etilmagan har talabada ✓; xalatsiz ko'rilgan bo'lsa — son (qizil). ✓ ning
+    izohi nima tekshirilganini aniq aytadi."""
     if seen_without:
         return base
     if seen_with:
         return _cell("✓", "success", f"Oq xalatda ko'rildi ({seen_with} kun)", base.get("evidence") or 0)
-    return _cell("—", "neutral", "Oq xalat bu kun tekshirilmagan (talaba kechki tahlilda ko'rinmagan)")
+    if analysed:
+        return _cell("✓", "success", "Oq xalatsiz holat qayd etilmagan")
+    return _cell("✓", "success", "Oq xalatsiz holat qayd etilmagan (bu kun video tahlil hali o'tkazilmagan)")
 
 
 def matrix_unavailable(data: Data, key: str, analysed: bool) -> str | None:
@@ -1602,6 +1604,10 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
     for c in criteria_for(kind):
         value, tone = indicator(data, c.key)
         stop = matrix_unavailable(data, c.key, analysed)
+        if c.key == "forma" and stop and not blocker(data, c.key):
+            # Oq xalat ustuni doim ko'rsatiladi (✓ — qoidabuzarlik qayd
+            # etilmagan); tahlil o'tmagani izohda.
+            value, tone, stop = "0", "neutral", None
         criteria.append({
             "key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
             "description": describe(c.key, data.policy, kind),
@@ -1611,7 +1617,7 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
     blocked = {c["key"] for c in criteria if c["unavailable"]}
     # Oq xalat: kim xalatda, kim xalatsiz ko'rilgan (kunlik natija) — ✓ faqat ko'rilganga.
     coat: dict = defaultdict(lambda: [0, 0])
-    if ids and "forma" not in blocked:
+    if ids and analysed and "forma" not in blocked:
         d = DailyPersonCriteria
         for pid, status, n in (await db.execute(
             select(d.student_staff_id, d.coat_status, func.count())
@@ -1624,7 +1630,7 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
         cells = {c["key"]: (_cell("—", "neutral", c["unavailable"]) if c["key"] in blocked
                             else matrix_cell(data, c["key"], m.id)) for c in criteria}
         if "forma" in cells and "forma" not in blocked:
-            cells["forma"] = coat_cell(*coat.get(m.id, (0, 0)), cells["forma"])
+            cells["forma"] = coat_cell(*coat.get(m.id, (0, 0)), cells["forma"], analysed)
         people.append({"id": str(m.id), "full_name": m.name, "initials": svc.initials(m.name),
                        "enrolled": m.enrolled, "cells": cells})
     return {

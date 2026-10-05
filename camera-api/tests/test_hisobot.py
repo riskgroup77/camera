@@ -399,10 +399,12 @@ async def test_group_matrix_lists_every_student_with_every_criterion(client, adm
     assert cells["Botirova Nigora"]["davomat"]["value"] == "kech"
     assert cells["Botirova Nigora"]["kechikish"]["value"].startswith("+")
     assert cells["Choriyev Sardor"]["davomat"]["value"] == "kelmadi"
-    # Video tahlil o'tmagan kun: oq xalat "0" emas — sababi bilan "—".
+    # Video tahlil o'tmagan kun: oq xalat ustuni baribir bor — ✓ (qoidabuzarlik
+    # qayd etilmagan), izohida tahlil o'tmagani.
     forma = next(c for c in body["criteria"] if c["key"] == "forma")
-    assert forma["unavailable"] and "tahlil" in forma["unavailable"]
-    assert cells["Aliyev Anvar"]["forma"]["value"] == "—"
+    assert forma["unavailable"] is None
+    assert cells["Aliyev Anvar"]["forma"]["value"] == "✓"
+    assert "tahlil hali o'tkazilmagan" in cells["Aliyev Anvar"]["forma"]["title"]
 
     db_session.add(DailyPersonCriteria(student_staff_id=world.people.aliyev.id, day=world.today, coat_status="kiymagan"))
     await db_session.commit()
@@ -410,8 +412,7 @@ async def test_group_matrix_lists_every_student_with_every_criterion(client, adm
     cells = {p["full_name"]: p["cells"] for p in body["people"]}
     assert body["analysed"] is True
     assert cells["Aliyev Anvar"]["forma"]["value"] == "1"
-    # Kechki tahlil ko'rmagan talabaga ✓ qo'yilmaydi — "—".
-    assert cells["Botirova Nigora"]["forma"]["value"] == "—"
+    assert cells["Botirova Nigora"]["forma"]["value"] == "✓"
 
 
 async def test_group_matrix_requires_login_but_not_the_report_password(client, admin, world, monkeypatch):
@@ -423,10 +424,13 @@ async def test_group_matrix_requires_login_but_not_the_report_password(client, a
     assert res.status_code == 200 and res.json()["people"] == []
 
 
-def test_coat_cell_ticks_only_people_seen_in_a_coat():
+def test_coat_cell_ticks_everyone_without_a_recorded_violation():
     base = hisobot._cell("0", "neutral", "")
-    assert hisobot.coat_cell(2, 0, base)["value"] == "✓"
-    assert hisobot.coat_cell(2, 0, base)["tone"] == "success"
-    assert hisobot.coat_cell(0, 0, base)["value"] == "—"
+    assert hisobot.coat_cell(2, 0, base, True)["value"] == "✓"
+    assert hisobot.coat_cell(2, 0, base, True)["title"] == "Oq xalatda ko'rildi (2 kun)"
+    # Qoidabuzarlik qayd etilmagan — ✓, izohi nima tekshirilganini aytadi.
+    assert hisobot.coat_cell(0, 0, base, True)["title"] == "Oq xalatsiz holat qayd etilmagan"
+    assert "tahlil hali o'tkazilmagan" in hisobot.coat_cell(0, 0, base, False)["title"]
+    assert hisobot.coat_cell(0, 0, base, False)["value"] == "✓"
     bad = hisobot._cell("1", "danger", "1 ta oq xalatsiz kun", 1)
-    assert hisobot.coat_cell(1, 1, bad) is bad  # xalatsiz ko'rilgan — son qoladi
+    assert hisobot.coat_cell(1, 1, bad, True) is bad  # xalatsiz ko'rilgan — son qoladi
