@@ -30,3 +30,20 @@ def test_attendance_counts_only_registered_students():
 
 def test_hidden_lesson_criteria_are_not_columns():
     assert set(hisobot.HIDDEN_IN_GROUP) == {"dars_qatnashish", "darsga_kech", "darsdan_erta"}
+
+
+def test_demo_attention_is_65_to_90_and_stable():
+    day = date(2026, 10, 6)
+    values = [hisobot.demo_attention_percent(f"G-{i}", day) for i in range(500)]
+    assert min(values) >= 65 and max(values) <= 90 and len(set(values)) > 15
+    assert hisobot.demo_attention_percent("TPI-126", day) == hisobot.demo_attention_percent("TPI-126", day)
+
+
+def test_demo_attention_only_for_groups_with_attendance():
+    people = [_member(True), _member(True)]
+    day = date(2026, 10, 6)
+    data = hisobot.Data("talaba", day, day, Policy(), people)
+    assert hisobot.demo_attention_cell(data, "TPI-126", day)["value"] == "—"
+    data.day_rows = {people[0].id: {"status": "keldi"}}
+    cell = hisobot.demo_attention_cell(data, "TPI-126", day)
+    assert cell["value"].endswith("%") and "namuna" in cell["title"]

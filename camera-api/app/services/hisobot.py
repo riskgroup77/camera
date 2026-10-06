@@ -1674,6 +1674,29 @@ def group_cell(view: Data, key: str, analysed: bool) -> dict:
     return {"value": value, "tone": tone}
 
 
+DEMO_ATTENTION_MIN, DEMO_ATTENTION_MAX = 65, 90
+
+
+def demo_attention_percent(group: str, day: date_type) -> int:
+    """Namuna diqqat foizi (settings.demo_attention_percent): guruh + sana
+    bo'yicha barqaror, 65..90 oralig'ida — sahifa yangilanganda sakramaydi."""
+    import hashlib
+
+    digest = hashlib.sha256(f"{group}|{day.isoformat()}".encode()).digest()
+    span = DEMO_ATTENTION_MAX - DEMO_ATTENTION_MIN + 1
+    return DEMO_ATTENTION_MIN + int.from_bytes(digest[:4], "big") % span
+
+
+def demo_attention_cell(view: Data, group: str, day: date_type) -> dict:
+    """Davomati bor guruh — namuna foiz; kelgan yo'q — "—"."""
+    present = sum(1 for m in view.members if m.enrolled and (view.day_rows.get(m.id) or {}).get("status") in PRESENT)
+    if not present:
+        return {"value": "—", "tone": "neutral", "title": "Bu kun guruhdan kelgan talaba yo'q"}
+    pct = demo_attention_percent(group, day)
+    return {"value": f"{pct}%", "tone": "success" if pct >= 80 else "warning",
+            "title": f"Darsdagi diqqat darajasi: {pct}% (namuna qiymat — diqqat tahlili hali ishga tushmagan)"}
+
+
 async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
                           faculty: str | None = None, course: int | None = None) -> dict:
     """Nazorat → "Kriteriyalar bo'yicha": har guruh uchun har mezon bo'yicha
@@ -1709,14 +1732,20 @@ async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
             "course": g_course,
             "total": len(members),
             "enrolled": sum(1 for m in members if m.enrolled),
-            "cells": {c.key: group_cell(view, c.key, analysed) for c in criteria},
+            "cells": {
+                c.key: demo_attention_cell(view, name, start)
+                if c.key == "diqqat" and settings.demo_attention_percent
+                else group_cell(view, c.key, analysed)
+                for c in criteria
+            },
         })
     groups.sort(key=lambda g: (-g["total"], g["name"]))
     return {
         "period": {"from": start.isoformat(), "to": end.isoformat(), "days": (end - start).days + 1},
         "analysed": analysed,
         "criteria": [
-            {"key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
+            {"key": c.key, "code": criterion_code(c.key, kind),
+             "label": "Darsdagi diqqat darajasi (%)" if c.key == "diqqat" and settings.demo_attention_percent else c.label,
              "description": describe(c.key, data.policy, kind)}
             for c in criteria
         ],

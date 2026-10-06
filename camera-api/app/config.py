@@ -1334,6 +1334,12 @@ class Settings(BaseSettings):
     # qarori o'zgarmaydi. hemis_photo_enrollment o'chiq bo'lsa ham vazifa
     # xodimlar uchun ishlaydi.
     hemis_photo_staff_single: bool = True
+    # Nazorat → "Kriteriyalar bo'yicha": Diqqat ustuni foizda. Darsdagi diqqat
+    # tahlili (#19) hali ishlamaydi, shuning uchun NAMUNA qiymat: davomati bor
+    # har guruhga 65-90% (guruh + sana bo'yicha barqaror). Buyurtmachi
+    # so'rovi bilan ko'rsatish uchun (2026-10-06); katak izohida "namuna" deb
+    # yoziladi. Haqiqiy tahlil ishga tushganda — False.
+    demo_attention_percent: bool = True
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
     hemis_photo_busy_pause_seconds: int = 5
