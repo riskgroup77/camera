@@ -103,6 +103,15 @@ def _int8_model_file(model_file: str, taskname: str) -> str:
     )
     if not wanted:
         return model_file
+    import os
+
+    if ".int8" in os.path.basename(model_file):
+        # insightface papkadagi BARCHA .onnx fayllarni ko'radi va tartib
+        # bo'yicha avval "det_10g.int8.onnx" ni oladi. Ilgari u qayta
+        # kvantlanib "det_10g.int8.int8.onnx" yaratilardi — har qayta ishga
+        # tushishda bir qavat: production'da 47 qavat (2026-10-06), oxiri
+        # "File name too long" xatosi va gigabaytlab keraksiz fayllar.
+        return model_file
     target = model_file[:-5] + ".int8.onnx" if model_file.endswith(".onnx") else model_file + ".int8"
     try:
         import os
@@ -118,6 +127,30 @@ def _int8_model_file(model_file: str, taskname: str) -> str:
     except Exception:
         logger.warning("INT8 quantization failed — using fp32 model", extra={"model": model_file}, exc_info=True)
         return model_file
+
+
+def _remove_nested_int8_models(model_dir: str | None = None) -> int:
+    """Qayta-qayta kvantlangan model fayllarini (*.int8.int8*.onnx, yarim
+    yozilgan *.part, *-inferred.onnx) o'chiradi — ular avtomatik yaratilgan
+    nusxalar, asl va bir marta kvantlangan model qoladi."""
+    import os
+
+    directory = model_dir or os.path.expanduser("~/.insightface/models/buffalo_l")
+    removed = 0
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    for name in names:
+        if name.count(".int8") > 1 or name.endswith(".part") or name.endswith("-inferred.onnx"):
+            try:
+                os.remove(os.path.join(directory, name))
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        logger.info("nested INT8 model copies removed", extra={"removed": removed})
+    return removed
 
 
 def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
@@ -286,6 +319,7 @@ def _load_app() -> None:
     # genderage va landmark_2d_106 hech qayerda o'qilmaydi — productionda
     # kirish kamerasida kadrga ~21 yuz tushadi, ya'ni kadr boshiga ~42
     # ta befoyda model chaqiruvi CPU chegarasida turgan konteynerda.
+    _remove_nested_int8_models()
     app = FaceAnalysis(name="buffalo_l", providers=providers, allowed_modules=REQUIRED_FACE_MODELS)
     _limit_session_threads(app, providers)
     # ctx_id=0 selects GPU device 0 when CUDAExecutionProvider is

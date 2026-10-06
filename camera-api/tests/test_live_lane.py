@@ -168,3 +168,18 @@ class TestPersonCardInPayload:
 
         source = inspect.getsource(attendance_ai._watch_entrance_camera)
         assert "unknown_skip=() if live else active_unknown" in source
+
+
+def test_already_quantized_model_is_not_quantized_again(tmp_path, monkeypatch):
+    """2026-10-06: har qayta ishga tushishda det_10g.int8.int8...onnx (47 qavat)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "face_detection_int8", True)
+    path = str(tmp_path / "det_10g.int8.onnx")
+    assert face_recognition._int8_model_file(path, "detection") == path
+
+    for name in ("det_10g.onnx", "det_10g.int8.onnx", "det_10g.int8.int8.onnx", "w600k_r50.int8.int8.int8.onnx",
+                 "x.onnx.part", "w600k_r50.int8.int8-inferred.onnx"):
+        (tmp_path / name).write_bytes(b"x")
+    assert face_recognition._remove_nested_int8_models(str(tmp_path)) == 4
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["det_10g.int8.onnx", "det_10g.onnx"]
