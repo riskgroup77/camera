@@ -54,7 +54,9 @@ const VIEW_TABS = [
   { id: 'kriteriyalar' as const, label: 'Kriteriyalar', icon: ListChecks },
 ];
 
-const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'yuzsiz'];
+// "Ma'lumot yo'q" sanog'i va jadvaldagi "Hali yo'q" / "Ma'lumotsiz" ustunlari
+// buyurtmachi so'rovi bilan olib tashlandi (2026-10-06).
+const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
 const COUNT_FIELD: Record<string, keyof StatusCounts> = {
   hammasi: 'hammasi',
   kelgan: 'kelgan',
@@ -278,8 +280,6 @@ export default function GroupTablePanel({
     { key: 'present', header: <Hint text="Kelganlar — kech kelganlar ham shu songa kiradi">Keldi</Hint>, sortValue: (r) => r.present, align: 'right', cell: (r) => countCell(r, 'kelgan', r.present, 'text-success') },
     { key: 'late', header: <Hint text="Kelganlardan kech kelganlari (ish boshlanishi + ruxsat etilgan daqiqalardan keyin)">Kech</Hint>, sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
     { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
-    { key: 'notYet', header: <Hint text="Bugun hali kamera ko‘rmagan — kun tugamagan, kelishi mumkin">Hali yo‘q</Hint>, sortValue: (r) => r.notYet, align: 'right', cell: (r) => countCell(r, 'kutilmoqda', r.notYet, 'text-muted') },
-    { key: 'noData', header: <Hint text="Yuzi bazada bor, lekin shu kuni kamera ham ko‘rmagan, HEMIS’da ham belgilanmagan (o‘tgan kun)">Ma’lumotsiz</Hint>, sortValue: (r) => r.noData - noFace(r), align: 'right', cell: (r) => countCell(r, 'malumot_yoq', r.noData - noFace(r), 'text-subtle') },
     { key: 'noFace', header: <Hint text="Yuzi bazada yo‘q — kamera taniy olmaydi (har kuni bir xil son). Ular boshqa ustunlarga va foizga kirmaydi">Yuzsiz</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
     { key: 'rate', header: <Hint text="Davomat foizi = keldi ÷ (keldi + kelmadi + hali yo‘q). Yuzsiz va dam olishdagilar hisobga kirmaydi">%</Hint>, sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
   ];
@@ -536,10 +536,9 @@ export default function GroupTablePanel({
       {body}
       {!(students && group) && (
         <p className="shrink-0 text-[11px] leading-snug text-muted">
-          <b className="text-fg">Jami</b> = keldi + kelmadi + hali yo‘q + ma’lumotsiz + yuzsiz ·{' '}
           <b className="text-fg">Yuzsiz</b> — yuzi bazada yo‘q (har kuni bir xil), qolgan holatlar faqat yuzi borlar orasida ·{' '}
           <b className="text-fg">Keldi</b> — kech kelganlar bilan · <b className="text-fg">%</b> = keldi ÷ (keldi + kelmadi + hali
-          yo‘q). Sarlavhaga sichqonchani olib boring — izoh chiqadi.
+          kelmagan). Sarlavhaga sichqonchani olib boring — izoh chiqadi.
         </p>
       )}
       {!isToday && <p className="shrink-0 text-[11px] text-muted">Arxiv: {date} holati</p>}

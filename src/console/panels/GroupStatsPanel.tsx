@@ -35,7 +35,7 @@ const TEACHER_LABEL: Record<string, { text: string; tone: string }> = {
   nomalum: { text: 'o‘qituvchi holati noma’lum', tone: 'text-muted' },
 };
 
-const INSTITUTE_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'yuzsiz'];
+const INSTITUTE_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
 const COUNT_FIELD: Partial<Record<CounterKey, keyof StatusCounts>> = {
   hammasi: 'hammasi',
   kelgan: 'kelgan',
