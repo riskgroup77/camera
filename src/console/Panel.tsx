@@ -4,6 +4,7 @@ import { Maximize2, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../ui';
 import { EASE, scrim, spring } from './motion';
+import PanelBoundary from './PanelBoundary';
 
 /**
  * Konsol paneli.
@@ -82,7 +83,9 @@ export default function Panel({
           </button>
         </span>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden">{content}</div>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <PanelBoundary title={title}>{content}</PanelBoundary>
+      </div>
     </>
   );
 

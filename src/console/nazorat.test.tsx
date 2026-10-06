@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import type { GroupStudent } from '../lib/situationApi';
 import { CAMERA_LOAD_MIN_MS, CAMERA_LOAD_MS, coverDone, resolutionLabel } from './panels/CamerasPanel';
+import { clock } from './panels/GroupStatsPanel';
+import PanelBoundary from './PanelBoundary';
 import { NO_BUILDING, buildingCards, roomCards } from './cameraPick';
 import type { CameraFeed } from '../types';
 import { groupCounters, studentMatches } from './panels/GroupTablePanel';
@@ -69,5 +72,35 @@ describe('guruh sanoqlari va filtr', () => {
     expect(parseCounter('kelmadi')).toBe('kelmadi');
     expect(parseCounter('xyz')).toBe('hammasi');
     expect(parseCounter(null)).toBe('hammasi');
+  });
+});
+
+describe('guruh paneli — dars vaqti', () => {
+  it('server "09:00" ko‘rinishida beradi — xatosiz chiqadi', () => {
+    expect(clock('09:00')).toBe('09:00');
+    expect(clock('9:05')).toBe('09:05');
+    expect(clock('2026-10-06T04:30:00Z')).toBe('09:30'); // to'liq ISO — Toshkent vaqti
+    expect(clock('noto‘g‘ri')).toBe('—');
+    expect(clock(null)).toBe('—');
+  });
+});
+
+describe('PanelBoundary', () => {
+  it('panel ichidagi xato faqat shu panelni almashtiradi', () => {
+    const Broken = () => {
+      throw new RangeError('Invalid time value');
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    render(
+      <div>
+        <PanelBoundary title="Guruh">
+          <Broken />
+        </PanelBoundary>
+        <p>Qo‘shni panel</p>
+      </div>,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid time value');
+    expect(screen.getByText('Qo‘shni panel')).toBeInTheDocument();
+    spy.mockRestore();
   });
 });

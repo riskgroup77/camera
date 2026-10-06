@@ -45,11 +45,25 @@ const COUNT_FIELD: Partial<Record<CounterKey, keyof StatusCounts>> = {
   yuzsiz: 'yuzsiz',
 };
 
-function clock(iso: string | null): string {
-  if (!iso) return '—';
-  return new Intl.DateTimeFormat('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' }).format(
-    new Date(iso),
-  );
+const TASHKENT_CLOCK = new Intl.DateTimeFormat('uz-UZ', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'Asia/Tashkent',
+});
+
+/** Dars vaqti "HH:MM". Server `startsAt`/`endsAt` ni allaqachon Toshkent
+ *  vaqtida "09:00" ko'rinishida beradi (camera-api/app/schemas/situation.py).
+ *  Ilgari bu ISO sana deb `new Date("09:00")` qilinardi — noto'g'ri sana
+ *  formatlashda RangeError tashlab, guruhni ochganda butun panelni
+ *  yiqitardi (2026-10-06). To'liq ISO sana kelsa ham ishlaydi, tanilmagan
+ *  qiymat — "—". */
+export function clock(value: string | null | undefined): string {
+  if (!value) return '—';
+  const hhmm = /^(\d{1,2}):(\d{2})/.exec(value);
+  if (hhmm) return `${hhmm[1].padStart(2, '0')}:${hhmm[2]}`;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : TASHKENT_CLOCK.format(date);
 }
 
 function LessonCard({
