@@ -858,10 +858,10 @@ async def _people_by_status(
         buckets = {"hammasi", state}
         if state in svc.PRESENT_STATUSES:
             buckets.add("kelgan")
-        if not enrolled and not record_status and state != "dam_olish":
-            # Sanoqlar ustma-ust tushmaydi (2026-10-06): "Yuzi bazada yo'q" —
-            # yuzi yo'q VA hech qanday yozuvi yo'q (kamera ham, HEMIS ham
-            # bilmaydi). HEMIS bo'yicha kelgan yuzsiz odam — "Keldi"da.
+        if not enrolled:
+            # Sanoqlar ustma-ust tushmaydi (buyurtmachi qarori, 2026-10-06):
+            # yuzsiz odam — faqat "Yuzi bazada yo'q" (har kuni bir xil son),
+            # holatlar faqat yuzi borlar orasida. HEMIS yozuvi bo'lsa ham.
             # Jami = kelgan + kelmadi + hali kelmagan + ma'lumot yo'q + yuzsiz.
             buckets = {"hammasi", "yuzsiz"}
         for bucket in buckets:

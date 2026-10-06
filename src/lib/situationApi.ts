@@ -7,6 +7,7 @@
  * qilish uchun). Token apiClient orqali avtomatik qo'shiladi.
  */
 import { api, buildQuery, type CallOptions } from './apiClient';
+import { cachedRequest, ttlForDate } from './responseCache';
 
 // ───────────────────────────────────────────── Umumiy tiplar
 
@@ -582,7 +583,9 @@ export function getGroups(
   params: { date?: string; facultyId?: string; course?: number; search?: string } = {},
   opts?: CallOptions,
 ): Promise<GroupStat[]> {
-  return api.get<GroupStat[]>(`${BASE}/groups${buildQuery(params)}`, undefined, opts);
+  // Keshlanadi (lib/responseCache.ts): "Bugun"/"Kecha" almashganda darhol.
+  const url = `${BASE}/groups${buildQuery(params)}`;
+  return cachedRequest(url, ttlForDate(params.date), () => api.get<GroupStat[]>(url), opts?.signal);
 }
 
 export function getGroup(groupName: string, date?: string, opts?: CallOptions): Promise<GroupDetail> {
@@ -749,7 +752,8 @@ export interface StatusPeopleQuery {
 }
 
 export function getPeopleStatus(params: StatusPeopleQuery = {}, opts?: CallOptions): Promise<StatusPeoplePage> {
-  return api.get<StatusPeoplePage>(`${BASE}/people-status${buildQuery({ ...params })}`, undefined, opts);
+  const url = `${BASE}/people-status${buildQuery({ ...params })}`;
+  return cachedRequest(url, ttlForDate(params.date), () => api.get<StatusPeoplePage>(url), opts?.signal);
 }
 
 /** Holat kaliti -> counts maydoni. */
@@ -809,7 +813,8 @@ export interface OrgTree {
 }
 
 export function getOrgTree(date?: string, opts?: CallOptions): Promise<OrgTree> {
-  return api.get<OrgTree>(`${BASE}/tuzilma${buildQuery({ date })}`, undefined, opts);
+  const url = `${BASE}/tuzilma${buildQuery({ date })}`;
+  return cachedRequest(url, ttlForDate(date), () => api.get<OrgTree>(url), opts?.signal);
 }
 
 

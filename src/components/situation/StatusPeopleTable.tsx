@@ -15,7 +15,7 @@ import { Button, DataTable, StatusBadge, cn, type DataTableColumn } from '../../
  * Sahifalab (server), `refreshKey` o'zgarganda qayta yuklanadi (jonli).
  */
 
-const PAGE_SIZE = 50;
+export const PAGE_SIZE = 50;
 
 export default function StatusPeopleTable({
   query,

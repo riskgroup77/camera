@@ -234,10 +234,10 @@ class Counts:
     day_off: int = 0
     not_yet: int = 0
     no_data: int = 0
-    # no_data ichidan: yuzi bazada YO'Q va shu kuni hech qanday yozuvi yo'q
-    # (kamera ham, HEMIS ham bilmaydi). Ustma-ust tushmaydigan sanoq uchun:
+    # no_data ichidan: yuzi bazada YO'Q odamlar — HAMMASI, yozuvi bo'lsa ham
+    # (buyurtmachi qarori, 2026-10-06): "Yuzi bazada yo'q" har kuni bir xil
+    # (yuzsizlar soni), holatlar esa faqat yuzi borlar orasida taqsimlanadi:
     # jami = present + absent + not_yet + day_off + (no_data - no_face) + no_face.
-    # HEMIS bo'yicha kelgan yuzsiz odam — present da, bu yerda emas.
     no_face: int = 0
 
     def add(self, enrolled: bool, record_status: str | None, n: int, pending: bool) -> None:
@@ -246,6 +246,12 @@ class Counts:
         self.total += n
         if enrolled:
             self.enrolled += n
+        else:
+            # Yuzsiz — faqat "Yuzi bazada yo'q" (HEMIS yozuvi bo'lsa ham);
+            # foizga va holat sanoqlariga kirmaydi.
+            self.no_data += n
+            self.no_face += n
+            return
         if record_status in PRESENT_STATUSES:
             self.present += n
             if record_status == "kech_keldi":
@@ -258,8 +264,6 @@ class Counts:
             self.not_yet += n
         else:
             self.no_data += n
-            if not enrolled:
-                self.no_face += n
 
     def merge(self, other: "Counts") -> "Counts":
         for name in ("total", "enrolled", "present", "late", "absent", "day_off", "not_yet", "no_data", "no_face"):
@@ -931,6 +935,8 @@ async def arrivals_by_hour(db: AsyncSession, day: date_type) -> list[dict]:
         .where(AttendanceRecord.date == day)
         .where(AttendanceRecord.check_in.is_not(None))
         .where(StudentStaff.active.is_(True))
+        # Sanoqlar bilan bir xil qoida: faqat yuzi bazada borlar ("Keldi").
+        .where(StudentStaff.biometrics_status == "tasdiqlangan")
         .group_by(hour, StudentStaff.type)
     )
     buckets: dict[int, dict] = {}
@@ -959,6 +965,7 @@ async def arrivals_without_time(db: AsyncSession, day: date_type) -> dict[str, i
         .where(AttendanceRecord.check_in.is_(None))
         .where(AttendanceRecord.status.in_(("keldi", "kech_keldi")))
         .where(StudentStaff.active.is_(True))
+        .where(StudentStaff.biometrics_status == "tasdiqlangan")
         .group_by(StudentStaff.type)
     )
     counts = {"students": 0, "staff": 0}

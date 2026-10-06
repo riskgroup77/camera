@@ -6,6 +6,7 @@ import {
   POSITION_GROUP_LABEL,
   getGroups,
   getOrgTree,
+  getPeopleStatus,
   type GroupStat,
   type GroupStudent,
   type OrgTree,
@@ -15,7 +16,9 @@ import {
 } from '../../lib/situationApi';
 import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, cn, type DataTableColumn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
-import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
+import StatusPeopleTable, { PAGE_SIZE as PEOPLE_PAGE_SIZE } from '../../components/situation/StatusPeopleTable';
+import { prefetch } from '../../lib/responseCache';
+import { addDays, todayInTashkent } from '../../lib/uzDate';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import PdfButton from '../../components/situation/PdfButton';
 import GroupCriteriaTable from '../../components/situation/GroupCriteriaTable';
@@ -64,27 +67,34 @@ const COUNT_FIELD: Record<string, keyof StatusCounts> = {
 
 /** Yuzi yo'q va yozuvi yo'q (server `noFace`); eski server bermasa — eski
  *  hisob (yuzsizlarning hammasi). */
+/** Bugun -> kecha, kecha -> bugun; boshqa kunlar uchun — null. */
+export function neighbourDay(date: string, today = todayInTashkent()): string | null {
+  const yesterday = addDays(today, -1);
+  if (date === today) return yesterday;
+  if (date === yesterday) return today;
+  return null;
+}
+
 export function noFace(stat: Pick<GroupStat, 'noFace' | 'total' | 'enrolled'>): number {
   return stat.noFace ?? stat.total - stat.enrolled;
 }
 
 export function studentMatches(student: GroupStudent, key: CounterKey, lessonSeen: ReadonlySet<string> | null): boolean {
+  // Sanoqlar ustma-ust tushmaydi (2026-10-06 qarori): yuzsiz talaba — faqat
+  // "Yuzsiz"da (HEMIS yozuvi bo'lsa ham), holatlar faqat yuzi borlar orasida.
+  const enrolled = student.biometricsStatus === 'tasdiqlangan';
   switch (key) {
     case 'hammasi':
       return true;
+    case 'yuzsiz':
+      return !enrolled;
     case 'kelgan':
-      return student.status === 'keldi' || student.status === 'kech_keldi';
+      return enrolled && (student.status === 'keldi' || student.status === 'kech_keldi');
     case 'kech_keldi':
     case 'kelmadi':
     case 'kutilmoqda':
-      return student.status === key;
     case 'malumot_yoq':
-      // Yuzi bor, lekin o'tgan kunda yozuvi qolmagan.
-      return student.status === 'malumot_yoq' && student.biometricsStatus === 'tasdiqlangan';
-    case 'yuzsiz':
-      // Yuzi yo'q VA yozuvi yo'q — HEMIS bo'yicha kelgan yuzsiz "Keldi"da
-      // (sanoqlar ustma-ust tushmaydi, jami qo'shilib chiqadi).
-      return student.biometricsStatus !== 'tasdiqlangan' && (student.status === 'malumot_yoq' || student.status === 'kutilmoqda');
+      return enrolled && student.status === key;
     case 'darsda':
       return Boolean(lessonSeen?.has(student.id));
     case 'darsda_emas':
@@ -270,7 +280,7 @@ export default function GroupTablePanel({
     { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
     { key: 'notYet', header: <Hint text="Bugun hali kamera ko‘rmagan — kun tugamagan, kelishi mumkin">Hali yo‘q</Hint>, sortValue: (r) => r.notYet, align: 'right', cell: (r) => countCell(r, 'kutilmoqda', r.notYet, 'text-muted') },
     { key: 'noData', header: <Hint text="Yuzi bazada bor, lekin shu kuni kamera ham ko‘rmagan, HEMIS’da ham belgilanmagan (o‘tgan kun)">Ma’lumotsiz</Hint>, sortValue: (r) => r.noData - noFace(r), align: 'right', cell: (r) => countCell(r, 'malumot_yoq', r.noData - noFace(r), 'text-subtle') },
-    { key: 'noFace', header: <Hint text="Yuzi bazada yo‘q va shu kuni hech qanday ma’lumoti yo‘q (kamera tanimaydi, HEMIS’da ham belgilanmagan). HEMIS bo‘yicha kelgan yuzsizlar «Keldi»da">Yuzsiz</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
+    { key: 'noFace', header: <Hint text="Yuzi bazada yo‘q — kamera taniy olmaydi (har kuni bir xil son). Ular boshqa ustunlarga va foizga kirmaydi">Yuzsiz</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
     { key: 'rate', header: <Hint text="Davomat foizi = keldi ÷ (keldi + kelmadi + hali yo‘q). Yuzsiz va dam olishdagilar hisobga kirmaydi">%</Hint>, sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
   ];
 
@@ -322,6 +332,8 @@ export default function GroupTablePanel({
   ];
 
   const statusKeys: CounterKey[] = students && group && seen ? [...DAY_KEYS, 'darsda', 'darsda_emas'] : DAY_KEYS;
+  const peopleStatus = (status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status) as PeopleStatusKey;
+
   const peopleQuery = students
     ? {
         date,
@@ -338,6 +350,22 @@ export default function GroupTablePanel({
         position: position || undefined,
         search: needle || undefined,
       };
+
+  // Qo'shni kun (bugun <-> kecha) oldindan yuklanadi: "Kecha" yoki "Bugun"
+  // bosilganda ma'lumot keshdan darhol chiqadi (lib/responseCache.ts).
+  const prefetchKey = JSON.stringify([date, students, peopleMode, peopleQuery, peopleStatus]);
+  useEffect(() => {
+    const other = neighbourDay(date);
+    if (!other) return;
+    const timer = window.setTimeout(() => {
+      prefetch(() => (students ? getGroups({ date: other }) : getOrgTree(other)));
+      if (peopleMode) {
+        prefetch(() => getPeopleStatus({ ...peopleQuery, date: other, status: peopleStatus, page: 1, pageSize: PEOPLE_PAGE_SIZE }));
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefetchKey hammasini qamraydi
+  }, [prefetchKey]);
 
   // PDF — aynan ekrandagi ko'rinish: guruh ro'yxati, bitta guruh yoki odamlar ro'yxati.
   const pdfStatus = status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status;
@@ -464,7 +492,7 @@ export default function GroupTablePanel({
           <StatusPeopleTable
             fill
             query={peopleQuery}
-            status={(status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status) as PeopleStatusKey}
+            status={peopleStatus}
             refreshKey={pulse}
             onLoaded={(page) => setCounts(page.counts)}
           />
@@ -508,10 +536,10 @@ export default function GroupTablePanel({
       {body}
       {!(students && group) && (
         <p className="shrink-0 text-[11px] leading-snug text-muted">
-          <b className="text-fg">Jami</b> = keldi + kelmadi + hali yo‘q + ma’lumotsiz + yuzsiz (+ dam olishdagilar) ·{' '}
-          <b className="text-fg">Keldi</b> — kech kelganlar bilan, kamera yoki HEMIS bo‘yicha · <b className="text-fg">%</b> = keldi ÷
-          (keldi + kelmadi + hali yo‘q) · <b className="text-fg">Yuzsiz</b> — yuzi bazada yo‘q va boshqa ma’lumoti ham yo‘q, foizga
-          kirmaydi. Sarlavhaga sichqonchani olib boring — izoh chiqadi.
+          <b className="text-fg">Jami</b> = keldi + kelmadi + hali yo‘q + ma’lumotsiz + yuzsiz ·{' '}
+          <b className="text-fg">Yuzsiz</b> — yuzi bazada yo‘q (har kuni bir xil), qolgan holatlar faqat yuzi borlar orasida ·{' '}
+          <b className="text-fg">Keldi</b> — kech kelganlar bilan · <b className="text-fg">%</b> = keldi ÷ (keldi + kelmadi + hali
+          yo‘q). Sarlavhaga sichqonchani olib boring — izoh chiqadi.
         </p>
       )}
       {!isToday && <p className="shrink-0 text-[11px] text-muted">Arxiv: {date} holati</p>}

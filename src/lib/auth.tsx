@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode, useRef 
 import { ApiError, api, setAuthTokenGetter, setUnauthorizedHandler } from './apiClient';
 import { isBackendConfigured } from './config';
 import { clearReportToken } from './reportLock';
+import { clearResponseCache } from './responseCache';
 
 export type Role = 'super-admin' | 'admin' | 'kamera-masuli';
 
@@ -281,6 +282,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    // Boshqa foydalanuvchi shu oynada oldingi javoblarni ko'rmasin.
+    clearResponseCache();
     const outgoingToken = state.token;
     setTwoFactorRequired(false);
     // Hisobot kaliti shu foydalanuvchiniki — keyingi kirgan odamga qolmasin.

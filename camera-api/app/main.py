@@ -307,6 +307,7 @@ app = FastAPI(
 )
 
 from fastapi import HTTPException as _HTTPException  # noqa: E402
+from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
 from fastapi.exception_handlers import http_exception_handler as _default_http_handler  # noqa: E402
 
 
@@ -323,6 +324,11 @@ async def _log_enrollment_rejections(request, exc):
 
 
 app.state.limiter = limiter
+# JSON javoblar siqiladi: nginx'da gzip_types/gzip_proxied o'chiq, ya'ni
+# proksidan o'tgan JSON siqilmay borardi — guruhlar ro'yxati 188 KB
+# (2026-10-06), internet orqali "Bugun/Kecha" sekin ochilardi. Rasm/video
+# Starlette'ning o'zi siqmaydi.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(

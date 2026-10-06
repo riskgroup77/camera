@@ -6,7 +6,7 @@ import { clock } from './panels/GroupStatsPanel';
 import PanelBoundary from './PanelBoundary';
 import { NO_BUILDING, buildingCards, roomCards } from './cameraPick';
 import type { CameraFeed } from '../types';
-import { groupCounters, studentMatches } from './panels/GroupTablePanel';
+import { groupCounters, neighbourDay, studentMatches } from './panels/GroupTablePanel';
 import { parseCounter } from './nazoratSelection';
 
 function student(id: string, status: GroupStudent['status'], face = true): GroupStudent {
@@ -62,11 +62,12 @@ describe('guruh sanoqlari va filtr', () => {
     expect(counts).toEqual({ hammasi: 5, kelgan: 2, kech_keldi: 1, kelmadi: 1, kutilmoqda: 1, malumot_yoq: 0, yuzsiz: 1, darsda: 1, darsda_emas: 4 });
     // Sanoqlar ustma-ust tushmaydi: jami = kelgan + kelmadi + hali kelmagan + ma'lumot yo'q + yuzsiz.
     expect(counts.kelgan + counts.kelmadi + counts.kutilmoqda + counts.malumot_yoq + counts.yuzsiz).toBe(counts.hammasi);
-    // HEMIS bo'yicha kelgan yuzsiz — "Keldi"da, "Yuzsiz"da emas; yuzi bor,
-    // o'tgan kunda yozuvsiz — "Ma'lumot yo'q".
+    // Yuzsiz — faqat "Yuzsiz"da (HEMIS bo'yicha kelgan bo'lsa ham, 2026-10-06
+    // qarori); yuzi bor, o'tgan kunda yozuvsiz — "Ma'lumot yo'q".
     const more = [...students, student('f', 'malumot_yoq'), student('g', 'keldi', false)];
     const moreCounts = Object.fromEntries(groupCounters(more, null).map((c) => [c.key, c.value]));
-    expect([moreCounts.kelgan, moreCounts.malumot_yoq, moreCounts.yuzsiz, moreCounts.hammasi]).toEqual([3, 1, 1, 7]);
+    expect([moreCounts.kelgan, moreCounts.malumot_yoq, moreCounts.yuzsiz, moreCounts.hammasi]).toEqual([2, 1, 2, 7]);
+    expect(moreCounts.kelgan + moreCounts.kelmadi + moreCounts.kutilmoqda + moreCounts.malumot_yoq + moreCounts.yuzsiz).toBe(7);
     expect(students.filter((s) => studentMatches(s, 'kelgan', seen)).map((s) => s.id)).toEqual(['a', 'b']);
     expect(students.filter((s) => studentMatches(s, 'darsda_emas', seen)).map((s) => s.id)).toEqual(['b', 'c', 'd', 'e']);
   });
@@ -109,5 +110,13 @@ describe('PanelBoundary', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Invalid time value');
     expect(screen.getByText('Qo‘shni panel')).toBeInTheDocument();
     spy.mockRestore();
+  });
+});
+
+describe('Bugun / Kecha — qo‘shni kun', () => {
+  it('bugun <-> kecha; boshqa kunlar oldindan yuklanmaydi', () => {
+    expect(neighbourDay('2026-10-06', '2026-10-06')).toBe('2026-10-05');
+    expect(neighbourDay('2026-10-05', '2026-10-06')).toBe('2026-10-06');
+    expect(neighbourDay('2026-10-01', '2026-10-06')).toBeNull();
   });
 });
