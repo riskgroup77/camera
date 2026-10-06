@@ -65,6 +65,12 @@ class DetectedFaceOut(CamelModel):
 
     bbox: list[float]  # [x1, y1, x2, y2], pixel coordinates in the source frame
     person_name: str | None = None
+    # Tanilgan odamning kartasi (operator ekranidagi o'ng ustun): to'liq
+    # ma'lumot person_id bo'yicha /api/situation/people/{id} dan olinadi.
+    person_id: str | None = None
+    person_type: str | None = None  # "talaba" | "xodim"
+    person_unit: str | None = None  # guruh yoki lavozim
+    photo_url: str | None = None  # ro'yxatdan o'tishdagi to'g'ri qaragan surat
     asleep: bool = False
     # "tanildi" — ro'yxatdagi odam; "notanish" — tahlil qilindi, lekin
     # hech kimga o'xshamadi; "kichik" — yuz juda mayda, tahlil qilinmadi.

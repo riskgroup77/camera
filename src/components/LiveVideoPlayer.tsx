@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import { Loader2, VideoOff } from 'lucide-react';
 import FaceDetectionOverlay from './FaceDetectionOverlay';
-import { cameraIdFromStreamUrl, noteWebrtcResult, startWebrtc, webrtcAllowed, type WebrtcSession } from '../lib/webrtcStream';
+import {
+  cameraIdFromStreamUrl,
+  noteWebrtcResult,
+  startWebrtc,
+  webrtcAllowed,
+  WEBRTC_VIDEO_DELAY_MS,
+  type WebrtcSession,
+} from '../lib/webrtcStream';
 import { serverNow } from '../lib/serverClock';
 import type { LiveDetectionResult } from '../types';
 import ZoneOverlay from './ZoneOverlay';
@@ -125,6 +132,15 @@ const TARGET_BEHIND_LIVE_S = 1;
 // hls.js ko'pincha o'zini sog' deb biladi va xato bermaydi, tasvir esa
 // operator ekranida qotib turaveradi. To'liq qayta ulanamiz.
 const FROZEN_AFTER_MS = 8_000;
+// WebRTC'da currentTime kadr kelmasa ham o'saveradi (MediaStream soati) —
+// qotish dekodlangan kadrlar soni bo'yicha aniqlanadi va tezroq.
+const WEBRTC_FROZEN_AFTER_MS = 5_000;
+// Ishlab turgan WebRTC sessiyasi uzilsa yoki qotsa — bitta katta pleyer
+// (priority) uchun birinchi qayta urinishlar tez: operator tanlagan kamera
+// 6-8 s qotib turmasin. Boshqa xatolar va devor kataklari — odatdagi
+// (yoyilgan) backoff, ulanishlar bo'roni bo'lmasin.
+const PRIORITY_FAST_RETRIES = 3;
+const PRIORITY_FAST_RETRY_MS = 1_000;
 
 export default function LiveVideoPlayer({
   streamUrl,
@@ -193,8 +209,9 @@ export default function LiveVideoPlayer({
     let webrtcAbort: AbortController | null = null;
     videoClockRef.current = () => {
       // WebRTC: tasvir deyarli real vaqtda — server soati (brauzer soatiga
-      // nisbatan farqi skaner javobidan olinadi, lib/serverClock.ts).
-      if (webrtc) return serverNow();
+      // nisbatan farqi skaner javobidan olinadi, lib/serverClock.ts) minus
+      // jitter buferi.
+      if (webrtc) return serverNow() - WEBRTC_VIDEO_DELAY_MS;
       const playing = hlsInstance?.playingDate?.getTime();
       if (playing && Number.isFinite(playing)) return playing;
       // Safari/iOS'ning o'z HLS pleyeri: pleylist boshining payti + joriy o'rin.
@@ -266,7 +283,7 @@ export default function LiveVideoPlayer({
     // rejimida qayta urinib turadi. camera.status='live' bo'lgani uchun
     // bu deyarli har doim vaqtinchalik navbat/server bandligi, haqiqiy
     // o'lik oqim emas (§ RETRY_BASE_MS izohiga qarang).
-    function scheduleRetry() {
+    function scheduleRetry(fast = false) {
       if (cancelled) return;
       if (loadTimer) {
         clearTimeout(loadTimer);
@@ -278,7 +295,10 @@ export default function LiveVideoPlayer({
       setLoading(true);
       setRetrying(true);
       setError(attemptRef.current >= SHOW_ERROR_AFTER_ATTEMPTS);
-      const backoff = streamRetryDelay(attemptRef.current);
+      const backoff =
+        fast && priority && attemptRef.current <= PRIORITY_FAST_RETRIES
+          ? Math.round(PRIORITY_FAST_RETRY_MS * (0.8 + Math.random() * 0.4))
+          : streamRetryDelay(attemptRef.current);
       retryTimer = setTimeout(() => {
         if (!cancelled) void start();
       }, backoff);
@@ -304,7 +324,7 @@ export default function LiveVideoPlayer({
         playerModeRef.current = 'webrtc';
         noteWebrtcResult(true);
         session.onFailure(() => {
-          if (!cancelled) scheduleRetry();
+          if (!cancelled) scheduleRetry(true);
         });
         const onPlaying = () => {
           if (video.videoWidth > 0) markReady();
@@ -497,6 +517,7 @@ export default function LiveVideoPlayer({
     }
 
     let lastTime = -1;
+    let lastFrames = -1;
     let lastProgressAt = Date.now();
     function checkFrozen() {
       // Nazorat FAQAT haqiqatan tasvir chiqayotgan pleyer uchun ishlaydi
@@ -525,15 +546,23 @@ export default function LiveVideoPlayer({
         // muted video uchun qayta boshlash ruxsat etilgan.
         void video.play().catch(() => undefined);
       }
-      if (video.currentTime !== lastTime) {
+      if (webrtc) {
+        const frames = video.getVideoPlaybackQuality?.().totalVideoFrames;
+        if (frames === undefined || frames !== lastFrames) {
+          lastFrames = frames ?? -1;
+          lastProgressAt = Date.now();
+          return;
+        }
+      } else if (video.currentTime !== lastTime) {
         lastTime = video.currentTime;
         lastProgressAt = Date.now();
         return;
       }
-      if (Date.now() - lastProgressAt > FROZEN_AFTER_MS) {
+      if (Date.now() - lastProgressAt > (webrtc ? WEBRTC_FROZEN_AFTER_MS : FROZEN_AFTER_MS)) {
         lastProgressAt = Date.now();
         lastTime = -1;
-        scheduleRetry();
+        lastFrames = -1;
+        scheduleRetry(!!webrtc);
       }
     }
 

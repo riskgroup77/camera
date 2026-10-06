@@ -73,6 +73,13 @@ export type DetectedFaceStatus = 'tanildi' | 'notanish' | 'kichik';
 export interface DetectedFace {
   bbox: [number, number, number, number];
   personName?: string | null;
+  /** Tanilgan odam — operator ekranidagi karta (console/recognizedPeople.ts). */
+  personId?: string | null;
+  personType?: 'talaba' | 'xodim' | string | null;
+  /** Guruh yoki lavozim. */
+  personUnit?: string | null;
+  /** Ro'yxatdan o'tishdagi to'g'ri qaragan surat. */
+  photoUrl?: string | null;
   asleep: boolean;
   status?: DetectedFaceStatus;
   similarity?: number | null;

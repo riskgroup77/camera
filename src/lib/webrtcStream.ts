@@ -13,6 +13,16 @@ import { apiUrl, getAccessToken } from './apiClient';
 
 const CONNECT_TIMEOUT_MS = 6000;
 const ICE_GATHER_MS = 1200;
+/** Brauzer jitter buferi (ms). 0 da LAN'dagi har tebranish (Wi-Fi, server
+ *  yuklamasi) tasvirni "tutilib-tutilib" ko'rsatardi; operator 2-3 s
+ *  kechikishga rozi, silliqlik muhimroq. Yuz ramkalari shu qiymatga
+ *  tuzatiladi (WEBRTC_VIDEO_DELAY_MS). */
+export const WEBRTC_JITTER_BUFFER_MS = 300;
+/** WebRTC videosi server soatidan taxminan shuncha orqada (bufer + tarmoq). */
+export const WEBRTC_VIDEO_DELAY_MS = WEBRTC_JITTER_BUFFER_MS + 100;
+/** "disconnected" ko'pincha o'tkinchi (ICE o'zi tiklanadi) — shuncha kutib,
+ *  tiklanmasa qayta ulanamiz. "failed" — darhol. */
+export const DISCONNECT_GRACE_MS = 4000;
 /** Ketma-ket shuncha muvaffaqiyatsizlikdan keyin WebRTC vaqtincha o'chadi. */
 const FAILURES_BEFORE_PAUSE = 2;
 const PAUSE_MS = 10 * 60_000;
@@ -122,16 +132,31 @@ export async function startWebrtc(cameraId: string, video: HTMLVideoElement, sig
       setTimeout(() => reject(new Error('WebRTC: ulanish vaqti tugadi')), CONNECT_TIMEOUT_MS);
     });
     await connected;
-    // Kechikishni minimal ushlash — brauzer jitter buferini kichik tutadi.
     for (const receiver of pc.getReceivers()) {
       const tuned = receiver as RTCRtpReceiver & { jitterBufferTarget?: number | null };
-      if ('jitterBufferTarget' in tuned) tuned.jitterBufferTarget = 0;
+      if ('jitterBufferTarget' in tuned) tuned.jitterBufferTarget = WEBRTC_JITTER_BUFFER_MS;
     }
     video.srcObject = stream;
+    let graceTimer: ReturnType<typeof setTimeout> | null = null;
+    const fail = () => {
+      if (graceTimer) clearTimeout(graceTimer);
+      graceTimer = null;
+      if (!closed) failureCallbacks.forEach((callback) => callback());
+    };
     pc.addEventListener('connectionstatechange', () => {
-      if (!closed && (pc.connectionState === 'failed' || pc.connectionState === 'disconnected')) {
-        failureCallbacks.forEach((callback) => callback());
+      if (closed) return;
+      if (pc.connectionState === 'failed') fail();
+      else if (pc.connectionState === 'disconnected') {
+        // Ilgari darhol uzib, 6-8 s dan keyin qayta ulanardi — bir
+        // soniyalik Wi-Fi tebranishi ham tasvirni qotirib qo'yardi.
+        graceTimer ??= setTimeout(fail, DISCONNECT_GRACE_MS);
+      } else if (pc.connectionState === 'connected' && graceTimer) {
+        clearTimeout(graceTimer);
+        graceTimer = null;
       }
+    });
+    signal?.addEventListener('abort', () => {
+      if (graceTimer) clearTimeout(graceTimer);
     });
     return { close, onFailure: (callback) => failureCallbacks.push(callback) };
   } catch (error) {

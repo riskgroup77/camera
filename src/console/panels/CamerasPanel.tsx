@@ -15,6 +15,8 @@ import type { CameraFeed } from '../../types';
 import Panel from '../Panel';
 import { EASE, panelIn, stagger } from '../motion';
 import { useVideoFlow } from '../useVideoFlow';
+import { mergeSeenPeople, type SeenPerson } from '../recognizedPeople';
+import { PersonQuickView, RecognizedRail } from './RecognizedRail';
 import {
   EMPTY_FILTER,
   WALL_LAYOUTS,
@@ -414,6 +416,7 @@ function FocusedCamera({
   // yoqilsa server bo'g'ilardi.
   const [scan, setScan] = useState<LiveDetectionResult | null>(null);
   const counts = scanCounts(scan);
+  const seen = useSeenPeople();
 
   return (
     <motion.div
@@ -428,7 +431,10 @@ function FocusedCamera({
             fit="contain"
             cameraId={camera.id}
             showDetections
-            onDetection={setScan}
+            onDetection={(result) => {
+              setScan(result);
+              seen.add(result);
+            }}
             onStreamUnavailable={onStreamUnavailable}
           />
         ) : (
@@ -437,7 +443,9 @@ function FocusedCamera({
         <DegradedLayer show={live && flow === 'stalled'} />
         {!live && <StateLayer camera={camera} />}
         {live && <ScanBadge counts={counts} />}
+        {live && <RecognizedRail people={seen.people} onPick={seen.pick} />}
       </div>
+      <PersonQuickView person={seen.picked} onClose={seen.close} />
 
       <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-2 text-white">
         <LiveDot on={flow === 'flowing'} />
@@ -545,6 +553,20 @@ function CameraTile({
   );
 }
 
+/** Shu kamerada tanilganlar (o'ng ustun) va bosilgan karta. Kamera
+ *  almashganda komponent qayta o'rnatiladi — ro'yxat ham yangidan. */
+function useSeenPeople() {
+  const [people, setPeople] = useState<SeenPerson[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  return {
+    people,
+    add: (result: LiveDetectionResult | null) => setPeople((prev) => mergeSeenPeople(prev, result, Date.now())),
+    picked: people.find((person) => person.id === pickedId) ?? null,
+    pick: (person: SeenPerson) => setPickedId(person.id),
+    close: () => setPickedId(null),
+  };
+}
+
 /** Skaner natijasi: nechta yuz, nechtasi tanildi, nechtasi notanish. */
 export function scanCounts(scan: LiveDetectionResult | null) {
   if (!scan) return null;
@@ -642,6 +664,7 @@ function StageCamera({
   const place = cameraPlaceCode(camera);
   const [scan, setScan] = useState<LiveDetectionResult | null>(null);
   const counts = scanCounts(scan);
+  const seen = useSeenPeople();
   // Tanlangach CAMERA_LOAD_MS davomida "Video yuklanmoqda" pardasi: oqim
   // shu payt orqada ulanadi, parda ketganda tasvir tayyor turadi.
   const [loadingCover, setLoadingCover] = useState(true);
@@ -660,7 +683,10 @@ function StageCamera({
             fit="contain"
             cameraId={camera.id}
             showDetections
-            onDetection={setScan}
+            onDetection={(result) => {
+              setScan(result);
+              seen.add(result);
+            }}
             onStreamUnavailable={onStreamUnavailable}
           />
         ) : (
@@ -669,8 +695,10 @@ function StageCamera({
         <DegradedLayer show={!loadingCover && live && flow === 'stalled'} />
         {!live && !loadingCover && <StateLayer camera={camera} />}
         {live && !loadingCover && <ScanBadge counts={counts} />}
+        {live && !loadingCover && <RecognizedRail people={seen.people} onPick={seen.pick} />}
         <AnimatePresence>{loadingCover && <LoadingCover name={camera.name} place={place} />}</AnimatePresence>
       </div>
+      <PersonQuickView person={seen.picked} onClose={seen.close} />
       <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-1.5 text-white">
         <LiveDot on={!loadingCover && flow === 'flowing'} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{camera.name}</span>

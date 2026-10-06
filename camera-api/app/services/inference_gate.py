@@ -25,9 +25,20 @@ _counter = itertools.count()
 
 
 class PriorityInferenceGate:
-    def __init__(self, max_concurrent: int) -> None:
+    """`live_reserved` — faqat PRIORITY_LIVE uchun qo'shimcha joylar.
+
+    Navbatda birinchi turish yetmaydi: 24 ta slotning hammasi fon
+    tahlillarida (har biri 1-3 s) band bo'lsa, operator ko'rayotgan
+    kameraning kadri birortasi bo'shashini kutardi — yuz chiqqan kadr
+    natijasi shu sababli soniyalab kechikardi (2026-10-06 o'lchovi).
+    Zaxira joy band bo'lmasa jonli so'rov DARHOL o'tadi; hammasi band
+    bo'lsa — umumiy navbatda (yana birinchi bo'lib) kutadi."""
+
+    def __init__(self, max_concurrent: int, live_reserved: int = 0) -> None:
         self._max = max(1, max_concurrent)
         self._in_use = 0
+        self._live_reserved = max(0, live_reserved)
+        self._live_in_use = 0
         self._waiters: list[tuple[int, int, asyncio.Event]] = []
         self._lock = asyncio.Lock()
 
@@ -39,8 +50,12 @@ class PriorityInferenceGate:
 
     @asynccontextmanager
     async def slot(self, *, priority: int = PRIORITY_BACKGROUND):
+        reserved = False
         async with self._lock:
-            if self._in_use < self._max and (
+            if priority <= PRIORITY_LIVE and self._live_in_use < self._live_reserved:
+                self._live_in_use += 1
+                reserved = granted = True
+            elif self._in_use < self._max and (
                 not self._waiters or priority <= self._waiters[0][0]
             ):
                 self._in_use += 1
@@ -70,15 +85,19 @@ class PriorityInferenceGate:
             yield
         finally:
             async with self._lock:
-                self._in_use -= 1
-                self._grant_next()
+                if reserved:
+                    self._live_in_use -= 1
+                else:
+                    self._in_use -= 1
+                    self._grant_next()
 
     def snapshot(self) -> dict[str, int]:
-        return {
-            "max": self._max,
-            "in_use": self._in_use,
-            "waiting": len(self._waiters),
-        }
+        snapshot = {"max": self._max, "in_use": self._in_use, "waiting": len(self._waiters)}
+        if self._live_reserved:
+            snapshot["live_in_use"] = self._live_in_use
+        return snapshot
 
 
-face_inference_gate = PriorityInferenceGate(settings.face_recognition_inference_concurrency)
+face_inference_gate = PriorityInferenceGate(
+    settings.face_recognition_inference_concurrency, live_reserved=settings.face_live_reserved_slots
+)

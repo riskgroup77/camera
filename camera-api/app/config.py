@@ -855,6 +855,18 @@ class Settings(BaseSettings):
     # almashtirishga sarflardi. Umumiy oqimlar ≈ concurrency × shu qiymat —
     # cpus chegarasidan (ffmpeg o'quvchilari ham shu konteynerda!) oshmasin.
     face_recognition_intra_op_threads: int = 2
+    # Operator ochgan kamera (PRIORITY_LIVE) uchun alohida "jonli yo'lak":
+    # o'sha modellar, lekin ko'proq oqimli ONNX sessiyalar va fon
+    # tahlillari band qilgan slotlarni KUTMAYDIGAN zaxira joylar
+    # (app/services/inference_gate.py, face_recognition._live_app).
+    # O'lchov (2026-10-06, production, load ~17/32): 2 oqim — detektor
+    # 1396 ms, 3 yuz embedding 701 ms, landmark 183 ms/yuz; 8 oqim — 549,
+    # 319, 45 ms. Ilgari yuz chiqqan kadr natijasi 2.3-4.1 s kechikardi
+    # (navbat + 2 oqim). Zaxira joylar soni = bir vaqtda jonli tahlil
+    # qilinadigan kadrlar (odatda bitta operator — bitta kamera);
+    # 0 — yo'lak o'chiq, jonli ham umumiy navbatda.
+    face_live_intra_op_threads: int = 8
+    face_live_reserved_slots: int = 2
     # CPU'da INT8 modellar (app/services/face_recognition.py _int8_model_file):
     # AVX'siz protsessorda ArcFace 1.75x, detektor 1.3x tez, vektorlar fp32
     # bazasi bilan mos (cos ~0.994). GPU yoqilganda e'tiborga olinmaydi.

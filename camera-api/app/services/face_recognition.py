@@ -9,8 +9,11 @@ match score — the same category of model real biometric systems use.
 """
 
 import asyncio
+import copy
+import functools
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import cv2
@@ -187,6 +190,74 @@ def _get_app() -> FaceAnalysis:
             if _app is None:
                 _load_app()
     return _app
+
+
+# ── Jonli yo'lak: operator ko'rayotgan kamera ─────────────────────────────
+# O'sha modellar (o'sha INT8 fayllar — natija bir xil), faqat ko'proq
+# oqimli ONNX sessiyalar va o'z oqim hovuzi. Fon tahlillari 2 oqimda
+# ishlayveradi; jonli kadr ularning slotini ham, standart executor'ni ham
+# kutmaydi (settings.face_live_intra_op_threads izohidagi o'lchov).
+_live_app: tuple[FaceAnalysis, FaceAnalysis] | None = None  # (asl, nusxa)
+_live_executor: ThreadPoolExecutor | None = None
+
+
+def _live_lane_enabled() -> bool:
+    return settings.face_live_reserved_slots > 0
+
+
+def _clone_with_threads(app: FaceAnalysis, threads: int) -> FaceAnalysis:
+    import onnxruntime
+
+    clone = copy.copy(app)
+    clone.models = {}
+    for name, model in app.models.items():
+        twin = copy.copy(model)
+        model_file = getattr(model, "model_file", None)
+        if model_file:
+            options = onnxruntime.SessionOptions()
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
+            options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+            twin.session = onnxruntime.InferenceSession(
+                _int8_model_file(model_file, getattr(model, "taskname", "")),
+                sess_options=options,
+                providers=["CPUExecutionProvider"],
+            )
+        clone.models[name] = twin
+    clone.det_model = clone.models["detection"]
+    logger.info("InsightFace live sessions ready", extra={"intra_op_threads": threads})
+    return clone
+
+
+def _get_live_app() -> FaceAnalysis:
+    """Jonli yo'lak modellari. GPU'da yoki oqim soni fondagidan ko'p
+    bo'lmasa — umumiy modellar (alohida sessiya foyda bermaydi)."""
+    global _live_app
+    app = _get_app()
+    threads = settings.face_live_intra_op_threads
+    on_gpu = "CUDAExecutionProvider" in (_session_providers or [])
+    if on_gpu or threads <= max(0, settings.face_recognition_intra_op_threads):
+        return app
+    # Nusxa aynan shu umumiy modellardan olingan bo'lishi kerak (testlar va
+    # qayta yuklash _get_app() ni almashtiradi).
+    if _live_app is None or _live_app[0] is not app:
+        with _app_lock:
+            if _live_app is None or _live_app[0] is not app:
+                try:
+                    _live_app = (app, _clone_with_threads(app, threads))
+                except Exception:
+                    logger.warning("live InsightFace sessions failed — using shared ones", exc_info=True)
+                    _live_app = (app, app)
+    return _live_app[1]
+
+
+def _get_live_executor() -> ThreadPoolExecutor:
+    global _live_executor
+    if _live_executor is None:
+        _live_executor = ThreadPoolExecutor(
+            max_workers=max(1, settings.face_live_reserved_slots), thread_name_prefix="face-live"
+        )
+    return _live_executor
 
 
 def _load_app() -> None:
@@ -508,6 +579,7 @@ def _detect_faces_sync(
     roi: Box | None = None,
     skip_boxes: tuple[Box, ...] = (),
     landmarks: bool = True,
+    live: bool = False,
 ) -> list[DetectedFace]:
     """Every face in the frame (not just the largest) with its bounding box,
     and — for faces worth it — its embedding and 68-point landmarks.
@@ -542,7 +614,9 @@ def _detect_faces_sync(
     `landmarks=False` — 68 nuqtali 3D belgilar hisoblanmaydi. Ularni faqat
     uyqu, frontallik va ro'yxatga olish o'qiydi; davomat esa yo'q. Model
     (1k3d68, 143 MB) har yuzga ~0.16 s oladi — ArcFace'ning deyarli
-    yarmi (productionda o'lchandi, 2026-09-24)."""
+    yarmi (productionda o'lchandi, 2026-09-24).
+
+    `live=True` — jonli yo'lak modellari (_get_live_app)."""
     img = _decode_image(image_bytes)
     offset_x = offset_y = 0
     if roi is not None:
@@ -552,7 +626,7 @@ def _detect_faces_sync(
         img = np.ascontiguousarray(img[y1:y2, x1:x2])
         offset_x, offset_y = x1, y1
     offset = np.array([offset_x, offset_y, offset_x, offset_y], dtype=np.float32)
-    app = _get_app()
+    app = _get_live_app() if live else _get_app()
     input_size = detection_input_size(img.shape[1], img.shape[0])
     if input_size is None:
         bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
@@ -633,8 +707,17 @@ async def detect_faces(
         landmarks,
     )
 
+    live = priority <= PRIORITY_LIVE and _live_lane_enabled()
+
     async def run() -> list[DetectedFace]:
         async with face_inference_gate.slot(priority=priority):
+            if live:
+                # O'z hovuzida: standart executor'ni 107 kuzatuvchining
+                # harakat/JPEG ishlari band qilib turadi.
+                call = functools.partial(
+                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, True
+                )
+                return await asyncio.get_running_loop().run_in_executor(_get_live_executor(), call)
             return await asyncio.to_thread(
                 _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks
             )

@@ -48,6 +48,7 @@ from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame
 from app.services.image_size import jpeg_dimensions
 from app.services.video_gateway import internal_whep_url
 from app.services import live_focus
+from app.services.situation import photo_url
 from app.services.sleep_detection import is_asleep, is_face_measurable
 from app.services.stream_links import signed_stream_url
 from app.services.sweep_result_cache import get_camera_sweep
@@ -419,14 +420,16 @@ async def get_live_detection(
             if analysed and not candidates.is_empty:
                 _idx, best_sim, _second = candidates.top_two(face.embedding.reshape(1, -1))
                 similarity = round(max(0.0, float(best_sim[0])), 3)
-            person_name = None
-            if match is not None:
-                person = await db.get(StudentStaff, match[0])
-                person_name = person.full_name if person else None
+            person = await db.get(StudentStaff, match[0]) if match is not None else None
+            person_name = person.full_name if person else None
             faces_out.append(
                 DetectedFaceOut(
                     bbox=[float(x) for x in face.bbox],
                     person_name=person_name,
+                    person_id=str(person.id) if person else None,
+                    person_type=person.type if person else None,
+                    person_unit=person.group_or_position if person else None,
+                    photo_url=photo_url(person.biometric_photo_key) if person else None,
                     asleep=analysed and is_face_measurable(face.bbox) and is_asleep(face.landmarks_68),
                     status="tanildi" if person_name else ("notanish" if analysed else "kichik"),
                     similarity=similarity,

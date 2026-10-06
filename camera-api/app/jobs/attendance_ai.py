@@ -1517,19 +1517,49 @@ async def _analyse_entrance_frame(
     return len({str(r.student_staff_id) for r in records})
 
 
+# Tanilgan odamning skanerdagi kartasi (operator ekranidagi o'ng ustun):
+# ism, turi, guruh/lavozim va ro'yxatdan o'tishdagi to'g'ri qaragan surati.
+# Iz ismi "yopishganda" (_link_tracks) ular ham birga ko'chiriladi.
+PERSON_KEYS = ("person_id", "person_name", "person_type", "person_unit", "photo_url")
+
+
 async def _name_overlay(db: AsyncSession, entries: list[dict]) -> None:
     ids = {str(entry["person_id"]) for entry in entries if entry.get("person_id")}
     if not ids:
         return
     rows = (
         await db.execute(
-            select(StudentStaff.id, StudentStaff.full_name).where(StudentStaff.id.in_([uuid.UUID(i) for i in ids]))
+            select(
+                StudentStaff.id,
+                StudentStaff.full_name,
+                StudentStaff.type,
+                StudentStaff.group_or_position,
+                StudentStaff.biometric_photo_key,
+            ).where(StudentStaff.id.in_([uuid.UUID(i) for i in ids]))
         )
     ).all()
-    names = {str(person_id): name for person_id, name in rows}
+    people = {str(row[0]): row for row in rows}
     for entry in entries:
-        if entry.get("person_id"):
-            entry["person_name"] = names.get(str(entry["person_id"]))
+        row = people.get(str(entry.get("person_id") or ""))
+        if row is None:
+            continue
+        entry["person_name"] = row[1]
+        entry["person_type"] = row[2]
+        entry["person_unit"] = row[3]
+        # Havola keshlanadi (app/storage.py) — har soniyadagi natijada bir
+        # xil, brauzer rasmni qayta yuklamaydi.
+        entry["photo_url"] = _photo_url(row[4])
+
+
+def _photo_url(key: str | None) -> str | None:
+    if not key:
+        return None
+    try:
+        from app.storage import presigned_url
+
+        return presigned_url(key)
+    except Exception:  # noqa: BLE001 — rasmsiz karta bosh harflar bilan chiqadi
+        return None
 
 
 # Skaner izining ismi shu vaqtgacha "yopishib" turadi: odam yuzini burib
@@ -1582,8 +1612,8 @@ def _link_tracks(entries: list[dict], previous: list[dict], next_id, *, now: flo
             entry["named_at"] = now
         elif old.get("person_name") and now - float(old.get("named_at") or 0) <= STICKY_NAME_SECONDS:
             entry["status"] = "tanildi"
-            entry["person_id"] = old.get("person_id")
-            entry["person_name"] = old.get("person_name")
+            for person_key in PERSON_KEYS:
+                entry[person_key] = old.get(person_key)
             entry["similarity"] = old.get("similarity")
             entry["named_at"] = old.get("named_at")
     for i, entry in enumerate(entries):
@@ -1621,7 +1651,7 @@ def _overlay_payload(frame: bytes, entries: list[dict], *, source: str, captured
         faces.append(
             {
                 "bbox": entry["bbox"],
-                "person_name": entry.get("person_name"),
+                **{person_key: entry.get(person_key) for person_key in PERSON_KEYS},
                 "asleep": asleep,
                 "status": entry["status"],
                 "similarity": entry.get("similarity"),
@@ -1775,7 +1805,10 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                     live=live,
                     main_stream=stream == "asosiy",
                     overlay_out=overlay,
-                    unknown_skip=active_unknown,
+                    # Operator ko'rayotganda notanish yuz ham har kadrda qayta
+                    # tahlil qilinadi (jonli yo'lak tez): odam boshini burishi
+                    # bilan keyingi kadrda tanilsin, 2.5 s kutmasin.
+                    unknown_skip=() if live else active_unknown,
                     unknown_out=now_unknown,
                     captured=captured_at(last_seq),
                 )
