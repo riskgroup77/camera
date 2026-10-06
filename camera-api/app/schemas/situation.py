@@ -36,6 +36,9 @@ class CountsOut(CamelModel):
     day_off: int = 0
     not_yet: int = 0
     no_data: int = 0
+    # no_data ichidan: yuzi bazada yo'q va hech qanday yozuvi yo'q (HEMIS bo'yicha
+    # kelgan yuzsiz — present da). Ustma-ust tushmaydigan "Yuzi bazada yo'q" sanog'i.
+    no_face: int = 0
     rate: float | None = None
 
 

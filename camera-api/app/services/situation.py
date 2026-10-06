@@ -234,6 +234,11 @@ class Counts:
     day_off: int = 0
     not_yet: int = 0
     no_data: int = 0
+    # no_data ichidan: yuzi bazada YO'Q va shu kuni hech qanday yozuvi yo'q
+    # (kamera ham, HEMIS ham bilmaydi). Ustma-ust tushmaydigan sanoq uchun:
+    # jami = present + absent + not_yet + day_off + (no_data - no_face) + no_face.
+    # HEMIS bo'yicha kelgan yuzsiz odam — present da, bu yerda emas.
+    no_face: int = 0
 
     def add(self, enrolled: bool, record_status: str | None, n: int, pending: bool) -> None:
         """pending — kun hali tugamagan (bugun): yuzi tasdiqlangan, lekin
@@ -253,9 +258,11 @@ class Counts:
             self.not_yet += n
         else:
             self.no_data += n
+            if not enrolled:
+                self.no_face += n
 
     def merge(self, other: "Counts") -> "Counts":
-        for name in ("total", "enrolled", "present", "late", "absent", "day_off", "not_yet", "no_data"):
+        for name in ("total", "enrolled", "present", "late", "absent", "day_off", "not_yet", "no_data", "no_face"):
             setattr(self, name, getattr(self, name) + getattr(other, name))
         return self
 
@@ -268,7 +275,7 @@ class Counts:
         return {
             "total": self.total, "enrolled": self.enrolled, "present": self.present, "late": self.late,
             "absent": self.absent, "day_off": self.day_off, "not_yet": self.not_yet, "no_data": self.no_data,
-            "rate": self.rate,
+            "no_face": self.no_face, "rate": self.rate,
         }
 
     def out(self) -> CountsOut:

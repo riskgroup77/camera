@@ -62,6 +62,12 @@ const COUNT_FIELD: Record<string, keyof StatusCounts> = {
   yuzsiz: 'yuzsiz',
 };
 
+/** Yuzi yo'q va yozuvi yo'q (server `noFace`); eski server bermasa — eski
+ *  hisob (yuzsizlarning hammasi). */
+export function noFace(stat: Pick<GroupStat, 'noFace' | 'total' | 'enrolled'>): number {
+  return stat.noFace ?? stat.total - stat.enrolled;
+}
+
 export function studentMatches(student: GroupStudent, key: CounterKey, lessonSeen: ReadonlySet<string> | null): boolean {
   switch (key) {
     case 'hammasi':
@@ -73,10 +79,12 @@ export function studentMatches(student: GroupStudent, key: CounterKey, lessonSee
     case 'kutilmoqda':
       return student.status === key;
     case 'malumot_yoq':
-      // Yozuvsiz o'tgan kun (server: person_status -> "malumot_yoq").
-      return student.status === 'malumot_yoq';
+      // Yuzi bor, lekin o'tgan kunda yozuvi qolmagan.
+      return student.status === 'malumot_yoq' && student.biometricsStatus === 'tasdiqlangan';
     case 'yuzsiz':
-      return student.biometricsStatus !== 'tasdiqlangan';
+      // Yuzi yo'q VA yozuvi yo'q — HEMIS bo'yicha kelgan yuzsiz "Keldi"da
+      // (sanoqlar ustma-ust tushmaydi, jami qo'shilib chiqadi).
+      return student.biometricsStatus !== 'tasdiqlangan' && (student.status === 'malumot_yoq' || student.status === 'kutilmoqda');
     case 'darsda':
       return Boolean(lessonSeen?.has(student.id));
     case 'darsda_emas':
@@ -182,8 +190,8 @@ export default function GroupTablePanel({
       kech_keldi: sum((g) => g.late),
       kelmadi: sum((g) => g.absent),
       kutilmoqda: sum((g) => g.notYet),
-      malumot_yoq: sum((g) => g.noData),
-      yuzsiz: sum((g) => g.total - g.enrolled),
+      malumot_yoq: sum((g) => g.noData - noFace(g)),
+      yuzsiz: sum(noFace),
     } as Record<CounterKey, number>;
   }, [filteredGroups]);
   // Ochiluvchi ro'yxatda har guruh yonida: kelgan (yashil), kelmagan (qizil), ma'lumotsiz (kulrang).
@@ -261,7 +269,8 @@ export default function GroupTablePanel({
     { key: 'late', header: <Hint text="Kelganlardan kech kelganlari (ish boshlanishi + ruxsat etilgan daqiqalardan keyin)">Kech</Hint>, sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
     { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
     { key: 'notYet', header: <Hint text="Bugun hali kamera ko‘rmagan — kun tugamagan, kelishi mumkin">Hali yo‘q</Hint>, sortValue: (r) => r.notYet, align: 'right', cell: (r) => countCell(r, 'kutilmoqda', r.notYet, 'text-muted') },
-    { key: 'noFace', header: <Hint text="Yuzi bazaga kiritilmagan — kamera taniy olmaydi, davomati o‘lchanmaydi">Yuzsiz</Hint>, sortValue: (r) => r.total - r.enrolled, align: 'right', cell: (r) => countCell(r, 'yuzsiz', r.total - r.enrolled, 'text-danger') },
+    { key: 'noData', header: <Hint text="Yuzi bazada bor, lekin shu kuni kamera ham ko‘rmagan, HEMIS’da ham belgilanmagan (o‘tgan kun)">Ma’lumotsiz</Hint>, sortValue: (r) => r.noData - noFace(r), align: 'right', cell: (r) => countCell(r, 'malumot_yoq', r.noData - noFace(r), 'text-subtle') },
+    { key: 'noFace', header: <Hint text="Yuzi bazada yo‘q va shu kuni hech qanday ma’lumoti yo‘q (kamera tanimaydi, HEMIS’da ham belgilanmagan). HEMIS bo‘yicha kelgan yuzsizlar «Keldi»da">Yuzsiz</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
     { key: 'rate', header: <Hint text="Davomat foizi = keldi ÷ (keldi + kelmadi + hali yo‘q). Yuzsiz va dam olishdagilar hisobga kirmaydi">%</Hint>, sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
   ];
 
@@ -499,9 +508,10 @@ export default function GroupTablePanel({
       {body}
       {!(students && group) && (
         <p className="shrink-0 text-[11px] leading-snug text-muted">
-          <b className="text-fg">Keldi</b> — kech kelganlar bilan birga · <b className="text-fg">%</b> = keldi ÷ (keldi +
-          kelmadi + hali yo‘q) · <b className="text-fg">Yuzsiz</b> — kamera taniy olmaydi, foizga kirmaydi · Jami bilan farq — dam
-          olishdagilar va ma’lumoti yo‘qlar. Sarlavhaga sichqonchani olib boring — izoh chiqadi.
+          <b className="text-fg">Jami</b> = keldi + kelmadi + hali yo‘q + ma’lumotsiz + yuzsiz (+ dam olishdagilar) ·{' '}
+          <b className="text-fg">Keldi</b> — kech kelganlar bilan, kamera yoki HEMIS bo‘yicha · <b className="text-fg">%</b> = keldi ÷
+          (keldi + kelmadi + hali yo‘q) · <b className="text-fg">Yuzsiz</b> — yuzi bazada yo‘q va boshqa ma’lumoti ham yo‘q, foizga
+          kirmaydi. Sarlavhaga sichqonchani olib boring — izoh chiqadi.
         </p>
       )}
       {!isToday && <p className="shrink-0 text-[11px] text-muted">Arxiv: {date} holati</p>}

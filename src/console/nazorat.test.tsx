@@ -59,12 +59,14 @@ describe('guruh sanoqlari va filtr', () => {
   it('sanoq va filtr bir xil qoidada', () => {
     const seen = new Set(['a']);
     const counts = Object.fromEntries(groupCounters(students, seen).map((c) => [c.key, c.value]));
-    expect(counts).toEqual({ hammasi: 5, kelgan: 2, kech_keldi: 1, kelmadi: 1, kutilmoqda: 1, malumot_yoq: 1, yuzsiz: 1, darsda: 1, darsda_emas: 4 });
-    // Jami = kelgan + kelmadi + hali kelmagan + ma'lumot yo'q (yuzsiz — alohida kesim).
-    expect(counts.kelgan + counts.kelmadi + counts.kutilmoqda + counts.malumot_yoq).toBe(counts.hammasi);
-    // O'tgan kunda yozuvsiz qolgan — "Ma'lumot yo'q" (jami bilan qo'shilib chiqadi).
-    const past = [...students, student('f', 'malumot_yoq')];
-    expect(groupCounters(past, null).find((c) => c.key === 'malumot_yoq')?.value).toBe(2);
+    expect(counts).toEqual({ hammasi: 5, kelgan: 2, kech_keldi: 1, kelmadi: 1, kutilmoqda: 1, malumot_yoq: 0, yuzsiz: 1, darsda: 1, darsda_emas: 4 });
+    // Sanoqlar ustma-ust tushmaydi: jami = kelgan + kelmadi + hali kelmagan + ma'lumot yo'q + yuzsiz.
+    expect(counts.kelgan + counts.kelmadi + counts.kutilmoqda + counts.malumot_yoq + counts.yuzsiz).toBe(counts.hammasi);
+    // HEMIS bo'yicha kelgan yuzsiz — "Keldi"da, "Yuzsiz"da emas; yuzi bor,
+    // o'tgan kunda yozuvsiz — "Ma'lumot yo'q".
+    const more = [...students, student('f', 'malumot_yoq'), student('g', 'keldi', false)];
+    const moreCounts = Object.fromEntries(groupCounters(more, null).map((c) => [c.key, c.value]));
+    expect([moreCounts.kelgan, moreCounts.malumot_yoq, moreCounts.yuzsiz, moreCounts.hammasi]).toEqual([3, 1, 1, 7]);
     expect(students.filter((s) => studentMatches(s, 'kelgan', seen)).map((s) => s.id)).toEqual(['a', 'b']);
     expect(students.filter((s) => studentMatches(s, 'darsda_emas', seen)).map((s) => s.id)).toEqual(['b', 'c', 'd', 'e']);
   });

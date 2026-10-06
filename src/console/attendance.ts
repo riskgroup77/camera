@@ -43,6 +43,9 @@ export function addCounts(a: Counts, b: Counts): Counts {
     dayOff: a.dayOff + b.dayOff,
     notYet: a.notYet + b.notYet,
     noData: a.noData + b.noData,
+    // Eski server bermagan bo'lsa ikkalasida ham yo'q — natijada ham yo'q
+    // (ko'rsatish eski hisobga qaytadi, GroupTablePanel.noFace).
+    ...(a.noFace === undefined && b.noFace === undefined ? {} : { noFace: (a.noFace ?? 0) + (b.noFace ?? 0) }),
   };
   return { ...sum, rate: rateOf(sum) };
 }

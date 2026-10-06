@@ -26,6 +26,10 @@ export interface Counts {
   dayOff: number;
   notYet: number;
   noData: number;
+  /** noData ichidan: yuzi bazada yo'q va shu kuni hech qanday yozuvi yo'q
+   *  (HEMIS bo'yicha kelgan yuzsiz — present da). Ustma-ust tushmaydigan
+   *  "Yuzi bazada yo'q" sanog'i; eski server bermasa — undefined. */
+  noFace?: number;
   /** present / (present + absent + notYet) * 100; asos 0 → null */
   rate: number | null;
 }

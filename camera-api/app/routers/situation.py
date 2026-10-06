@@ -858,8 +858,12 @@ async def _people_by_status(
         buckets = {"hammasi", state}
         if state in svc.PRESENT_STATUSES:
             buckets.add("kelgan")
-        if not enrolled:
-            buckets.add("yuzsiz")
+        if not enrolled and not record_status and state != "dam_olish":
+            # Sanoqlar ustma-ust tushmaydi (2026-10-06): "Yuzi bazada yo'q" —
+            # yuzi yo'q VA hech qanday yozuvi yo'q (kamera ham, HEMIS ham
+            # bilmaydi). HEMIS bo'yicha kelgan yuzsiz odam — "Keldi"da.
+            # Jami = kelgan + kelmadi + hali kelmagan + ma'lumot yo'q + yuzsiz.
+            buckets = {"hammasi", "yuzsiz"}
         for bucket in buckets:
             setattr(counts, bucket, getattr(counts, bucket) + 1)
         if status_ in buckets:
@@ -1201,7 +1205,7 @@ async def group_pdf(
     document = pdf_export.PdfDocument(
         title=f"Guruh {name} — davomat", columns=cols, rows=rows, filters=filters, row_tones=tones,
         counts=[("Jami", t.total), ("Keldi", t.present), ("Kech", t.late), ("Kelmadi", t.absent),
-                ("Hali kelmagan", t.not_yet), ("Yuzi bazada yo'q", t.total - t.enrolled)],
+                ("Hali kelmagan", t.not_yet), ("Yuzi bazada yo'q", t.no_face)],
         note=f"Shu kungi darslar: {lessons}" if lessons else None,
     )
     return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"guruh-{name}", detail.date))

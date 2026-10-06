@@ -24,6 +24,8 @@ async def test_counts_match_overview_and_lists_match_counts(client, world, admin
     assert counts["hammasi"] == 12 and counts["kelgan"] == 6 and counts["kechKeldi"] == 1
     assert counts["kelmadi"] == 2 and counts["kutilmoqda"] == 1 and counts["yuzsiz"] == 3
     assert body["total"] == 12
+    # Sanoqlar ustma-ust tushmaydi (2026-10-06): jami qo'shilib chiqadi.
+    assert counts["kelgan"] + counts["kelmadi"] + counts["kutilmoqda"] + counts["malumotYoq"] + counts["yuzsiz"] == 12
     for status, key in (("kelgan", "kelgan"), ("kech_keldi", "kechKeldi"), ("kelmadi", "kelmadi"), ("yuzsiz", "yuzsiz")):
         listing = (await client.get(URL, params={"status": status}, headers=admin)).json()
         assert listing["total"] == counts[key], status
