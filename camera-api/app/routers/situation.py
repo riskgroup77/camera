@@ -242,6 +242,26 @@ async def _groups_list(db, day, faculty_id, course, search) -> list[GroupStatOut
 
 # ─────────────────────────────────────────── 4. Guruh
 
+@router.get("/groups-criteria")
+async def groups_criteria(
+    db: DbDep,
+    _: ReadDep,
+    date: DateQuery = None,
+    faculty_id: Annotated[str | None, Query(alias="facultyId")] = None,
+    course: Annotated[int | None, Query(ge=1, le=12)] = None,
+) -> dict:
+    """Nazorat → "Kriteriyalar bo'yicha": barcha guruhlar × barcha mezonlar
+    (app/services/hisobot.groups_criteria — hisobot bilan bir xil hisob).
+    Nazorat ruxsati bilan, hisobotlar parolisiz. Keshlanadi (svc.cached)."""
+    from app.services import hisobot
+
+    day = svc.resolve_day(date)
+    if faculty_id and faculty_id != hisobot.NO_FACULTY:
+        _uuid_or_404(faculty_id, "Fakultet topilmadi")
+    return await svc.cached(("groups_criteria", day, faculty_id, course),
+                            lambda: hisobot.groups_criteria(db, day, day, faculty_id, course))
+
+
 @router.get("/group-criteria")
 async def group_criteria(
     db: DbDep, _: ReadDep, group: Annotated[str, Query(min_length=1, max_length=300)], date: DateQuery = None,
@@ -1036,7 +1056,7 @@ from app.services import pdf_export  # noqa: E402
 
 STATUS_LABELS = {
     "hammasi": "Hammasi", "kelgan": "Keldi", "keldi": "O'z vaqtida keldi", "kech_keldi": "Kech keldi",
-    "kelmadi": "Kelmadi", "kutilmoqda": "Hali kelmagan", "yuzsiz": "Yuzi bazada yo'q", "dam_olish": "Dam olish",
+    "kelmadi": "Kelmadi", "kutilmoqda": "Hali kelmagan", "yuzsiz": "Ro'yxatdan o'tmagan", "dam_olish": "Dam olish",
     "malumot_yoq": "Ma'lumot yo'q",
 }
 POSITION_GROUP_LABELS = {"oqituvchi": "Professor-o'qituvchilar", "mamuriy": "Ma'muriy xodimlar", "texnik": "Texnik xodimlar"}
@@ -1125,7 +1145,7 @@ async def people_status_pdf(
         title=f"{who} — {STATUS_LABELS.get(status_, status_)}",
         columns=columns, rows=rows, filters=filters, row_tones=tones,
         counts=[("Jami", c.hammasi), ("Keldi", c.kelgan), ("Kech keldi", c.kech_keldi), ("Kelmadi", c.kelmadi),
-                ("Hali kelmagan", c.kutilmoqda), ("Yuzi bazada yo'q", c.yuzsiz)],
+                ("Hali kelmagan", c.kutilmoqda), ("Ro'yxatdan o'tmagan", c.yuzsiz)],
         note=None if result.total <= 5000 else f"Birinchi 5000 ta qator (jami {result.total})",
     )
     return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"{who}-{status_}", result.date))
@@ -1153,11 +1173,13 @@ async def groups_pdf(
         pdf_export.PdfColumn("Guruh", 1.6), pdf_export.PdfColumn("Fakultet", 2.6), pdf_export.PdfColumn("Kurs", 0.6, "CENTER"),
         pdf_export.PdfColumn("Jami", 0.7, "RIGHT"), pdf_export.PdfColumn("Keldi", 0.7, "RIGHT"),
         pdf_export.PdfColumn("Kech", 0.7, "RIGHT"), pdf_export.PdfColumn("Kelmadi", 0.8, "RIGHT"),
-        pdf_export.PdfColumn("Hali yo'q", 0.8, "RIGHT"), pdf_export.PdfColumn("Yuzsiz", 0.8, "RIGHT"),
+        pdf_export.PdfColumn("Ro'yxatdan o'tmagan", 1.1, "RIGHT"),
         pdf_export.PdfColumn("%", 0.6, "RIGHT"),
     ]
-    rows = [[g.name, g.faculty or "—", g.course or "—", g.total, g.present, g.late, g.absent, g.not_yet,
-             g.total - g.enrolled, "—" if g.rate is None else f"{round(g.rate)}%"] for g in groups]
+    # Ekrandagi jadval bilan bir xil ustunlar (2026-10-06: "Hali yo'q" va
+    # "Ma'lumotsiz" olib tashlandi, "Yuzsiz" -> "Ro'yxatdan o'tmagan").
+    rows = [[g.name, g.faculty or "—", g.course or "—", g.total, g.present, g.late, g.absent,
+             g.no_face, "—" if g.rate is None else f"{round(g.rate)}%"] for g in groups]
     document = pdf_export.PdfDocument(
         title="Talabalar — guruhlar bo'yicha davomat", columns=cols, rows=rows, filters=filters,
         counts=[("Guruhlar", len(groups)), ("Talabalar", sum(g.total for g in groups)),
@@ -1205,7 +1227,7 @@ async def group_pdf(
     document = pdf_export.PdfDocument(
         title=f"Guruh {name} — davomat", columns=cols, rows=rows, filters=filters, row_tones=tones,
         counts=[("Jami", t.total), ("Keldi", t.present), ("Kech", t.late), ("Kelmadi", t.absent),
-                ("Hali kelmagan", t.not_yet), ("Yuzi bazada yo'q", t.no_face)],
+                ("Hali kelmagan", t.not_yet), ("Ro'yxatdan o'tmagan", t.no_face)],
         note=f"Shu kungi darslar: {lessons}" if lessons else None,
     )
     return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"guruh-{name}", detail.date))

@@ -31,7 +31,7 @@ export interface NazoratSelection {
   group: string;
   status: CounterKey;
   setWho: (who: Who) => void;
-  setGroup: (group: string) => void;
+  setGroup: (group: string, view?: GroupView) => void;
   setStatus: (status: CounterKey) => void;
   /** Guruh jadvali: davomat yoki 9 kriteriya (har talaba qatorida). */
   view: GroupView;
@@ -61,14 +61,18 @@ export function useNazoratSelection(): NazoratSelection {
     [setParams],
   );
 
+  // `view` — guruh bilan birga ko'rinish ham (bitta yangilanishda: ketma-ket
+  // ikki setParams chaqirig'ida ikkinchisi birinchisini ustidan yozadi).
   const setGroup = useCallback(
-    (next: string) =>
+    (next: string, nextView?: GroupView) =>
       setParams(
         (current) => {
           const out = new URLSearchParams(current);
           if (next) out.set(GROUP_PARAM, next);
           else out.delete(GROUP_PARAM);
           out.delete(STATUS_PARAM);
+          if (nextView === 'kriteriyalar') out.set(VIEW_PARAM, nextView);
+          else if (nextView === 'davomat') out.delete(VIEW_PARAM);
           return out;
         },
         { replace: true },

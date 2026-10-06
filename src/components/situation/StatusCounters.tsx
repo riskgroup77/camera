@@ -27,7 +27,11 @@ export const COUNTER_META: Record<CounterKey, { label: string; hint: string; ton
     hint: 'Davomat manbai yo‘q: kamera ko‘rmagan, HEMIS’da belgilanmagan (masalan shu kuni darsi bo‘lmagan) — foizga kirmaydi',
     tone: 'text-subtle',
   },
-  yuzsiz: { label: 'Yuzi bazada yo‘q', hint: 'Kamera tanimaydi — ro‘yxatdan o‘tishi kerak', tone: 'text-danger' },
+  yuzsiz: {
+    label: 'Ro‘yxatdan o‘tmagan',
+    hint: 'Yuzi bazada yo‘q — /royxatdan-otish orqali ro‘yxatdan o‘tishi kerak, kamera tanimaydi',
+    tone: 'text-danger',
+  },
   darsda: { label: 'Darsda', hint: 'Hozirgi darsda kamera ko‘rgan', tone: 'text-success' },
   darsda_emas: { label: 'Darsda yo‘q', hint: 'Hozirgi darsda ko‘rinmagan', tone: 'text-danger' },
 };

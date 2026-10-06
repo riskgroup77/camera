@@ -1,4 +1,5 @@
 import { api, buildQuery, type CallOptions } from './apiClient';
+import { cachedRequest, ttlForDate } from './responseCache';
 
 /**
  * Nazorat → guruh: har talaba qatorida hamma kriteriyalar
@@ -84,3 +85,37 @@ export const TONE_TEXT: Record<CriterionTone, string> = {
   danger: 'text-danger',
   neutral: 'text-muted',
 };
+
+// ───────────────────────────── Barcha guruhlar × kriteriyalar
+// GET /api/situation/groups-criteria — Nazorat → "Kriteriyalar bo'yicha".
+
+export interface GroupSumCell {
+  value: string;
+  tone: CriterionTone;
+  /** Kerak bo'lsagina (davomat izohi, hisoblanmaslik sababi). */
+  title?: string;
+}
+
+export interface GroupsCriteriaRow {
+  name: string;
+  course: number | null;
+  total: number;
+  /** Ro'yxatdan o'tgan (yuzi bazada bor) talabalar. */
+  enrolled: number;
+  cells: Record<string, GroupSumCell>;
+}
+
+export interface GroupsCriteria {
+  period: { from: string; to: string; days: number };
+  analysed: boolean;
+  criteria: Array<Pick<GroupCriterion, 'key' | 'code' | 'label' | 'description'>>;
+  groups: GroupsCriteriaRow[];
+}
+
+export function getGroupsCriteria(
+  params: { date: string; facultyId?: string; course?: number },
+  opts?: CallOptions,
+): Promise<GroupsCriteria> {
+  const url = `/api/situation/groups-criteria${buildQuery(params)}`;
+  return cachedRequest(url, ttlForDate(params.date), () => api.get<GroupsCriteria>(url), opts?.signal);
+}

@@ -1642,6 +1642,88 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
     }
 
 
+# Nazorat guruh jadvalida ko'rsatilmaydigan mezonlar (buyurtmachi qarori,
+# 2026-10-06; frontend: src/lib/groupCriteriaApi.ts HIDDEN_IN_GROUP).
+HIDDEN_IN_GROUP = ("dars_qatnashish", "darsga_kech", "darsdan_erta")
+
+
+def group_cell(view: Data, key: str, analysed: bool) -> dict:
+    """Bitta guruhning bitta mezon bo'yicha to'liq SONI (ixcham: value, tone,
+    kerak bo'lsa title). Nazorat qoidasi bilan bir xil (2026-10-06): davomat
+    va kechikish faqat yuzi borlar (ro'yxatdan o'tganlar) orasida."""
+    stop = blocker(view, key)
+    if stop:
+        return {"value": "—", "tone": "neutral", "title": stop}
+    if key in ("davomat", "kechikish"):
+        enrolled = [m for m in view.members if m.enrolled]
+        rows = [view.day_rows.get(m.id) or {} for m in enrolled]
+        present = sum(1 for r in rows if r.get("status") in PRESENT)
+        late = sum(1 for r in rows if r.get("status") == "kech_keldi")
+        if key == "kechikish":
+            return {"value": str(late), "tone": "warning" if late else "neutral"}
+        if not enrolled:
+            return {"value": "—", "tone": "neutral", "title": "Guruhda ro'yxatdan o'tgan talaba yo'q"}
+        rate = present * 100 / len(enrolled)
+        return {"value": f"{present}/{len(enrolled)}", "tone": _rate_tone(rate),
+                "title": f"Ro'yxatdan o'tgan {len(enrolled)} talabadan {present} tasi keldi ({late} tasi kech)"}
+    value, tone = indicator(view, key)
+    if key == "forma" and not analysed and value in ("0", "—"):
+        return {"value": "0", "tone": "neutral"}
+    if key == "chekish" and value == "0":
+        return {"value": "—", "tone": "neutral"}
+    return {"value": value, "tone": tone}
+
+
+async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
+                          faculty: str | None = None, course: int | None = None) -> dict:
+    """Nazorat → "Kriteriyalar bo'yicha": har guruh uchun har mezon bo'yicha
+    son (ustunma-ustun). Ma'lumot bir marta yig'iladi (collect), guruhlar
+    a'zolar bo'yicha bo'linadi. Guruh kaliti — Nazorat guruhlar ro'yxati bilan
+    bir xil (svc.aggregate_groups: nom, kurs — ko'pchilik ovozi)."""
+    kind = "talaba"
+    f = Filters(faculty=faculty)
+    ctx = await context(db, kind, start, end, f)
+    data = await collect(db, kind, start, end, f, ctx.scope, ctx.members)
+    ids = [m.id for m in ctx.members]
+    analysed = bool(ids) and bool(await db.scalar(
+        select(func.count()).select_from(DailyPersonCriteria)
+        .where(DailyPersonCriteria.student_staff_id.in_(ids), DailyPersonCriteria.day.between(start, end))
+    ))
+    criteria = [c for c in criteria_for(kind) if c.key not in HIDDEN_IN_GROUP]
+    by_group: dict[str, list[Member]] = defaultdict(list)
+    votes: dict[str, Counter] = defaultdict(Counter)
+    for m in ctx.members:
+        m_course, name = svc.student_group(m.raw)
+        if not name:
+            continue  # guruhi yozilmagan — Nazorat ro'yxatida ham yo'q
+        by_group[name].append(m)
+        votes[name][m_course] += 1
+    groups = []
+    for name, members in by_group.items():
+        g_course = votes[name].most_common(1)[0][0]
+        if course and g_course != course:
+            continue
+        view = replace(data, members=members)
+        groups.append({
+            "name": name,
+            "course": g_course,
+            "total": len(members),
+            "enrolled": sum(1 for m in members if m.enrolled),
+            "cells": {c.key: group_cell(view, c.key, analysed) for c in criteria},
+        })
+    groups.sort(key=lambda g: (-g["total"], g["name"]))
+    return {
+        "period": {"from": start.isoformat(), "to": end.isoformat(), "days": (end - start).days + 1},
+        "analysed": analysed,
+        "criteria": [
+            {"key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
+             "description": describe(c.key, data.policy, kind)}
+            for c in criteria
+        ],
+        "groups": groups,
+    }
+
+
 async def filter_options(db: AsyncSession, kind: str) -> dict:
     everyone = await population(db, kind)
     if kind == "talaba":

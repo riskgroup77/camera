@@ -17,6 +17,8 @@ import {
 import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, cn, type DataTableColumn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
 import StatusPeopleTable, { PAGE_SIZE as PEOPLE_PAGE_SIZE } from '../../components/situation/StatusPeopleTable';
+import GroupsCriteriaTable from '../../components/situation/GroupsCriteriaTable';
+import { getGroupsCriteria, type GroupsCriteria } from '../../lib/groupCriteriaApi';
 import { prefetch } from '../../lib/responseCache';
 import { addDays, todayInTashkent } from '../../lib/uzDate';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
@@ -148,6 +150,11 @@ export default function GroupTablePanel({
   const { who, group, status, view, setWho, setGroup, setStatus, setView } = selection;
   const students = who === 'talaba';
   const criteriaMode = students && Boolean(group) && canCriteria && view === 'kriteriyalar';
+  // "Kriteriyalar bo'yicha": barcha guruhlar × kriteriyalar (guruh tanlanmaganda).
+  const [allCriteriaOn, setAllCriteriaOn] = useState(false);
+  const allCriteria = students && !group && canCriteria && allCriteriaOn;
+  const [groupsCriteria, setGroupsCriteria] = useState<GroupsCriteria | null>(null);
+  const [groupsCriteriaError, setGroupsCriteriaError] = useState<string | null>(null);
   const [groups, setGroups] = useState<GroupStat[] | null>(null);
   const [tree, setTree] = useState<OrgTree | null>(null);
   const [positionGroup, setPositionGroup] = useState<PositionGroup | ''>('');
@@ -176,6 +183,18 @@ export default function GroupTablePanel({
       });
     return () => controller.abort();
   }, [date, pulse, students]);
+
+  useEffect(() => {
+    if (!allCriteria) return;
+    const controller = new AbortController();
+    setGroupsCriteriaError(null);
+    getGroupsCriteria({ date, facultyId: faculty || undefined }, { signal: controller.signal })
+      .then(setGroupsCriteria)
+      .catch((err) => {
+        if (!controller.signal.aborted) setGroupsCriteriaError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
+      });
+    return () => controller.abort();
+  }, [allCriteria, date, faculty, pulse]);
 
   const facultyOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -280,7 +299,7 @@ export default function GroupTablePanel({
     { key: 'present', header: <Hint text="Kelganlar — kech kelganlar ham shu songa kiradi">Keldi</Hint>, sortValue: (r) => r.present, align: 'right', cell: (r) => countCell(r, 'kelgan', r.present, 'text-success') },
     { key: 'late', header: <Hint text="Kelganlardan kech kelganlari (ish boshlanishi + ruxsat etilgan daqiqalardan keyin)">Kech</Hint>, sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
     { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
-    { key: 'noFace', header: <Hint text="Yuzi bazada yo‘q — kamera taniy olmaydi (har kuni bir xil son). Ular boshqa ustunlarga va foizga kirmaydi">Yuzsiz</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
+    { key: 'noFace', header: <Hint text="/royxatdan-otish orqali ro‘yxatdan o‘tmagan (yuzi bazada yo‘q) — kamera taniy olmaydi (har kuni bir xil son). Ular boshqa ustunlarga va foizga kirmaydi">Ro‘yxatdan o‘tmagan</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
     { key: 'rate', header: <Hint text="Davomat foizi = keldi ÷ (keldi + kelmadi + hali yo‘q). Yuzsiz va dam olishdagilar hisobga kirmaydi">%</Hint>, sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
   ];
 
@@ -425,7 +444,7 @@ export default function GroupTablePanel({
             <CountPicker label="Lavozim" value={position} onChange={setPosition} options={positionOptions} />
           </>
         )}
-        {!criteriaMode && <Select
+        {!criteriaMode && !allCriteria && <Select
           label="Holat"
           value={status === 'hammasi' ? '' : status}
           onChange={(value) => setStatus((value || 'hammasi') as CounterKey)}
@@ -434,9 +453,27 @@ export default function GroupTablePanel({
           size="sm"
           highlightActive
         />}
-        <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha qidirish" size="sm" className="w-52" />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={allCriteria ? 'Guruh bo‘yicha qidirish' : 'F.I.Sh. bo‘yicha qidirish'}
+          size="sm"
+          className="w-52"
+        />
+        {students && !group && canCriteria && (
+          <Button
+            variant={allCriteria ? 'primary' : 'secondary'}
+            size="sm"
+            icon={ListChecks}
+            onClick={() => setAllCriteriaOn((on) => !on)}
+            aria-pressed={allCriteria}
+            title="Har bir guruh bo‘yicha har bir kriteriya — ustunma-ustun"
+          >
+            Kriteriyalar bo‘yicha
+          </Button>
+        )}
         <span className="ms-auto">
-          {!criteriaMode && status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
+          {!criteriaMode && !allCriteria && status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
         </span>
       </div>
     </div>
@@ -446,8 +483,34 @@ export default function GroupTablePanel({
     ? { ...criteria.data, people: criteria.data.people.filter((p) => !needle || p.full_name.toLowerCase().includes(needle)) }
     : null;
 
+  const groupsCriteriaRows = (groupsCriteria?.groups ?? []).filter(
+    (g) =>
+      (!course || String(g.course) === course) &&
+      (!needle || g.name.toLowerCase().includes(needle)),
+  );
+
   let body;
-  if (criteriaMode) {
+  if (allCriteria) {
+    body = (
+      <>
+        <div className="min-h-0 flex-1">
+          <GroupsCriteriaTable
+            data={groupsCriteria}
+            rows={groupsCriteriaRows}
+            loading={!groupsCriteria}
+            error={groupsCriteriaError}
+            onOpen={(name) => setGroup(name, 'kriteriyalar')}
+          />
+        </div>
+        <p className="shrink-0 text-[11px] leading-snug text-muted">
+          <b className="text-fg">Davomat</b> — kelgan / ro‘yxatdan o‘tgan talabalar · qolgan ustunlar — holatlar soni · rang:{' '}
+          <span className="text-success">yashil</span> — yaxshi, <span className="text-warning">sariq</span> — ogohlantirish,{' '}
+          <span className="text-danger">qizil</span> — muammo · «—» — hisoblanmagan (sababi — katak izohida). Guruhni bosing —
+          talabalar bo‘yicha kriteriyalar.
+        </p>
+      </>
+    );
+  } else if (criteriaMode) {
     body = (
       <>
         <div className="min-h-0 flex-1">
@@ -534,9 +597,10 @@ export default function GroupTablePanel({
     <div className="flex h-full min-h-0 flex-col gap-2 px-3 pb-3">
       {filters}
       {body}
-      {!(students && group) && (
+      {!(students && group) && !allCriteria && (
         <p className="shrink-0 text-[11px] leading-snug text-muted">
-          <b className="text-fg">Yuzsiz</b> — yuzi bazada yo‘q (har kuni bir xil), qolgan holatlar faqat yuzi borlar orasida ·{' '}
+          <b className="text-fg">Ro‘yxatdan o‘tmagan</b> — yuzi bazada yo‘q (har kuni bir xil), qolgan holatlar faqat ro‘yxatdan
+          o‘tganlar orasida ·{' '}
           <b className="text-fg">Keldi</b> — kech kelganlar bilan · <b className="text-fg">%</b> = keldi ÷ (keldi + kelmadi + hali
           kelmagan). Sarlavhaga sichqonchani olib boring — izoh chiqadi.
         </p>

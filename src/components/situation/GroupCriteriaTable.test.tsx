@@ -56,7 +56,7 @@ describe('GroupCriteriaTable', () => {
     expect(within(anvar).getByTitle('1 ta 2 daqiqalik video dalil — talaba sahifasida')).toBeInTheDocument();
     expect(within(anvar).getByRole('link')).toHaveAttribute('href', '/shaxs/a');
     // Yuzi bazada yo'q — kamera taniy olmaydi.
-    expect(within(table).getByText('· yuzsiz')).toBeInTheDocument();
+    expect(within(table).getByText('· ro‘yxatdan o‘tmagan')).toBeInTheDocument();
   });
 
   it('sorts problems first and keeps not-measured cells last', () => {

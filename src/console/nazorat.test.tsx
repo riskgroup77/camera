@@ -4,6 +4,7 @@ import type { GroupStudent } from '../lib/situationApi';
 import { CAMERA_LOAD_MIN_MS, CAMERA_LOAD_MS, coverDone, resolutionLabel } from './panels/CamerasPanel';
 import { clock } from './panels/GroupStatsPanel';
 import PanelBoundary from './PanelBoundary';
+import GroupsCriteriaTable, { sumSortValue } from '../components/situation/GroupsCriteriaTable';
 import { NO_BUILDING, buildingCards, roomCards } from './cameraPick';
 import type { CameraFeed } from '../types';
 import { groupCounters, neighbourDay, studentMatches } from './panels/GroupTablePanel';
@@ -115,5 +116,35 @@ describe('Bugun / Kecha — qo‘shni kun', () => {
     expect(neighbourDay('2026-10-06', '2026-10-06')).toBe('2026-10-05');
     expect(neighbourDay('2026-10-05', '2026-10-06')).toBe('2026-10-06');
     expect(neighbourDay('2026-10-01', '2026-10-06')).toBeNull();
+  });
+});
+
+describe('Kriteriyalar bo‘yicha — guruhlar jadvali', () => {
+  it('saralash: muammolisi tepada, "8/12" — 8, "—" eng pastda', () => {
+    expect(sumSortValue({ value: '3', tone: 'danger' })).toBeGreaterThan(sumSortValue({ value: '9', tone: 'warning' }));
+    expect(sumSortValue({ value: '8/12', tone: 'warning' })).toBe(200_008);
+    expect(sumSortValue({ value: '—', tone: 'neutral' })).toBe(-1);
+    expect(sumSortValue(undefined)).toBe(-1);
+  });
+
+  it('har guruh qatori va har kriteriya ustuni; qator bosilsa guruh ochiladi', async () => {
+    const opened: string[] = [];
+    const data = {
+      period: { from: '2026-10-06', to: '2026-10-06', days: 1 },
+      analysed: false,
+      criteria: [
+        { key: 'davomat', code: 7, label: 'Kelgan-kelmagani', description: '' },
+        { key: 'chekish', code: 15, label: 'Chekkanlar', description: '' },
+      ],
+      groups: [
+        { name: 'TPI-126', course: 1, total: 23, enrolled: 12, cells: { davomat: { value: '8/12', tone: 'warning' as const }, chekish: { value: '—', tone: 'neutral' as const } } },
+      ],
+    };
+    render(<GroupsCriteriaTable data={data} rows={data.groups} loading={false} error={null} onOpen={(name) => opened.push(name)} />);
+    expect(screen.getAllByText('Davomat').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Chekish').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Ro‘yxatdan o‘tgan').length).toBeGreaterThan(0);
+    screen.getAllByText('8/12')[0].click();
+    expect(opened).toEqual(['TPI-126']);
   });
 });

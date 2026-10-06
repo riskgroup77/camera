@@ -68,7 +68,7 @@ export default function GroupCriteriaTable({
         // Ism bir qatorda: ustunlar ko'p — jadval yonga suriladi, ism esa uzilmaydi.
         <Link to={`/shaxs/${encodeURIComponent(r.id)}`} className="whitespace-nowrap font-medium text-fg hover:text-primary">
           {r.full_name}
-          {!r.enrolled && <span className="ms-1 text-[11px] font-normal text-danger" title="Yuzi bazada yo‘q — kamera taniy olmaydi">· yuzsiz</span>}
+          {!r.enrolled && <span className="ms-1 text-[11px] font-normal text-danger" title="Yuzi bazada yo‘q — kamera taniy olmaydi">· ro‘yxatdan o‘tmagan</span>}
         </Link>
       ),
     },
