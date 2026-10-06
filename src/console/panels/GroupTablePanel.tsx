@@ -51,13 +51,14 @@ const VIEW_TABS = [
   { id: 'kriteriyalar' as const, label: 'Kriteriyalar', icon: ListChecks },
 ];
 
-const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
+const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'yuzsiz'];
 const COUNT_FIELD: Record<string, keyof StatusCounts> = {
   hammasi: 'hammasi',
   kelgan: 'kelgan',
   kech_keldi: 'kechKeldi',
   kelmadi: 'kelmadi',
   kutilmoqda: 'kutilmoqda',
+  malumot_yoq: 'malumotYoq',
   yuzsiz: 'yuzsiz',
 };
 
@@ -71,6 +72,9 @@ export function studentMatches(student: GroupStudent, key: CounterKey, lessonSee
     case 'kelmadi':
     case 'kutilmoqda':
       return student.status === key;
+    case 'malumot_yoq':
+      // Yozuvsiz o'tgan kun (server: person_status -> "malumot_yoq").
+      return student.status === 'malumot_yoq';
     case 'yuzsiz':
       return student.biometricsStatus !== 'tasdiqlangan';
     case 'darsda':
@@ -178,6 +182,7 @@ export default function GroupTablePanel({
       kech_keldi: sum((g) => g.late),
       kelmadi: sum((g) => g.absent),
       kutilmoqda: sum((g) => g.notYet),
+      malumot_yoq: sum((g) => g.noData),
       yuzsiz: sum((g) => g.total - g.enrolled),
     } as Record<CounterKey, number>;
   }, [filteredGroups]);

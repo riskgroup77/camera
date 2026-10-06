@@ -11,6 +11,7 @@ export type CounterKey =
   | 'kech_keldi'
   | 'kelmadi'
   | 'kutilmoqda'
+  | 'malumot_yoq'
   | 'yuzsiz'
   | 'darsda'
   | 'darsda_emas';
@@ -21,6 +22,11 @@ export const COUNTER_META: Record<CounterKey, { label: string; hint: string; ton
   kech_keldi: { label: 'Kech keldi', hint: 'Belgilangan vaqtdan keyin kelgan', tone: 'text-warning' },
   kelmadi: { label: 'Kelmadi', hint: 'Kelmadi deb belgilangan', tone: 'text-danger' },
   kutilmoqda: { label: 'Hali kelmagan', hint: 'Yuzi bazada, bugun hali ko‘rinmagan', tone: 'text-muted' },
+  malumot_yoq: {
+    label: 'Ma’lumot yo‘q',
+    hint: 'Davomat manbai yo‘q: kamera ko‘rmagan, HEMIS’da belgilanmagan (masalan shu kuni darsi bo‘lmagan) — foizga kirmaydi',
+    tone: 'text-subtle',
+  },
   yuzsiz: { label: 'Yuzi bazada yo‘q', hint: 'Kamera tanimaydi — ro‘yxatdan o‘tishi kerak', tone: 'text-danger' },
   darsda: { label: 'Darsda', hint: 'Hozirgi darsda kamera ko‘rgan', tone: 'text-success' },
   darsda_emas: { label: 'Darsda yo‘q', hint: 'Hozirgi darsda ko‘rinmagan', tone: 'text-danger' },

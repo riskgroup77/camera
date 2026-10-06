@@ -1312,12 +1312,28 @@ class Settings(BaseSettings):
     hemis_schedule_days_back: int = 1
     hemis_schedule_days_ahead: int = 14
     hemis_page_size: int = 200
+    # Davomat HEMIS'dan (app/jobs/hemis_attendance_sync.py): ish soatlarida har
+    # N daqiqada BUGUNGI kun (o'qituvchilar har darsni belgilab boradi),
+    # tugash soatidan keyin va ertasi kuni ertalab — yakuniy (darsi jadvalda
+    # bo'lib, HEMIS'da o'tkazilmagan o'qituvchi "kelmadi"). Kamera, turniket
+    # va qo'lda kiritilgan yozuvlarga tegilmaydi.
+    hemis_attendance_sync_enabled: bool = True
+    hemis_attendance_interval_minutes: int = 30
+    hemis_attendance_start_hour: int = 8
+    hemis_attendance_end_hour: int = 19
     # HEMIS rasmidan tanitish (app/jobs/hemis_photos.py): har N soniyada bir
     # to'plam, fon navbatida (davomat kadrlaridan keyin).
     # O'CHIRILGAN (2026-09-26, institut qarori): HEMIS'dagi bitta portret
     # tanish uchun yetarli emas — faqat havola orqali uch tomonlama
     # ro'yxatdan o'tgan yuzlar ishlatiladi.
     hemis_photo_enrollment: bool = False
+    # XODIMLAR uchun istisno (2026-10-06, buyurtmachi qarori): 966 xodimdan
+    # faqat 18 tasi uch tomonlama ro'yxatdan o'tgan — qolgan 948 tasini
+    # kamera umuman tanimasdi. Xodimga bitta HEMIS portreti yetarli
+    # (boshqa odamga juda o'xshasa yozilmaydi). Talabalar uchun 26-sentabr
+    # qarori o'zgarmaydi. hemis_photo_enrollment o'chiq bo'lsa ham vazifa
+    # xodimlar uchun ishlaydi.
+    hemis_photo_staff_single: bool = True
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
     hemis_photo_busy_pause_seconds: int = 5

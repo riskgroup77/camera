@@ -33,7 +33,7 @@ from urllib.parse import urlsplit
 import cv2
 import httpx
 import numpy as np
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, false, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -111,6 +111,7 @@ PAD_RATIO = 0.5
 # RETRY_LIMIT marta. 404 va boshqa doimiy xatolar qayta urinilmaydi.
 TRANSIENT = "Vaqtincha yuklab bo'lmadi"
 OLD_DOWNLOAD = "Rasmni yuklab bo'lmadi"
+THREE_ANGLES = "Yuz 3 tomondan olinmagan — ro'yxatdan o'tish havolasi orqali o'tsin"
 RETRY_LIMIT = 5
 _ATTEMPT = re.compile(r"\[(\d+)\]$")
 
@@ -233,9 +234,10 @@ async def enroll_person(db: AsyncSession, person: StudentStaff, data: bytes) -> 
             )
         )
         return "galereya"
-    if not person.has_all_angles:
-        # Bitta HEMIS surati bilan yuz "tasdiqlangan" bo'lmaydi (3 burchak shart).
-        raise ValueError("Yuz 3 tomondan olinmagan — ro'yxatdan o'tish havolasi orqali o'tsin")
+    if not person.has_all_angles and not single_photo_allowed(person):
+        # Bitta HEMIS surati bilan yuz "tasdiqlangan" bo'lmaydi (3 burchak
+        # shart) — xodimlardan tashqari (settings.hemis_photo_staff_single).
+        raise ValueError(THREE_ANGLES)
     person.biometric_embedding = encoded
     person.biometrics_status = "tasdiqlangan"
     person.biometrics_confirmed_at = datetime.now(timezone.utc)
@@ -244,9 +246,15 @@ async def enroll_person(db: AsyncSession, person: StudentStaff, data: bytes) -> 
     return "asosiy"
 
 
+def single_photo_allowed(person: StudentStaff) -> bool:
+    """Bitta HEMIS portreti bilan tasdiqlash mumkinmi (faqat xodim)."""
+    return settings.hemis_photo_staff_single and person.type == "xodim"
+
+
 async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
     stats = {"asosiy": 0, "galereya": 0, "xato": 0}
-    if not settings.hemis_photo_enrollment or not hemis.hemis_configured():
+    staff_only = not settings.hemis_photo_enrollment
+    if (staff_only and not settings.hemis_photo_staff_single) or not hemis.hemis_configured():
         return stats
     async with SessionLocal() as db:
         people = (
@@ -257,9 +265,16 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                     StudentStaff.hemis_photo_url.is_not(None),
                     # Rozilikni qaytarib olgan (biometrikasi o'chirilgan) odam.
                     StudentStaff.biometrics_opt_out_at.is_(None),
+                    # Umumiy yozish o'chiq — faqat xodimlar (bitta rasm qoidasi).
+                    StudentStaff.type == "xodim" if staff_only else true(),
                     or_(
                         StudentStaff.hemis_photo_checked_at.is_(None),
                         StudentStaff.hemis_photo_error == OLD_NO_FACE,
+                        # Ilgari "3 tomondan" deb rad etilgan xodim — endi bitta
+                        # rasm yetarli, qayta tekshiriladi.
+                        and_(StudentStaff.type == "xodim", StudentStaff.hemis_photo_error == THREE_ANGLES)
+                        if settings.hemis_photo_staff_single
+                        else false(),
                         and_(
                             or_(
                                 StudentStaff.hemis_photo_error.startswith(TRANSIENT),

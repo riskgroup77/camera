@@ -25,6 +25,7 @@ from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
 from app.jobs.unified_face_sweep import unified_face_sweep_loop
 from app.jobs.access_poll import access_poll_loop
 from app.jobs.event_escalation import event_escalation_loop
+from app.jobs.hemis_attendance_sync import hemis_attendance_loop
 from app.jobs.hemis_photos import hemis_photos_loop
 from app.jobs.teacher_absence import teacher_absence_loop
 from app.jobs.unknown_rematch import unknown_rematch_loop
@@ -130,6 +131,7 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
         event_escalation_loop(),
         hemis_sync_loop(),
         hemis_photos_loop(),
+        hemis_attendance_loop(),
         teacher_absence_loop(),
         unknown_rematch_loop(),
         system_alerts_loop(),
@@ -151,6 +153,7 @@ def _start_daily_mode_loops(tasks: list[asyncio.Task]) -> None:
         event_escalation_loop(),
         hemis_sync_loop(),
         hemis_photos_loop(),
+        hemis_attendance_loop(),
         system_alerts_loop(),
         access_poll_loop(),
         camera_health_loop(),

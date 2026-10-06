@@ -127,6 +127,27 @@ async def test_person_without_a_face_is_enrolled_from_the_photo(db_session, seed
         await hemis_photos.enroll_person(db_session, person, b"jpg")
 
 
+async def test_staff_member_is_enrolled_from_a_single_hemis_photo(db_session, seeded, monkeypatch):
+    """2026-10-06 qarori: xodimga bitta HEMIS portreti yetarli (talabaga — yo'q)."""
+    person_id = uuid.uuid4()
+    db_session.add(StudentStaff(id=person_id, full_name="Rasmsiz Xodim", type="xodim", group_or_position="Dotsent"))
+    await db_session.commit()
+
+    async def fake_embed(data):
+        return _vec(2), 140
+
+    async def fake_upload(data):
+        return "biometrika/hemis.jpg"
+
+    monkeypatch.setattr(hemis_photos, "_embed_photo", fake_embed)
+    monkeypatch.setattr(hemis_photos, "_upload", fake_upload)
+    monkeypatch.setattr(hemis_photos.settings, "hemis_photo_staff_single", True)
+    person = await db_session.get(StudentStaff, person_id)
+    assert await hemis_photos.enroll_person(db_session, person, b"jpg") == "asosiy"
+    assert person.biometrics_status == "tasdiqlangan"
+    assert person.biometric_photo_key == "biometrika/hemis.jpg"
+
+
 async def test_photo_of_someone_else_is_not_added_to_an_existing_face(db_session, seeded, monkeypatch):
     person_id = uuid.uuid4()
     db_session.add(StudentStaff(id=person_id, full_name="Yuzi Bor", type="talaba", group_or_position="101",

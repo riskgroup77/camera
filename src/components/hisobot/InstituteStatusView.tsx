@@ -25,13 +25,14 @@ import PdfButton from '../situation/PdfButton';
  */
 
 const REFRESH_MS = 30_000;
-const KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
+const KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'yuzsiz'];
 const FIELD: Record<string, keyof StatusCounts> = {
   hammasi: 'hammasi',
   kelgan: 'kelgan',
   kech_keldi: 'kechKeldi',
   kelmadi: 'kelmadi',
   kutilmoqda: 'kutilmoqda',
+  malumot_yoq: 'malumotYoq',
   yuzsiz: 'yuzsiz',
 };
 

@@ -18,7 +18,7 @@ export type Who = 'talaba' | 'xodim';
 export type GroupView = 'davomat' | 'kriteriyalar';
 
 const COUNTER_KEYS: readonly CounterKey[] = [
-  'hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz', 'darsda', 'darsda_emas',
+  'hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'yuzsiz', 'darsda', 'darsda_emas',
 ];
 
 export function parseCounter(raw: string | null): CounterKey {
