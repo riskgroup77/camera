@@ -30,7 +30,9 @@ describe('scanCounts', () => {
         { bbox: [0, 0, 1, 1], asleep: false, status: 'kichik' },
       ],
     });
-    expect(counts).toEqual({ total: 4, known: 1, unknown: 2, small: 1, hd: true });
+    expect(counts).toEqual({ total: 4, known: 1, unknown: 2, small: 1, ai: '4K' });
+    // 2560x1440 asosiy oqim "4K" deb chiqmasin.
+    expect(scanCounts({ frameWidth: 2560, frameHeight: 1440, faces: [] })?.ai).toBe('2K');
   });
 
   it("eski javobda (status yo'q) ismga qarab ajratadi", () => {

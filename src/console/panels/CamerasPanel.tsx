@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, Building2, ChevronRight, Search, Video, X } from 'lucide-react';
 import { cn } from '../../ui';
@@ -13,6 +13,7 @@ import { usePageVisible } from '../../components/videowall/usePageVisible';
 import { buildCameraCodes, cameraCode, cameraPlaceCode } from '../../components/videowall/cameraCode';
 import type { CameraFeed } from '../../types';
 import Panel from '../Panel';
+import { prewarmWebrtc } from '../../lib/webrtcStream';
 import { EASE, panelIn, stagger } from '../motion';
 import { useVideoFlow } from '../useVideoFlow';
 import { mergeSeenPeople, type SeenPerson } from '../recognizedPeople';
@@ -55,6 +56,24 @@ import {
 /** Xona tanlangach video shuncha vaqt "yuklanmoqda" pardasi ostida ochiladi
  *  (oqim shu paytda isinadi — parda ketganda tasvir tayyor). */
 export const CAMERA_LOAD_MS = 5_000;
+/** Parda kamida shuncha turadi — tayyor oqimda ham bir zumda "miltillab"
+ *  yo'qolmasin. Birinchi kadr kelishi bilan (lekin shundan oldin emas)
+ *  ochiladi; kadr kelmasa — CAMERA_LOAD_MS da baribir ochiladi. */
+export const CAMERA_LOAD_MIN_MS = 600;
+
+/** Parda qachon ochiladi: birinchi kadr + kamida MIN, yoki MAX tugadi. */
+export function coverDone(elapsedMs: number, firstFrame: boolean): boolean {
+  return elapsedMs >= CAMERA_LOAD_MS || (firstFrame && elapsedMs >= CAMERA_LOAD_MIN_MS);
+}
+
+/** Kadr balandligi bo'yicha qisqa nom: 2160 -> 4K, 1440 -> 2K, 1080 -> FHD, 720 -> 720p. */
+export function resolutionLabel(height: number | null | undefined): string | null {
+  if (!height || height <= 0) return null;
+  if (height >= 2000) return '4K';
+  if (height >= 1400) return '2K';
+  if (height >= 1000) return 'FHD';
+  return `${height}p`;
+}
 
 /** Tashqaridan (Ctrl+K) "shu kamerani kattalashtir" so'rovi. */
 export interface FocusRequest {
@@ -579,7 +598,10 @@ export function scanCounts(scan: LiveDetectionResult | null) {
     else if (status === 'notanish') unknown += 1;
     else small += 1;
   }
-  return { total: scan.faces.length, known, unknown, small, hd: scan.source === 'asosiy' };
+  // Tahlil kadrining o'lchami (server asosiy oqimdan oladi) — VIDEO emas:
+  // brauzerga kichik oqim (720p/432p) keladi. Ilgari bu "4K" deb yozilib,
+  // video 4K da kelyapti degan noto'g'ri tasavvur berardi.
+  return { total: scan.faces.length, known, unknown, small, ai: resolutionLabel(scan.frameHeight) };
 }
 
 /** Video ustidagi skaner holati — AI hozir nimani ko'rayotgani. */
@@ -593,7 +615,11 @@ function ScanBadge({ counts }: { counts: ReturnType<typeof scanCounts> }) {
           <span className="text-emerald-300">Tanildi {counts.known}</span>
           <span className="text-rose-300">Notanish {counts.unknown}</span>
           {counts.small > 0 && <span className="text-white/60">Kichik {counts.small}</span>}
-          {counts.hd && <span className="rounded bg-white/15 px-1 text-[10px]">4K</span>}
+          {counts.ai && (
+            <span className="rounded bg-white/15 px-1 text-[10px]" title="Yuz tahlili server tomonda shu o'lchamdagi kadrda (video o'lchami emas)">
+              Tahlil {counts.ai}
+            </span>
+          )}
         </>
       ) : (
         <span>Skanerlanmoqda…</span>
@@ -665,13 +691,24 @@ function StageCamera({
   const [scan, setScan] = useState<LiveDetectionResult | null>(null);
   const counts = scanCounts(scan);
   const seen = useSeenPeople();
-  // Tanlangach CAMERA_LOAD_MS davomida "Video yuklanmoqda" pardasi: oqim
-  // shu payt orqada ulanadi, parda ketganda tasvir tayyor turadi.
+  // "Video yuklanmoqda" pardasi: oqim orqada ulanadi, BIRINCHI KADR kelishi
+  // bilan (kamida CAMERA_LOAD_MIN_MS) ochiladi. Ilgari doim 5 s turardi —
+  // video odatda 1.5-2.5 s da tayyor bo'lsa ham (2026-10-06).
+  const videoHeight = useVideoHeight(holder, live);
+  const [openedAt] = useState(() => Date.now());
   const [loadingCover, setLoadingCover] = useState(true);
+  const ready = videoHeight > 0 || !live;
   useEffect(() => {
-    const timer = window.setTimeout(() => setLoadingCover(false), CAMERA_LOAD_MS);
+    if (!loadingCover) return;
+    const elapsed = Date.now() - openedAt;
+    if (coverDone(elapsed, ready)) {
+      setLoadingCover(false);
+      return;
+    }
+    const wait = (ready ? CAMERA_LOAD_MIN_MS : CAMERA_LOAD_MS) - elapsed;
+    const timer = window.setTimeout(() => setLoadingCover(false), Math.max(0, wait));
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [loadingCover, ready, openedAt]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-neutral-900">
@@ -702,6 +739,11 @@ function StageCamera({
       <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-1.5 text-white">
         <LiveDot on={!loadingCover && flow === 'flowing'} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{camera.name}</span>
+        {videoHeight > 0 && (
+          <span className="shrink-0 rounded bg-white/15 px-1.5 py-px text-[10px] font-semibold tabular-nums text-white/80" title={`Video: ${videoHeight}p`}>
+            {resolutionLabel(videoHeight)}
+          </span>
+        )}
         {place && <CodeText className="text-[11px] text-white/60">{place}</CodeText>}
         <CodeText className="text-[11px] text-white/60">{code}</CodeText>
         <button
@@ -716,6 +758,41 @@ function StageCamera({
       </div>
     </div>
   );
+}
+
+/** Brauzer haqiqatda dekodlayotgan video balandligi (0 — hali kadr yo'q).
+ *  Birinchi kadrgacha 100 ms da (pardani tez ochish uchun), keyin 2 s da
+ *  tekshiriladi. */
+function useVideoHeight(holder: RefObject<HTMLDivElement | null>, active: boolean): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let timer: number | undefined;
+    const sample = () => {
+      const video = holder.current?.querySelector('video');
+      const current = video && video.readyState >= 2 && video.videoWidth > 0 ? video.videoHeight : 0;
+      setHeight(current);
+      timer = window.setTimeout(sample, current > 0 ? 2_000 : 100);
+    };
+    sample();
+    return () => window.clearTimeout(timer);
+  }, [holder, active]);
+  return active ? height : 0;
+}
+
+/** Xona kartasi ustida qisqa turilsa (120 ms — sichqoncha o'tib ketayotgan
+ *  bo'lsa emas) shu kameraning WebRTC ulanishi oldindan ochiladi. */
+const PREWARM_HOVER_MS = 120;
+function usePrewarmOnHover() {
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return {
+    start: (cameraId: string) => {
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => prewarmWebrtc(cameraId), PREWARM_HOVER_MS);
+    },
+    cancel: () => window.clearTimeout(timer.current),
+  };
 }
 
 /** Hech kamera tanlanmagan — markazda taklif (kirishda ataylab bo'sh:
@@ -742,7 +819,7 @@ function PickPlaceholder({ message, building }: { message: string | null; buildi
   );
 }
 
-/** Xona tanlangach — "Video yuklanmoqda" pardasi (CAMERA_LOAD_MS). */
+/** Xona tanlangach — "Video yuklanmoqda" pardasi (birinchi kadrgacha). */
 function LoadingCover({ name, place }: { name: string; place: string | null }) {
   return (
     <motion.div
@@ -770,8 +847,8 @@ function LoadingCover({ name, place }: { name: string; place: string | null }) {
         <motion.span
           className="block h-full rounded-full bg-sky-400"
           initial={{ width: '0%' }}
-          animate={{ width: '100%' }}
-          transition={{ duration: CAMERA_LOAD_MS / 1000, ease: 'linear' }}
+          animate={{ width: '92%' }}
+          transition={{ duration: CAMERA_LOAD_MS / 1000, ease: [0.1, 0.7, 0.3, 1] }}
         />
       </span>
     </motion.div>
@@ -842,6 +919,7 @@ function RoomStrip({
   onPick: (id: string) => void;
   onBack: () => void;
 }) {
+  const hover = usePrewarmOnHover();
   return (
     <div className="flex shrink-0 flex-col gap-1">
       <div className="flex items-center gap-1.5 px-0.5">
@@ -870,6 +948,10 @@ function RoomStrip({
                 key={camera.id}
                 type="button"
                 onClick={() => onPick(camera.id)}
+                // Ustida turilganda ulanish oldindan boshlanadi (lib/webrtcStream.ts).
+                onPointerEnter={() => streaming && hover.start(camera.id)}
+                onPointerLeave={hover.cancel}
+                onFocus={() => streaming && hover.start(camera.id)}
                 aria-pressed={on}
                 title={streaming ? camera.name : `${camera.name} — hozir tasvir yo‘q`}
                 className={cn(

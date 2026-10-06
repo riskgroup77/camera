@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupStudent } from '../lib/situationApi';
-import { CAMERA_LOAD_MS } from './panels/CamerasPanel';
+import { CAMERA_LOAD_MIN_MS, CAMERA_LOAD_MS, coverDone, resolutionLabel } from './panels/CamerasPanel';
 import { NO_BUILDING, buildingCards, roomCards } from './cameraPick';
 import type { CameraFeed } from '../types';
 import { groupCounters, studentMatches } from './panels/GroupTablePanel';
@@ -35,6 +35,12 @@ describe('kameralar: bino -> xona tanlovi', () => {
 
   it('video ~5 soniya yuklanish pardasi bilan ochiladi', () => {
     expect(CAMERA_LOAD_MS).toBe(5_000);
+    // Parda birinchi kadr bilan ochiladi (kamida MIN), kadr kelmasa — MAX da.
+    expect(coverDone(300, true)).toBe(false);
+    expect(coverDone(CAMERA_LOAD_MIN_MS, true)).toBe(true);
+    expect(coverDone(3_000, false)).toBe(false);
+    expect(coverDone(CAMERA_LOAD_MS, false)).toBe(true);
+    expect([2160, 1440, 1080, 720, 432, 0].map(resolutionLabel)).toEqual(['4K', '2K', 'FHD', '720p', '432p', null]);
   });
 });
 

@@ -12,7 +12,15 @@ import { apiUrl, getAccessToken } from './apiClient';
  */
 
 const CONNECT_TIMEOUT_MS = 6000;
+/** ICE nomzodlarini kutishning yuqori chegarasi. */
 const ICE_GATHER_MS = 1200;
+/** Birinchi nomzoddan keyin shuncha kutib taklif yuboriladi. LAN'da hamma
+ *  "host" nomzodlar bir zumda chiqadi — to'liq yig'ilishni (ba'zan 1.2 s)
+ *  kutish ulanishni behuda kechiktirardi. */
+export const ICE_SETTLE_MS = 150;
+/** Oldindan ochilgan (xona kartasi ustida turilganda) ulanish shuncha vaqt
+ *  ishlatilmasa yopiladi. */
+export const PREWARM_TTL_MS = 8000;
 /** Brauzer jitter buferi (ms). 0 da LAN'dagi har tebranish (Wi-Fi, server
  *  yuklamasi) tasvirni "tutilib-tutilib" ko'rsatardi; operator 2-3 s
  *  kechikishga rozi, silliqlik muhimroq. Yuz ramkalari shu qiymatga
@@ -73,32 +81,37 @@ export interface WebrtcSession {
 function waitForIce(pc: RTCPeerConnection): Promise<void> {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
   return new Promise((resolve) => {
+    let settle: ReturnType<typeof setTimeout> | null = null;
     const done = () => {
       pc.removeEventListener('icegatheringstatechange', check);
+      pc.removeEventListener('icecandidate', onCandidate);
+      if (settle) clearTimeout(settle);
+      clearTimeout(cap);
       resolve();
     };
     const check = () => {
       if (pc.iceGatheringState === 'complete') done();
     };
+    const onCandidate = (event: RTCPeerConnectionIceEvent) => {
+      if (event.candidate && settle === null) settle = setTimeout(done, ICE_SETTLE_MS);
+    };
     pc.addEventListener('icegatheringstatechange', check);
-    setTimeout(done, ICE_GATHER_MS);
+    pc.addEventListener('icecandidate', onCandidate);
+    const cap = setTimeout(done, ICE_GATHER_MS);
   });
 }
 
-/** WebRTC ulanishini ochib, videoni `video` elementiga ulaydi. Tasvir
- *  kelmasa yoki server rad etsa — xato tashlaydi (chaqiruvchi HLS'ga o'tadi). */
-export async function startWebrtc(cameraId: string, video: HTMLVideoElement, signal?: AbortSignal): Promise<WebrtcSession> {
-  const pc = new RTCPeerConnection({ bundlePolicy: 'max-bundle' });
-  const failureCallbacks: Array<() => void> = [];
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    pc.close();
-    if (video.srcObject) video.srcObject = null;
-  };
-  signal?.addEventListener('abort', close);
+interface Negotiated {
+  pc: RTCPeerConnection;
+  stream: MediaStream;
+}
 
+/** Taklif -> WHEP -> javob -> birinchi trek va "connected". Videoga ulamaydi:
+ *  natijani oldindan ochish (prewarmWebrtc) ham, pleyer ham ishlatadi. */
+async function negotiate(cameraId: string, signal?: AbortSignal): Promise<Negotiated> {
+  const pc = new RTCPeerConnection({ bundlePolicy: 'max-bundle' });
+  const abort = () => pc.close();
+  signal?.addEventListener('abort', abort);
   try {
     pc.addTransceiver('video', { direction: 'recvonly' });
     const firstTrack = new Promise<MediaStream>((resolve) => {
@@ -132,6 +145,88 @@ export async function startWebrtc(cameraId: string, video: HTMLVideoElement, sig
       setTimeout(() => reject(new Error('WebRTC: ulanish vaqti tugadi')), CONNECT_TIMEOUT_MS);
     });
     await connected;
+    return { pc, stream };
+  } catch (error) {
+    pc.close();
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
+// ── Oldindan ochish: operator xona kartasi ustida turganda ulanish
+// boshlanadi, bosganda tayyor ulanish darhol videoga beriladi (~0.5-1 s
+// tejaladi). Bir vaqtda bittasi; ishlatilmasa PREWARM_TTL_MS da yopiladi.
+let warm: { cameraId: string; promise: Promise<Negotiated>; controller: AbortController; timer: ReturnType<typeof setTimeout> } | null = null;
+
+function dropWarm(): void {
+  if (!warm) return;
+  const stale = warm;
+  warm = null;
+  clearTimeout(stale.timer);
+  stale.controller.abort();
+  stale.promise.then(({ pc }) => pc.close(), () => undefined);
+}
+
+export function prewarmWebrtc(cameraId: string): void {
+  if (!webrtcAllowed() || warm?.cameraId === cameraId) return;
+  dropWarm();
+  const controller = new AbortController();
+  const promise = negotiate(cameraId, controller.signal);
+  const entry = { cameraId, promise, controller, timer: setTimeout(dropWarm, PREWARM_TTL_MS) };
+  warm = entry;
+  // Muvaffaqiyatsiz oldindan ochish jim o'tadi — pleyer o'zi ulanadi.
+  promise.catch(() => {
+    if (warm === entry) {
+      clearTimeout(entry.timer);
+      warm = null;
+    }
+  });
+}
+
+function takeWarm(cameraId: string): Promise<Negotiated> | null {
+  if (!warm || warm.cameraId !== cameraId) return null;
+  const taken = warm;
+  warm = null;
+  clearTimeout(taken.timer);
+  return taken.promise;
+}
+
+/** Testlar uchun. */
+export function resetPrewarmForTests(): void {
+  dropWarm();
+}
+
+/** WebRTC ulanishini ochib (yoki oldindan ochilganini olib), videoni
+ *  `video` elementiga ulaydi. Tasvir kelmasa yoki server rad etsa — xato
+ *  tashlaydi (chaqiruvchi HLS'ga o'tadi). */
+export async function startWebrtc(cameraId: string, video: HTMLVideoElement, signal?: AbortSignal): Promise<WebrtcSession> {
+  let negotiated: Negotiated | null = null;
+  const prepared = takeWarm(cameraId);
+  if (prepared) {
+    negotiated = await prepared.catch(() => null);
+    if (negotiated && negotiated.pc.connectionState !== 'connected') {
+      negotiated.pc.close();
+      negotiated = null;
+    }
+  }
+  negotiated ??= await negotiate(cameraId, signal);
+  const { pc, stream } = negotiated;
+  const failureCallbacks: Array<() => void> = [];
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    pc.close();
+    if (video.srcObject) video.srcObject = null;
+  };
+  if (signal?.aborted) {
+    close();
+    throw new DOMException('Bekor qilindi', 'AbortError');
+  }
+  signal?.addEventListener('abort', close);
+
+  try {
     for (const receiver of pc.getReceivers()) {
       const tuned = receiver as RTCRtpReceiver & { jitterBufferTarget?: number | null };
       if ('jitterBufferTarget' in tuned) tuned.jitterBufferTarget = WEBRTC_JITTER_BUFFER_MS;
