@@ -867,6 +867,10 @@ class Settings(BaseSettings):
     # 0 — yo'lak o'chiq, jonli ham umumiy navbatda.
     face_live_intra_op_threads: int = 8
     face_live_reserved_slots: int = 2
+    # /royxatdan-otish (pose-check, submit) hovuzidagi oqimlar — har worker'da.
+    # Jonli yo'lakdan alohida: u yerda 2 ta joy, ro'yxatdan o'tishda esa bir
+    # vaqtda o'nlab telefon (2026-10-07: 80+ so'rov/daqiqa).
+    face_enrollment_workers: int = 6
     # CPU'da INT8 modellar (app/services/face_recognition.py _int8_model_file):
     # AVX'siz protsessorda ArcFace 1.75x, detektor 1.3x tez, vektorlar fp32
     # bazasi bilan mos (cos ~0.994). GPU yoqilganda e'tiborga olinmaydi.

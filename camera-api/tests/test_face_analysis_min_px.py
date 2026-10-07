@@ -68,6 +68,13 @@ def test_detection_only_mode_runs_no_model(fake_app):
     assert recognition.batches == [] and landmarks.calls == 0
 
 
+def test_no_embed_skips_arcface_but_keeps_landmarks(fake_app):
+    recognition, landmarks = fake_app
+    faces = face_recognition._detect_faces_sync(b"jpeg", min_face_px=0, embed=False)
+    assert len(faces) == 3 and all(face.embedding is None for face in faces)
+    assert recognition.batches == [] and landmarks.calls == 3
+
+
 def test_zero_threshold_analyses_everything(fake_app):
     recognition, _ = fake_app
     faces = face_recognition._detect_faces_sync(b"jpeg", min_face_px=0)

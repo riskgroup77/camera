@@ -127,6 +127,25 @@ class TestLiveModels:
         assert live_call is True and live_thread.startswith("face-live")
         assert room_call is False and not room_thread.startswith("face-live")
 
+    async def test_enrollment_stays_off_the_live_lane(self, monkeypatch):
+        """/royxatdan-otish pose-check'i kameraning 2 oqimli yo'lagiga
+        tushmaydi (2026-10-07: yuzlab telefon shu 2 oqimga tiqilgan edi)."""
+        from app.config import settings
+        from app.services.inference_cache import inference_cache
+
+        monkeypatch.setattr(settings, "face_live_reserved_slots", 2)
+        calls: list[tuple[bool, bool, str]] = []
+
+        def fake_sync(image, threshold, analyse, roi, skip, landmarks, live=False, embed=True):
+            calls.append((live, embed, threading.current_thread().name))
+            return []
+
+        monkeypatch.setattr(face_recognition, "_detect_faces_sync", fake_sync)
+        inference_cache.clear()
+        await face_recognition.detect_faces(b"pose", priority=PRIORITY_LIVE, enrollment=True, embed=False)
+        [(live, embed, thread)] = calls
+        assert live is False and embed is False and thread.startswith("face-enroll")
+
 
 class TestPersonCardInPayload:
     def test_sticky_track_keeps_the_whole_card(self):

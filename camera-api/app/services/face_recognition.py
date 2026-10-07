@@ -232,6 +232,7 @@ def _get_app() -> FaceAnalysis:
 # kutmaydi (settings.face_live_intra_op_threads izohidagi o'lchov).
 _live_app: tuple[FaceAnalysis, FaceAnalysis] | None = None  # (asl, nusxa)
 _live_executor: ThreadPoolExecutor | None = None
+_enrollment_executor: ThreadPoolExecutor | None = None
 
 
 def _live_lane_enabled() -> bool:
@@ -291,6 +292,23 @@ def _get_live_executor() -> ThreadPoolExecutor:
             max_workers=max(1, settings.face_live_reserved_slots), thread_name_prefix="face-live"
         )
     return _live_executor
+
+
+def _get_enrollment_executor() -> ThreadPoolExecutor:
+    """/royxatdan-otish so'rovlari (pose-check, submit) uchun o'z hovuzi.
+
+    Ular jonli yo'lakka TUSHMASLIGI kerak: u bitta operator kamerasi uchun
+    2 oqimli (face_live_reserved_slots). 2026-10-07 da ro'yxatdan o'tayotgan
+    yuzlab talabaning har soniyadagi pose-check'i shu 2 oqimga tiqilib, bitta
+    javob 7-17 s kechikdi — «to'g'riga qarab tursa ham keyingi bosqichga
+    o'tmayapti». Standart executor'ni esa kuzatuvchilarning JPEG ishlari
+    band qiladi."""
+    global _enrollment_executor
+    if _enrollment_executor is None:
+        _enrollment_executor = ThreadPoolExecutor(
+            max_workers=max(1, settings.face_enrollment_workers), thread_name_prefix="face-enroll"
+        )
+    return _enrollment_executor
 
 
 def _load_app() -> None:
@@ -614,6 +632,7 @@ def _detect_faces_sync(
     skip_boxes: tuple[Box, ...] = (),
     landmarks: bool = True,
     live: bool = False,
+    embed: bool = True,
 ) -> list[DetectedFace]:
     """Every face in the frame (not just the largest) with its bounding box,
     and — for faces worth it — its embedding and 68-point landmarks.
@@ -650,7 +669,10 @@ def _detect_faces_sync(
     (1k3d68, 143 MB) har yuzga ~0.16 s oladi — ArcFace'ning deyarli
     yarmi (productionda o'lchandi, 2026-09-24).
 
-    `live=True` — jonli yo'lak modellari (_get_live_app)."""
+    `live=True` — jonli yo'lak modellari (_get_live_app).
+
+    `embed=False` — ArcFace vektori hisoblanmaydi (faqat ramka va
+    landmarklar): ro'yxatdan o'tishdagi burchak tekshiruviga vektor kerak emas."""
     img = _decode_image(image_bytes)
     offset_x = offset_y = 0
     if roi is not None:
@@ -685,7 +707,7 @@ def _detect_faces_sync(
     if not to_analyse:
         return faces
 
-    recognition = app.models.get("recognition")
+    recognition = app.models.get("recognition") if embed else None
     if recognition is not None:
         size = recognition.input_size[0]
         crops = [face_align.norm_crop(img, landmark=raw.kps, image_size=size) for _, raw in to_analyse]
@@ -720,8 +742,14 @@ async def detect_faces(
     roi: Box | None = None,
     skip_boxes: tuple[Box, ...] = (),
     landmarks: bool = True,
+    enrollment: bool = False,
+    embed: bool = True,
 ) -> list[DetectedFace]:
     """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection.
+
+    `enrollment=True` — /royxatdan-otish so'rovi: navbatda birinchi, lekin
+    kameraning jonli yo'lagida emas, o'z hovuzida (_get_enrollment_executor).
+    `embed=False` — vektorsiz (_detect_faces_sync izohi).
 
     `min_face_px` — shundan kichik yuz tahlil qilinmaydi (None:
     settings.face_analysis_min_px). Ro'yxatga olish kabi yuzning har
@@ -739,9 +767,10 @@ async def detect_faces(
         roi,
         tuple(tuple(round(float(v), 1) for v in box[:4]) for box in skip_boxes),
         landmarks,
+        embed,
     )
 
-    live = priority <= PRIORITY_LIVE and _live_lane_enabled()
+    live = priority <= PRIORITY_LIVE and not enrollment and _live_lane_enabled()
 
     async def run() -> list[DetectedFace]:
         async with face_inference_gate.slot(priority=priority):
@@ -752,6 +781,11 @@ async def detect_faces(
                     _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, True
                 )
                 return await asyncio.get_running_loop().run_in_executor(_get_live_executor(), call)
+            if enrollment:
+                call = functools.partial(
+                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, False, embed
+                )
+                return await asyncio.get_running_loop().run_in_executor(_get_enrollment_executor(), call)
             return await asyncio.to_thread(
                 _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks
             )

@@ -431,7 +431,7 @@ async def _verify_liveness(frames: list[bytes]) -> None:
     for index, (frame, expected) in enumerate(zip(frames, LIVENESS_STEPS, strict=True), 1):
         try:
             # Ro'yxatga olishda har yuz tahlil qilinadi — burchak landmarklardan o'lchanadi.
-            faces = await detect_faces(frame, priority=PRIORITY_LIVE, min_face_px=0)
+            faces = await detect_faces(frame, priority=PRIORITY_LIVE, min_face_px=0, enrollment=True)
         except NoFaceDetectedError as exc:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -499,7 +499,8 @@ async def pose_check(
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Kadr juda katta")
 
     try:
-        faces = await detect_faces(data, priority=PRIORITY_LIVE, min_face_px=0)
+        # Faqat burchak kerak — vektor (ArcFace) hisoblanmaydi.
+        faces = await detect_faces(data, priority=PRIORITY_LIVE, min_face_px=0, enrollment=True, embed=False)
     except NoFaceDetectedError:
         return PoseCheckOut(face_found=False, faces=0, hint="Kadrni o'qib bo'lmadi")
 
