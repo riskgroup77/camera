@@ -71,7 +71,10 @@ def test_map_student_requires_identifier():
         ({"code": "13", "name": "Chetlashtirilgan"}, None, False),
         ({"code": "14", "name": "Bitirgan"}, None, False),
         ({"code": "14"}, None, False),
-        ({"code": "11", "name": "O'qimoqda"}, True, False),
+        # is_graduate — bitiruvchi KURS (hali o'qiyapti), bitirgan emas.
+        ({"code": "11", "name": "O'qimoqda"}, True, True),
+        ({"code": "14", "name": "Bitirgan"}, True, False),
+        (None, True, False),
         ({"name": "Отчислен"}, None, False),
     ],
 )

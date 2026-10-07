@@ -249,11 +249,16 @@ def _status_inactive(status: Any, words: tuple[str, ...], codes: set[str]) -> bo
 
 
 def is_student_active(item: dict) -> bool:
-    if item.get("is_graduate") is True:
-        return False
+    """Holat (studentStatus) hal qiladi; `is_graduate` — faqat holat yo'q bo'lsa.
+
+    `is_graduate` HEMIS'da "BITIRUVCHI kurs" belgisi, "bitirgan" emas:
+    2026-10-07 da 843 talaba "O'qimoqda" va is_graduate=true edi (6-kurs 284,
+    magistratura/ordinatura 2-kurs 285, 5-kurs 173, ...). Ular darsda, lekin
+    ilgari faolsizlantirilib, havola ularni o'tkazmasdi. Bitirib ketganning
+    holati "Bitirgan" bo'ladi."""
     status = pick(item, "studentStatus", "student_status", "status")
     if status is None:
-        return True
+        return item.get("is_graduate") is not True
     return not _status_inactive(status, _STUDENT_INACTIVE_WORDS, _STUDENT_INACTIVE_CODES)
 
 
