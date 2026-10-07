@@ -871,6 +871,11 @@ class Settings(BaseSettings):
     # Jonli yo'lakdan alohida: u yerda 2 ta joy, ro'yxatdan o'tishda esa bir
     # vaqtda o'nlab telefon (2026-10-07: 80+ so'rov/daqiqa).
     face_enrollment_workers: int = 6
+    # Pose-check detektor kirishining uzun tomoni. Telefon 270x480 kadr
+    # yuboradi va yuz kameraga yaqin (>=110 px) — 640 gacha kattalashtirish
+    # behuda. O'lchov (2026-10-07, production, 30 rasm): 640 — 0.57 s,
+    # 320 — 0.15 s, yo'nalish va "yaqinlik" natijasi 30/30 bir xil.
+    enrollment_pose_det_max_side: int = 320
     # CPU'da INT8 modellar (app/services/face_recognition.py _int8_model_file):
     # AVX'siz protsessorda ArcFace 1.75x, detektor 1.3x tez, vektorlar fp32
     # bazasi bilan mos (cos ~0.994). GPU yoqilganda e'tiborga olinmaydi.

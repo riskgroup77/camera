@@ -136,7 +136,7 @@ class TestLiveModels:
         monkeypatch.setattr(settings, "face_live_reserved_slots", 2)
         calls: list[tuple[bool, bool, str]] = []
 
-        def fake_sync(image, threshold, analyse, roi, skip, landmarks, live=False, embed=True):
+        def fake_sync(image, threshold, analyse, roi, skip, landmarks, live=False, embed=True, det_max_side=None):
             calls.append((live, embed, threading.current_thread().name))
             return []
 

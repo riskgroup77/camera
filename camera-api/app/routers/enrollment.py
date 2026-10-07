@@ -500,7 +500,10 @@ async def pose_check(
 
     try:
         # Faqat burchak kerak — vektor (ArcFace) hisoblanmaydi.
-        faces = await detect_faces(data, priority=PRIORITY_LIVE, min_face_px=0, enrollment=True, embed=False)
+        faces = await detect_faces(
+            data, priority=PRIORITY_LIVE, min_face_px=0, enrollment=True, embed=False,
+            det_max_side=settings.enrollment_pose_det_max_side,
+        )
     except NoFaceDetectedError:
         return PoseCheckOut(face_found=False, faces=0, hint="Kadrni o'qib bo'lmadi")
 

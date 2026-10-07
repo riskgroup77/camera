@@ -572,7 +572,7 @@ def _sharpness(crop: np.ndarray) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
-def detection_input_size(width: int, height: int) -> tuple[int, int] | None:
+def detection_input_size(width: int, height: int, max_side: int | None = None) -> tuple[int, int] | None:
     """Detektor kirish o'lchami (w, h) — kadrning o'z nisbatida.
 
     Ilgari har kadr 640x640 ga siqilardi. Bu ikki tomonga ham yomon edi:
@@ -583,10 +583,18 @@ def detection_input_size(width: int, height: int) -> tuple[int, int] | None:
     Endi kadr uzun tomoni face_det_max_side dan oshmaydigan qilib (kichik
     kadr — face_det_min_side gacha kattalashtiriladi, eski xatti-harakat
     kabi) o'z nisbatida, 32 ga karrali o'lchamda tahlil qilinadi.
-    None — eski usul (prepare() dagi 640x640)."""
-    if not settings.face_det_native_resolution or width <= 0 or height <= 0:
+    None — eski usul (prepare() dagi 640x640).
+
+    `max_side` berilsa — kadr shundan kattalashtirilmaydi ham (yuz katta
+    bo'lishi ma'lum joylar: ro'yxatdan o'tishdagi burchak tekshiruvi)."""
+    if width <= 0 or height <= 0:
         return None
     long_side = max(width, height)
+    if max_side is not None:
+        scale = min(1.0, max(32, max_side) / long_side)
+        return max(32, int(np.ceil(width * scale / 32.0)) * 32), max(32, int(np.ceil(height * scale / 32.0)) * 32)
+    if not settings.face_det_native_resolution:
+        return None
     max_side = max(32, settings.face_det_max_side)
     min_side = min(max(32, settings.face_det_min_side), max_side)
     scale = min(1.0, max_side / long_side)
@@ -633,6 +641,7 @@ def _detect_faces_sync(
     landmarks: bool = True,
     live: bool = False,
     embed: bool = True,
+    det_max_side: int | None = None,
 ) -> list[DetectedFace]:
     """Every face in the frame (not just the largest) with its bounding box,
     and — for faces worth it — its embedding and 68-point landmarks.
@@ -672,7 +681,9 @@ def _detect_faces_sync(
     `live=True` — jonli yo'lak modellari (_get_live_app).
 
     `embed=False` — ArcFace vektori hisoblanmaydi (faqat ramka va
-    landmarklar): ro'yxatdan o'tishdagi burchak tekshiruviga vektor kerak emas."""
+    landmarklar): ro'yxatdan o'tishdagi burchak tekshiruviga vektor kerak emas.
+
+    `det_max_side` — detektor kirishining uzun tomoni (detection_input_size)."""
     img = _decode_image(image_bytes)
     offset_x = offset_y = 0
     if roi is not None:
@@ -683,7 +694,7 @@ def _detect_faces_sync(
         offset_x, offset_y = x1, y1
     offset = np.array([offset_x, offset_y, offset_x, offset_y], dtype=np.float32)
     app = _get_live_app() if live else _get_app()
-    input_size = detection_input_size(img.shape[1], img.shape[0])
+    input_size = detection_input_size(img.shape[1], img.shape[0], det_max_side)
     if input_size is None:
         bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
     else:
@@ -744,12 +755,13 @@ async def detect_faces(
     landmarks: bool = True,
     enrollment: bool = False,
     embed: bool = True,
+    det_max_side: int | None = None,
 ) -> list[DetectedFace]:
     """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection.
 
     `enrollment=True` — /royxatdan-otish so'rovi: navbatda birinchi, lekin
     kameraning jonli yo'lagida emas, o'z hovuzida (_get_enrollment_executor).
-    `embed=False` — vektorsiz (_detect_faces_sync izohi).
+    `embed=False` — vektorsiz, `det_max_side` — detektor o'lchami (_detect_faces_sync izohi).
 
     `min_face_px` — shundan kichik yuz tahlil qilinmaydi (None:
     settings.face_analysis_min_px). Ro'yxatga olish kabi yuzning har
@@ -768,6 +780,7 @@ async def detect_faces(
         tuple(tuple(round(float(v), 1) for v in box[:4]) for box in skip_boxes),
         landmarks,
         embed,
+        det_max_side,
     )
 
     live = priority <= PRIORITY_LIVE and not enrollment and _live_lane_enabled()
@@ -783,7 +796,7 @@ async def detect_faces(
                 return await asyncio.get_running_loop().run_in_executor(_get_live_executor(), call)
             if enrollment:
                 call = functools.partial(
-                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, False, embed
+                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, False, embed, det_max_side
                 )
                 return await asyncio.get_running_loop().run_in_executor(_get_enrollment_executor(), call)
             return await asyncio.to_thread(

@@ -47,6 +47,12 @@ class TestDetectionInputSize:
         monkeypatch.setattr(settings, "face_det_min_side", 640)
         assert detection_input_size(200, 100) == (640, 320)
 
+    def test_explicit_max_side_never_upscales(self, monkeypatch):
+        """Pose-check: telefonning 270x480 kadri 640 ga kattalashtirilmaydi."""
+        monkeypatch.setattr(settings, "face_det_min_side", 640)
+        assert detection_input_size(270, 480, 320) == (192, 320)
+        assert detection_input_size(150, 200, 320) == (160, 224)
+
     def test_disabled_falls_back_to_the_prepared_square(self, monkeypatch):
         monkeypatch.setattr(settings, "face_det_native_resolution", False)
         assert detection_input_size(640, 360) is None
