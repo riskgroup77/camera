@@ -694,6 +694,182 @@ async def merge_duplicate_people(
     return _MergeOut(merged_groups=merged, removed=removed, errors=errors)
 
 
+# ── Qo'lda birlashtirish: administrator ikki yozuvni o'zi tanlaydi ─────────
+# (person_dedupe.merge_manual). Avtomatik "Dublikatlar" topa olmaydigan
+# juftlar: familiya o'zgargan, harf xatosi, kirill/lotin; ikkinchi yozuv
+# faol bo'lmasligi ham mumkin (09.10 da yuzli klonlar faolsizlantirilgan).
+
+
+class _MergeCardOut(CamelModel):
+    id: str
+    full_name: str
+    group_or_position: str
+    faculty: str
+    active: bool
+    biometrics_status: str
+    all_angles: bool
+    has_pinfl: bool
+    hemis_linked: bool
+    self_registered: bool
+    attendance: int
+    lessons: int
+    created_at: str | None
+    photo_url: str | None = None
+
+
+class _MergeResultOut(CamelModel):
+    full_name: str
+    group_or_position: str
+    faculty: str
+    active: bool
+    biometrics_status: str
+    all_angles: bool
+    has_pinfl: bool
+    hemis_linked: bool
+    attendance: int
+
+
+class _MergePlanOut(CamelModel):
+    keep: _MergeCardOut
+    remove: _MergeCardOut
+    result: _MergeResultOut
+    applied: bool
+    moved: dict[str, int] = {}
+
+
+class _MergePairIn(CamelModel):
+    first_id: uuid.UUID
+    second_id: uuid.UUID
+    apply: bool = False
+
+
+class _MergeSearchIn(CamelModel):
+    search: str | None = None
+
+
+_CARD_SQL = """
+    select s.*, coalesce(f.name, '') as faculty_name,
+           (select count(*) from attendance_records a where a.student_staff_id = s.id) as att,
+           (select count(*) from lesson_sessions l where l.teacher_id = s.id) as lessons
+    from students_staff s left join faculties f on f.id = s.faculty_id
+    where s.id = any(:ids)
+"""
+
+
+async def _merge_cards(db: AsyncSession, ids: list) -> dict:
+    from sqlalchemy import text as sql_text
+
+    if not ids:
+        return {}
+    rows = (await db.execute(sql_text(_CARD_SQL), {"ids": list(ids)})).all()
+    return {r.id: dict(r._mapping) for r in rows}
+
+
+def _merge_card(row: dict) -> _MergeCardOut:
+    created = row.get("created_at")
+    return _MergeCardOut(
+        id=str(row["id"]),
+        full_name=row["full_name"],
+        group_or_position=row.get("group_or_position") or "",
+        faculty=row.get("faculty_name") or "",
+        active=bool(row.get("active")),
+        biometrics_status=row.get("biometrics_status") or "yoq",
+        all_angles=bool(row.get("biometric_photo_key") and row.get("biometric_photo_left_key") and row.get("biometric_photo_right_key")),
+        has_pinfl=bool(row.get("pinfl")),
+        hemis_linked=bool(row.get("hemis_id")),
+        self_registered=bool(row.get("self_registered")),
+        attendance=int(row.get("att") or 0),
+        lessons=int(row.get("lessons") or 0),
+        created_at=to_local(created).strftime("%d.%m.%Y") if created else None,
+        photo_url=presigned_url(row["biometric_photo_key"]) if row.get("biometric_photo_key") else None,
+    )
+
+
+@router.post("/{record_id}/birlashtirish-nomzodlari", response_model=list[_MergeCardOut])
+async def merge_candidates(
+    record_id: str,
+    body: _MergeSearchIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> list[_MergeCardOut]:
+    """Shu odam bilan birlashtirish mumkin bo'lgan yozuvlar (faol EMASlar ham).
+    Qidiruv matni bo'lmasa — ism-sharifi o'xshashlar (familiya o'zgargan
+    bo'lsa ham: ism + otasining ismi); bo'lsa — F.I.Sh. yoki JSHSHIR bo'yicha.
+    Qidiruv tanada — JSHSHIR URL/access logga tushmaydi."""
+    record = await _load_record(db, record_id)
+    stmt = select(StudentStaff.id, StudentStaff.full_name).where(
+        StudentStaff.type == record.type, StudentStaff.id != record.id
+    )
+    words = _search_words(body.search)
+    for word in words:
+        term = f"%{word}%"
+        stmt = stmt.where(or_(StudentStaff.full_name.ilike(term), StudentStaff.pinfl.ilike(term)))
+    rows = (await db.execute(stmt.limit(200 if words else None))).all()
+    me = {"full_name": record.full_name}
+    scored = [(person_dedupe.merge_candidate_score(me, {"full_name": r.full_name}), r.full_name, r.id) for r in rows]
+    if not words:
+        scored = [item for item in scored if item[0] >= 2]
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    ids = [item[2] for item in scored[:15]]
+    cards = await _merge_cards(db, ids)
+    return [_merge_card(cards[i]) for i in ids if i in cards]
+
+
+@router.post("/qolda-birlashtirish", response_model=_MergePlanOut)
+async def merge_two_people(
+    body: _MergePairIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> _MergePlanOut:
+    """apply=false — natijani oldindan ko'rsatadi (bazaga yozmaydi);
+    apply=true — birlashtiradi. Yuzi tasdiqlangan yozuv qoladi, profil
+    (ism, guruh, fakultet, HEMIS) rasmiy/faol yozuvdan olinadi, davomat,
+    darslar va tarix ko'chadi, ikkinchi yozuv o'chiriladi."""
+    cards = await _merge_cards(db, [body.first_id, body.second_id])
+    try:
+        plan = await person_dedupe.merge_manual(db, body.first_id, body.second_id, apply=body.apply)
+    except person_dedupe.MergeError as exc:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    keep, remove = cards[plan["keeper"]["id"]], cards[plan["other"]["id"]]
+    result = plan["result"]
+    faculty_name = ""
+    if result["faculty_id"]:
+        faculty = await db.get(Faculty, result["faculty_id"])
+        faculty_name = faculty.name if faculty else ""
+    out = _MergePlanOut(
+        keep=_merge_card(keep),
+        remove=_merge_card(remove),
+        result=_MergeResultOut(
+            full_name=result["full_name"],
+            group_or_position=result["group_or_position"],
+            faculty=faculty_name,
+            active=result["active"],
+            biometrics_status=result["biometrics_status"],
+            all_angles=result["all_angles"],
+            has_pinfl=result["has_pinfl"],
+            hemis_linked=result["hemis_linked"],
+            attendance=result["attendance"],
+        ),
+        applied=body.apply,
+        moved=plan.get("moved") or {},
+    )
+    if not body.apply:
+        await db.rollback()
+        return out
+    await log_action(
+        db, request, current_user.id,
+        f"Qo'lda birlashtirildi: {keep['full_name']} ← {remove['full_name']} "
+        f"(natija: {result['full_name']}, {result['group_or_position']}; "
+        f"{', '.join(f'{k}: {v}' for k, v in out.moved.items()) or 'ko‘chirilgan yozuv yo‘q'})",
+        "Shaxslar reestri",
+    )
+    await db.commit()
+    await announce_roster_change()
+    return out
+
+
 @router.get("/similar", response_model=list[StudentStaffOut])
 async def similar_people(
     db: Annotated[AsyncSession, Depends(get_db)],

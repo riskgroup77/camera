@@ -280,9 +280,15 @@ def _all_angles(row: dict) -> bool:
     return bool(row.get("biometric_photo_key") and row.get("biometric_photo_left_key") and row.get("biometric_photo_right_key"))
 
 
-async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uuid.UUID) -> dict:
+async def merge_people(
+    db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uuid.UUID, *, manual: bool = False
+) -> dict:
     """Bitta dublikatni saqlanadigan yozuvga qo'shib o'chiradi. Commit
-    chaqiruvchida (bir guruh — bir tranzaksiya). Nima ko'chirilganini qaytaradi."""
+    chaqiruvchida (bir guruh — bir tranzaksiya). Nima ko'chirilganini qaytaradi.
+
+    `manual=True` — administrator ikki yozuvni O'ZI tanlagan (merge_manual):
+    ism qoidasi tekshirilmaydi (familiya o'zgargan, harf xatosi), lekin
+    JSHSHIR va yuz himoyasi qoladi."""
     if keeper_id == duplicate_id:
         raise MergeError("Bir xil yozuv")
     keeper = await _person(db, keeper_id)
@@ -299,7 +305,9 @@ async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uui
         and not _pinfl_conflict([keeper, dup])
         and not faces_differ(keeper, dup)
     )
-    if not same_name and not any(group.mergeable for group in group_duplicates([keeper, dup])):
+    if manual:
+        _check_manual_pair(keeper, dup)
+    elif not same_name and not any(group.mergeable for group in group_duplicates([keeper, dup])):
         raise MergeError(f"{keeper['full_name']} va {dup['full_name']} — boshqa-boshqa odamlar")
 
     moved: dict[str, int] = {}
@@ -380,3 +388,123 @@ async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uui
 
     await db.execute(text("delete from students_staff where id = :d"), {"d": duplicate_id})
     return {key: value for key, value in moved.items() if value}
+
+
+# ── Qo'lda birlashtirish (administrator ikki yozuvni o'zi tanlaydi) ─────────
+# Avtomatik qidiruv topa olmaydigan juftlar uchun (2026-10-09): familiya
+# o'zgargan (Mamajonova -> Kenjayeva), harf xatosi (Dodobayev/Dododbayev),
+# kirill/lotin (Мухсинова/Muxsinova). Bir yozuvda yuz va JSHSHIR, ikkinchisida
+# dars jadvali va davomat — natija bitta to'liq yozuv, odam yuzini qayta
+# topshirmaydi.
+
+# Rasmiy profil (ism, guruh, fakultet, bo'linma) — shu maydonlar profil
+# manbasidan olinadi; HEMIS ID va boshqalar COPY_FIELDS orqali ko'chadi.
+PROFILE_FIELDS = (
+    "full_name", "group_or_position", "faculty_id", "reported_group", "org_unit_id", "position", "hemis_photo_url",
+)
+
+
+def _check_manual_pair(a: dict, b: dict) -> None:
+    if a["id"] == b["id"]:
+        raise MergeError("Bir xil yozuv")
+    if a["type"] != b["type"]:
+        raise MergeError("Talaba va xodimni birlashtirib bo'lmaydi")
+    if a.get("pinfl") and b.get("pinfl") and not pinfl_close(a["pinfl"], b["pinfl"]):
+        raise MergeError("Ikki yozuvda ikki xil JSHSHIR — bular boshqa-boshqa odamlar")
+    if faces_differ(a, b):
+        raise MergeError("Ikki yozuvdagi yuzlar boshqa-boshqa odamniki — birlashtirilmaydi")
+
+
+def _face_rank(row: dict) -> tuple:
+    """Qaysi yozuv qoladi: tasdiqlangan yuz > kutilmoqda > yuz bor; keyin
+    uch tomonlama; keyin rasmiylik (keeper_score)."""
+    status = row.get("biometrics_status")
+    return (
+        2 if status == "tasdiqlangan" else (1 if status == "kutilmoqda" and row.get("biometric_embedding") else 0),
+        1 if row.get("biometric_embedding") else 0,
+        1 if _all_angles(row) else 0,
+        keeper_score(row),
+    )
+
+
+def plan_manual_merge(a: dict, b: dict) -> dict:
+    """Sof funksiya — nima qoladi va natija qanday bo'ladi (bazaga yozmaydi)."""
+    _check_manual_pair(a, b)
+    keeper, other = (a, b) if _face_rank(a) >= _face_rank(b) else (b, a)
+    # Profil: HEMIS'dan kelgan (rasmiy) yozuvniki; bo'lmasa — faolniki.
+    if other.get("hemis_id") and not keeper.get("hemis_id"):
+        profile = other
+    elif other.get("active") and not keeper.get("active"):
+        profile = other
+    else:
+        profile = keeper
+    face = keeper if keeper.get("biometric_embedding") or not other.get("biometric_embedding") else other
+    status = face.get("biometrics_status") or "yoq"
+    if status == "kutilmoqda" and face.get("biometric_embedding") and _all_angles(face):
+        status = "tasdiqlangan"  # administrator qarori — uch tomonlama yuz tasdiqlanadi
+    return {
+        "keeper": keeper,
+        "other": other,
+        "profile": profile,
+        "result": {
+            "full_name": profile["full_name"],
+            "group_or_position": profile.get("group_or_position") or "",
+            "faculty_id": profile.get("faculty_id"),
+            "active": bool(keeper.get("active") or other.get("active")),
+            "biometrics_status": status,
+            "all_angles": _all_angles(face),
+            "has_pinfl": bool(keeper.get("pinfl") or other.get("pinfl")),
+            "hemis_linked": bool(keeper.get("hemis_id") or other.get("hemis_id")),
+            "attendance": int(keeper.get("att") or 0) + int(other.get("att") or 0),
+        },
+    }
+
+
+async def merge_manual(db: AsyncSession, first_id: uuid.UUID, second_id: uuid.UUID, *, apply: bool) -> dict:
+    """Ikki yozuvni bittaga. apply=False — faqat reja (oldindan ko'rish).
+    Commit chaqiruvchida."""
+    a, b = await _person(db, first_id), await _person(db, second_id)
+    if a is None or b is None:
+        raise MergeError("Yozuv topilmadi")
+    plan = plan_manual_merge(a, b)
+    if not apply:
+        return plan
+    keeper, other, profile = plan["keeper"], plan["other"], plan["profile"]
+    moved = await merge_people(db, keeper["id"], other["id"], manual=True)
+    updates: dict = {}
+    if profile is other:
+        updates.update({f: other.get(f) for f in PROFILE_FIELDS})
+        updates["self_registered"] = bool(other.get("self_registered"))
+    if plan["result"]["active"] and not keeper.get("active"):
+        updates.update(active=True, deactivated_at=None, manually_deactivated=False)
+    if plan["result"]["biometrics_status"] == "tasdiqlangan" and (
+        await db.execute(text("select biometrics_status from students_staff where id = :k"), {"k": keeper["id"]})
+    ).scalar() == "kutilmoqda":
+        updates.update(biometrics_status="tasdiqlangan", biometrics_review_reason=None)
+        await db.execute(
+            text("update students_staff set biometrics_confirmed_at = now() where id = :k"), {"k": keeper["id"]}
+        )
+    if updates:
+        await db.execute(
+            text("update students_staff set " + ", ".join(f"{f} = :{f}" for f in updates) + " where id = :k"),
+            {**updates, "k": keeper["id"]},
+        )
+    return {**plan, "moved": moved}
+
+
+def merge_candidate_score(person: dict, other: dict) -> int:
+    """Taklif tartibi uchun: ism-sharifning qancha qismi mos (0-3).
+    Familiya o'zgargan bo'lsa ham ism + otasining ismi mos keladi."""
+    from app.services import name_matching  # kirill/lotin bir xil tokenlarga
+
+    ta, tb = name_matching.name_tokens(person.get("full_name")), name_matching.name_tokens(other.get("full_name"))
+    if len(ta) < 2 or len(tb) < 2:
+        return 0
+    score = 0
+    if ta[0][:5] == tb[0][:5]:
+        score += 1
+    if ta[1][:5] == tb[1][:5]:
+        score += 1
+    if len(ta) > 2 and len(tb) > 2 and ta[2][:4] == tb[2][:4]:
+        score += 1
+    return score

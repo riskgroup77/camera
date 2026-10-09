@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Combine,
   Copy,
   Download,
   GraduationCap,
@@ -48,6 +49,7 @@ import EditStudentStaffModal from '../../components/admin/EditStudentStaffModal'
 import BiometricsTimeLookupModal from '../../components/admin/BiometricsTimeLookupModal';
 import ExportPeopleModal from '../../components/admin/ExportPeopleModal';
 import DuplicatePeopleModal from '../../components/admin/DuplicatePeopleModal';
+import MergePeopleModal from '../../components/admin/MergePeopleModal';
 import SelfEnrollmentReviewModal from '../../components/admin/SelfEnrollmentReviewModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -193,6 +195,8 @@ export default function StudentsStaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StudentStaffRecord | null>(null);
   const [deleting, setDeleting] = useState<StudentStaffRecord | null>(null);
+  // Qo'lda birlashtirish: kim bilan va (tahrirlashdan kelsa) qaysi JSHSHIR bo'yicha qidiriladi.
+  const [mergeTarget, setMergeTarget] = useState<{ person: StudentStaffRecord; search: string } | null>(null);
   const [reviewing, setReviewing] = useState<StudentStaffRecord | null>(null);
   const [awaitingOnly, setAwaitingOnly] = useState(false);
   const [lookup, setLookup] = useState<{ open: boolean; person: StudentStaffRecord | null }>({ open: false, person: null });
@@ -436,6 +440,12 @@ export default function StudentsStaffPage() {
             Davomat
           </ButtonLink>
           <IconButton icon={Pencil} label={`${person.fullName} — tahrirlash`} size="sm" onClick={() => setEditing(person)} />
+          <IconButton
+            icon={Combine}
+            label={`${person.fullName} — ikkinchi yozuvi bilan birlashtirish`}
+            size="sm"
+            onClick={() => setMergeTarget({ person, search: '' })}
+          />
           <IconButton icon={Trash2} label={`${person.fullName} — ro'yxatdan o'chirish`} size="sm" variant="danger" onClick={() => setDeleting(person)} />
         </RowActions>
       ),
@@ -730,6 +740,16 @@ export default function StudentsStaffPage() {
           refresh();
           toast.success('Saqlandi');
         }}
+        onMergeRequest={(pinfl) => {
+          if (editing) setMergeTarget({ person: editing, search: pinfl });
+          setEditing(null);
+        }}
+      />
+      <MergePeopleModal
+        person={mergeTarget?.person ?? null}
+        initialSearch={mergeTarget?.search ?? ''}
+        onClose={() => setMergeTarget(null)}
+        onMerged={refresh}
       />
     </Page>
   );

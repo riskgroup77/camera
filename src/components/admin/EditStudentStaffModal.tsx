@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
-import { Camera, Loader2 } from 'lucide-react';
+import { Camera, Combine, Loader2 } from 'lucide-react';
 import { Avatar, Button, ConfirmDialog, ErrorState, Field, Input, Modal, Select } from '../../ui';
 import FaceCapture from './FaceCapture';
 import { required } from '../../lib/validation';
@@ -53,10 +53,13 @@ export default function EditStudentStaffModal({
   record,
   onClose,
   onSave,
+  onMergeRequest,
 }: {
   record: StudentStaffRecord | null;
   onClose: () => void;
   onSave: (record: StudentStaffRecord) => void;
+  /** "JSHSHIR boshqa yozuvga biriktirilgan" — o'sha yozuv bilan birlashtirish (MergePeopleModal). */
+  onMergeRequest?: (pinfl: string) => void;
 }) {
   const { token } = useAuth();
   const { faculties } = useFaculties();
@@ -238,6 +241,18 @@ export default function EditStudentStaffModal({
               qoladi — shu yerdan qayta urinib ko'rish mumkin. */}
           {errors.form && (
             <ErrorState title="Xatolik" message={errors.form} onRetry={identityLocked ? () => setDetailNonce((n) => n + 1) : undefined} />
+          )}
+          {/* Bir odamning ikkinchi yozuvi JSHSHIR'ni band qilgan (klon, familiya
+              o'zgargan) — tahrirlash o'rniga ikkalasini birlashtirish kerak. */}
+          {errors.form?.includes('boshqa yozuvga biriktirilgan') && onMergeRequest && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-primary/40 bg-primary-soft px-3 py-2">
+              <span className="text-[12px] text-fg">
+                Bu o‘sha odamning ikkinchi yozuvi bo‘lsa — ikkalasini birlashtiring: yuz, JSHSHIR, guruh va davomat bitta yozuvda bo‘ladi.
+              </span>
+              <Button size="sm" variant="primary" icon={Combine} onClick={() => onMergeRequest(form.pinfl.replace(/\D/g, ''))}>
+                Shu yozuv bilan birlashtirish
+              </Button>
+            </div>
           )}
           <Field label="F.I.Sh." required error={errors.fullName}>
             <Input value={form.fullName} onChange={(e) => set('fullName', e.target.value)} />
