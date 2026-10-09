@@ -1311,6 +1311,20 @@ class Settings(BaseSettings):
 
     # HEMIS (hemis.uz universitet API). base_url masalan
     # https://student.fjsti.uz/rest — token HEMIS admin panelidan olinadi.
+    # iMentor integratsiyasi (app/routers/integration_v1.py): server-server
+    # "bu kim?" API — talabani HEMIS ID, JSHSHIR yoki yuz orqali aniqlash.
+    # Kalit bo'sh — API o'chiq (har so'rov 401). IP ro'yxati bo'sh — har
+    # qanday manzil (kalit baribir shart); "1.2.3.4, 10.0.0.0/8" ko'rinishida.
+    camfermi_integration_key: str = ""
+    integration_allowed_ips: str = ""
+    integration_rate_limit_per_minute: int = 60
+    # Yuz bo'yicha aniqlash chegarasi. Kamera davomatidan (0.50) qat'iyroq:
+    # iMentor odatda telefon selfisini yuboradi (ro'yxatdan o'tish rasmiga
+    # yaqin sharoit), noto'g'ri odamni aytish esa qimmat. margin — eng yaqin
+    # nomzod ikkinchisidan shuncha uzoq bo'lishi kerak.
+    integration_face_threshold: float = 0.55
+    integration_face_margin: float = 0.05
+    integration_max_image_bytes: int = 5 * 1024 * 1024
     hemis_base_url: str = ""
     hemis_api_token: str = ""
     # HEMIS'ni BUTUNLAY uzish (2026-10-09, buyurtmachi qarori): ro'yxat

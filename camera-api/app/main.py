@@ -43,6 +43,7 @@ from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
 from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
+from app.routers import integration_v1
 from app.routers import (
     unknown_sightings,
     face_review,
@@ -330,6 +331,8 @@ app.state.limiter = limiter
 # Starlette'ning o'zi siqmaydi.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# iMentor integratsiyasi — xatolar {"code", "message"} ko'rinishida.
+app.add_exception_handler(integration_v1.IntegrationError, integration_v1.integration_error_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -387,6 +390,7 @@ app.include_router(kpi.router, dependencies=[*_report_gate, *_fresh_policy])
 app.include_router(attendance_policy.router)
 app.include_router(wall_views.router)
 app.include_router(video_analysis.router)
+app.include_router(integration_v1.router)
 
 
 @app.get("/health")
