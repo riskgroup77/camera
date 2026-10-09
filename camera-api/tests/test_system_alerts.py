@@ -40,7 +40,7 @@ def test_disk_threshold(monkeypatch):
 
 
 async def test_hemis_failure_and_staleness(db_session, monkeypatch):
-    monkeypatch.setattr(hemis, "hemis_configured", lambda: True)
+    monkeypatch.setattr(hemis, "hemis_active", lambda: True)
     now = datetime.now(timezone.utc)
     db_session.add(IntegrationSyncRun(source=hemis.SOURCE, status="muvaffaqiyatli", started_at=now - timedelta(hours=60),
                                       finished_at=now - timedelta(hours=60)))

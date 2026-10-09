@@ -26,7 +26,7 @@ SCHEDULED_TRIGGER = "tizim (jadval)"
 
 async def is_sync_due(db, now: datetime | None = None) -> bool:
     interval_hours = settings.hemis_sync_interval_hours
-    if interval_hours <= 0 or not hemis.hemis_configured():
+    if interval_hours <= 0 or not hemis.hemis_active():
         return False
     now = now or datetime.now(timezone.utc)
     last = (
@@ -67,7 +67,7 @@ async def run_schedule_refresh_once(now: datetime | None = None) -> dict | None:
     navbati kelmagan, HEMIS sozlanmagan yoki to'liq sinxronlash ishlamoqda."""
     from app.services.integrations import hemis_schedule
 
-    if settings.hemis_schedule_interval_hours <= 0 or not hemis.hemis_configured():
+    if settings.hemis_schedule_interval_hours <= 0 or not hemis.hemis_active():
         return None
     now = now or datetime.now(timezone.utc)
     last = _last_schedule_refresh[0]

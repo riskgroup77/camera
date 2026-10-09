@@ -62,7 +62,7 @@ def disk_problem(path: str = "/") -> str | None:
 
 
 async def hemis_problem(db, now: datetime) -> str | None:
-    if not hemis.hemis_configured():
+    if not hemis.hemis_active():
         return None
     runs = (
         await db.execute(

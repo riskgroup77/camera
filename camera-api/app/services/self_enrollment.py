@@ -81,7 +81,11 @@ async def decide_status(db: AsyncSession, record: StudentStaff, embedding: list[
     hit = lookalike(embedding, ids, names, matrix, record.id)
     if hit:
         return "kutilmoqda", f"yuzi {hit[0]} ga o'xshash ({hit[1]:.2f})"
-    if settings.self_enrollment_identity_check:
+    from app.services.integrations.hemis import hemis_active
+
+    if settings.self_enrollment_identity_check and hemis_active():
+        # HEMIS uzilgan bo'lsa surat olinmaydi — tekshiruv hammani
+        # "kutilmoqda"ga tushirardi.
         # JSHSHIR sir emas: topshirgan odam AYNAN shu odam ekani HEMIS
         # surati bilan tekshiriladi (app/services/identity_check.py).
         from app.services import identity_check

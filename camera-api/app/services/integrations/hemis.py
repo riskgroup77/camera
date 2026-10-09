@@ -105,6 +105,12 @@ def hemis_configured() -> bool:
     return bool(settings.hemis_base_url.strip() and settings.hemis_api_token.strip())
 
 
+def hemis_active() -> bool:
+    """HEMIS bilan ishlash yoqilgan va sozlangan (settings.hemis_enabled).
+    Barcha HEMIS'ga murojaat qiluvchi vazifalar shunga qaraydi."""
+    return settings.hemis_enabled and hemis_configured()
+
+
 # ── Sof moslashtirish funksiyalari ─────────────────────────────────────────
 
 _APOSTROPHES = "‘’`ʻʼ´"

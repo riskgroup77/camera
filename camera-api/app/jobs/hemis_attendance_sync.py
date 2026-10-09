@@ -39,7 +39,7 @@ def plan_runs(hour: int, today: date, finalized: set[date]) -> list[tuple[date, 
 
 
 async def run_hemis_attendance_once(finalized: set[date]) -> list[str]:
-    if not settings.hemis_attendance_sync_enabled or not hemis.hemis_configured():
+    if not settings.hemis_attendance_sync_enabled or not hemis.hemis_active():
         return []
     report: list[str] = []
     for day, final in plan_runs(local_now().hour, business_today(), finalized):

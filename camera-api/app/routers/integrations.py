@@ -75,7 +75,7 @@ async def hemis_status(db: DbDep, _: ManageDep) -> HemisStatusOut:
         )
     ).scalar_one_or_none()
     return HemisStatusOut(
-        configured=hemis.hemis_configured(),
+        configured=hemis.hemis_active(),
         base_url=_public_base_url(),
         sync_interval_hours=settings.hemis_sync_interval_hours,
         deactivate_missing=settings.hemis_deactivate_missing,
@@ -90,8 +90,17 @@ async def hemis_status(db: DbDep, _: ManageDep) -> HemisStatusOut:
     )
 
 
+def _require_enabled() -> None:
+    if not settings.hemis_enabled:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "HEMIS uzilgan: ro'yxat qo'lda yuritiladi (qayta ulash — server sozlamasi HEMIS_ENABLED=true)",
+        )
+
+
 @router.post("/api/integrations/hemis/test", response_model=HemisTestOut)
 async def hemis_test(_: ManageDep) -> HemisTestOut:
+    _require_enabled()
     if not hemis.hemis_configured():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "HEMIS sozlanmagan: HEMIS_BASE_URL va HEMIS_API_TOKEN kerak")
     return HemisTestOut.model_validate(await hemis.test_connection())
@@ -99,6 +108,7 @@ async def hemis_test(_: ManageDep) -> HemisTestOut:
 
 @router.post("/api/integrations/hemis/sync", response_model=SyncStartedOut, status_code=status.HTTP_202_ACCEPTED)
 async def hemis_sync(request: Request, db: DbDep, current_user: ManageDep) -> SyncStartedOut:
+    _require_enabled()
     if not hemis.hemis_configured():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "HEMIS sozlanmagan: HEMIS_BASE_URL va HEMIS_API_TOKEN kerak")
     user = await db.get(User, current_user.id)

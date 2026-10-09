@@ -254,7 +254,7 @@ def single_photo_allowed(person: StudentStaff) -> bool:
 async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
     stats = {"asosiy": 0, "galereya": 0, "xato": 0}
     staff_only = not settings.hemis_photo_enrollment
-    if (staff_only and not settings.hemis_photo_staff_single) or not hemis.hemis_configured():
+    if (staff_only and not settings.hemis_photo_staff_single) or not hemis.hemis_active():
         return stats
     async with SessionLocal() as db:
         people = (

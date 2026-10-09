@@ -1313,6 +1313,13 @@ class Settings(BaseSettings):
     # https://student.fjsti.uz/rest — token HEMIS admin panelidan olinadi.
     hemis_base_url: str = ""
     hemis_api_token: str = ""
+    # HEMIS'ni BUTUNLAY uzish (2026-10-09, buyurtmachi qarori): ro'yxat
+    # tozalangan va qo'lda yuritiladi. Kunlik sinxron o'chirilgan klonlarni
+    # (tasdiqlangan egizagi HEMIS ID'siz, ismi boshqacha yozilgan) har kuni
+    # qayta yaratardi. False — HEMIS'ga HECH QANDAY so'rov yo'q: sinxron,
+    # dars jadvali, davomat, rasmlar, "Hozir sinxronlash" tugmasi va havoladagi
+    # HEMIS surati bilan shaxs tekshiruvi. Qayta ulash: HEMIS_ENABLED=true.
+    hemis_enabled: bool = False
     # 0 — faqat qo'lda ("Sinxronlash" tugmasi). >0 — har N soatda.
     # HEMIS sozlangan bo'lsagina ishlaydi (hemis_configured). Kuniga bir marta
     # to'liq (talabalar, xodimlar, guruhlar, jadval); jadvalning o'zi tez-tez.

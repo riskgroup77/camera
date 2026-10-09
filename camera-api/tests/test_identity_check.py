@@ -13,6 +13,10 @@ from app.services import identity_check, self_enrollment
 def _identity_on(monkeypatch):
     monkeypatch.setattr(settings, "self_enrollment_identity_check", True)
     monkeypatch.setattr(settings, "self_enrollment_identity_threshold", 0.35)
+    # Shaxs tekshiruvi HEMIS surati bilan — HEMIS ulangan bo'lishi kerak.
+    monkeypatch.setattr(settings, "hemis_enabled", True)
+    monkeypatch.setattr(settings, "hemis_base_url", "https://student.example.uz/rest")
+    monkeypatch.setattr(settings, "hemis_api_token", "t")
 
 
 def _person(**extra) -> StudentStaff:
@@ -40,6 +44,13 @@ async def test_matching_hemis_photo_is_approved(db_session, monkeypatch):
 async def test_someone_elses_face_waits_for_an_admin(db_session, monkeypatch):
     status, reason = await _decide(db_session, _person(), monkeypatch, (0.12, None))
     assert status == "kutilmoqda" and "mos kelmadi" in reason
+
+
+async def test_hemis_disconnected_skips_the_photo_check(db_session, monkeypatch):
+    """HEMIS uzilgan (2026-10-09): surat olinmaydi — tekshiruv hammani
+    "kutilmoqda"ga tushirmasin."""
+    monkeypatch.setattr(settings, "hemis_enabled", False)
+    assert await _decide(db_session, _person(), monkeypatch, (None, "HEMIS'da surati yo'q")) == ("tasdiqlangan", None)
 
 
 async def test_unverifiable_identity_waits_for_an_admin(db_session, monkeypatch):

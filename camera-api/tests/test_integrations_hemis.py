@@ -63,6 +63,21 @@ def test_map_student_requires_identifier():
     assert hemis.map_student(_student(full_name="", first_name=None)) is None
 
 
+async def test_disconnected_hemis_never_syncs(monkeypatch):
+    """HEMIS uzilgan (HEMIS_ENABLED=false): sozlangan bo'lsa ham hech qanday
+    sinxron yo'q — o'chirilgan klonlar qayta yaratilmaydi."""
+    from app.jobs import hemis_sync
+
+    monkeypatch.setattr(settings, "hemis_base_url", BASE)
+    monkeypatch.setattr(settings, "hemis_api_token", "secret-token")
+    monkeypatch.setattr(settings, "hemis_enabled", False)
+    assert hemis.hemis_configured() and not hemis.hemis_active()
+    assert await hemis_sync.is_sync_due(db=None) is False
+    assert await hemis_sync.run_schedule_refresh_once() is None
+    monkeypatch.setattr(settings, "hemis_enabled", True)
+    assert hemis.hemis_active()
+
+
 @pytest.mark.parametrize(
     "status, graduate, active",
     [
@@ -140,6 +155,7 @@ def test_parse_page_errors_and_shape():
 
 @pytest.fixture
 def hemis_settings(monkeypatch):
+    monkeypatch.setattr(settings, "hemis_enabled", True)
     monkeypatch.setattr(settings, "hemis_base_url", BASE)
     monkeypatch.setattr(settings, "hemis_api_token", "secret-token")
     monkeypatch.setattr(settings, "hemis_page_size", 2)
