@@ -71,3 +71,75 @@ def test_candidates_match_first_name_and_patronymic_across_scripts():
     married = {"full_name": "Kenjayeva Dilbarxon Olimjon qizi"}
     assert merge_candidate_score(married, {"full_name": "Mamajonova Dilbarxon Olimjon qizi"}) == 2
     assert merge_candidate_score(married, {"full_name": "Aliyev Anvar Karimovich"}) == 0
+
+
+# ── Avtomatik juftlash: yuzli/JSHSHIRli klon <-> HEMIS yozuvi ────────────────
+
+from app.services.person_dedupe import clone_name_match, find_clone_pairs  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "clone, hemis",
+    [
+        ("Alijonova Shalola", "Alijonova Shalolaxon Baxtiyorjon qizi"),
+        ("Мухсинова Настарин Бегзод кизи", "Muxsinova Nastarinbonu Begzod qizi"),
+        ("Shukrona Isojonova", "Isojonova Shukronaxon Abduqayum qizi"),
+        ("Sodiqjonov Boburjon Bunyodjon uğli", "Sodiqjonov Bobirjon Bunyodjonovich"),
+        ("Fotimaxon Ahmadaliyev Muhiddinjon qizi", "Ahmadaliyeva Fotimaxon Muxiddinjon qizi"),
+        ("Abdulahadova Dilafruz Jamoliddin qizi", "Abdulahadova Dilafro'z Jamoliddin qizi"),
+    ],
+)
+def test_clone_spellings_match(clone, hemis):
+    assert clone_name_match(clone, hemis, same_group=True)
+
+
+@pytest.mark.parametrize(
+    "clone, hemis, same_group",
+    [
+        ("Aliyeva Dilnoza Karim qizi", "Aliyeva Dilfuza Karim qizi", True),  # boshqa ism
+        ("Karimova Anvara Olim qizi", "Karimova Anvara Saidovna", True),  # otasining ismi boshqa
+        ("Mamajonova Dilbarxon Olimjon qizi", "Kenjayeva Dilbarxon Olimjon qizi", False),  # familiya o'zgargan, guruh noma'lum
+    ],
+)
+def test_namesakes_do_not_match(clone, hemis, same_group):
+    assert not clone_name_match(clone, hemis, same_group=same_group)
+
+
+def _r(id_, name, group, **extra):
+    row = {"id": id_, "full_name": name, "type": "talaba", "group_or_position": group, "reported_group": None,
+           "hemis_id": None, "pinfl": None, "active": False, "self_registered": True,
+           "biometrics_status": "yoq", "biometric_embedding": False}
+    row.update(extra)
+    return row
+
+
+def test_find_clone_pairs_groups_face_and_pinfl_clones_with_their_hemis_record():
+    hemis = _r("h", "Hazratqulova Shaxnozaxon Ibrohimjon qizi", "1-kurs, DI-3426", hemis_id="H", active=True, self_registered=False)
+    face = _r("f", "Hazratqulova SHahnoza Ibrohimjon qizi", "3426", biometrics_status="tasdiqlangan", biometric_embedding=True)
+    pin = _r("p", "Hazratqulova Shahnoza Ibrohimjon qizi", "3426", pinfl="60509087000056")
+    other_group = _r("o", "Hazratqulova Shahnoza Ibrohimjon qizi", "1-kurs, DI-9999", pinfl="1" * 14)
+    groups, unsure = find_clone_pairs([hemis, face, pin, other_group])
+    assert len(groups) == 1 and not unsure
+    target, clones = groups[0]
+    assert target["id"] == "h" and {c["id"] for c in clones} == {"f", "p"}
+
+
+def test_wrong_type_self_registered_clone_pairs_by_group_number():
+    hemis = _r("h", "Xusanova Gulbahor Xaydarali qizi", "1-kurs, DI-3626", hemis_id="H", active=True, self_registered=False)
+    clone = _r("c", "Xusanova Gulbahor", "3626", type="xodim", biometrics_status="tasdiqlangan", biometric_embedding=True)
+    groups, _ = find_clone_pairs([hemis, clone])
+    assert len(groups) == 1
+    plan = plan_manual_merge(
+        {**hemis, "biometric_embedding": None, "att": 0},
+        {**clone, "biometric_embedding": FACE, "biometric_photo_key": "a", "biometric_photo_left_key": "b",
+         "biometric_photo_right_key": "c", "att": 0},
+    )
+    assert plan["profile"]["id"] == "h"  # tur, ism, guruh — HEMIS'dan
+
+
+def test_clone_with_two_candidates_is_left_alone():
+    a = _r("a", "Xxx Imran Ahmad Xxx", "1-kurs, MD-0126", hemis_id="H1", active=True)
+    b = _r("b", "Xxx Imran Ahmad Xxx", "1-kurs, MD-0126", hemis_id="H2", active=True)
+    clone = _r("c", "Imran Ahmad", "2-kurs, MD-0126", biometrics_status="tasdiqlangan", biometric_embedding=True)
+    groups, unsure = find_clone_pairs([a, b, clone])
+    assert not groups and len(unsure) == 1
